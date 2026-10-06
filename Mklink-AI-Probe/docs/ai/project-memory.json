@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-07T07:26:40.3960780+08:00",
+  "updated_at": "2026-10-07T07:46:21.5213192+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "V3性能优先：用户明确RAM节省次要，可用有界缓冲降低长批间空隙，以P99/最大值、平均吞吐及DAP抢占对比，V3无屏。RTT原生八路最大化后不跟随仍待定位：新数据已在buffer，不能判为采集丢失。本轮在候选WebView2 130中测试真实Terminal组件+全局CSS+实际最大化+UIA读取，八路base/view始终一致；完整RttChannelPanel布局夹具也一致，但绕过真实Worker输入，不是生产修复证据。下一步捕获完整原生采集页面事件和buffer/view变化。夹具进程及临时诊断监听已关闭，无生产或固件改动。保留既有3e65f1ad原生Watch/首次连接证据；覆盖安装取消后不自动重试，长期浸泡仍待通知。"
+    "current_task": "RTT八通道原生跟随问题已定位并修复：实际WebView2真机记录显示最大化26→24行时原不可见的通道2–7无输入却进入isUserScrolling，view179而base增长至299。组件现在只在可见时fit，后台持续接收，不强制跳底、不改xterm私有状态。新生产前端加载到原生候选壳+冻结后台，V3八路小窗→最大化→下滚后全部base=view且userScrolling=false。WebView完整通道夹具验证历史view325在继续输出/隐藏/宽度变化/显示后保持，base375→475；原生手动历史滚轮因诊断限时结束未完成，不声称通过。RTT四套72通过、类型检查/生产构建通过。两个桌面与诊断监听均已关闭，无固件修改；详见v3-native-watch-restart.md末尾。V3以采样连续性优先、RAM节省次要，无屏，下一步回到批间性能与剩余矩阵；覆盖安装取消后不重试，长期浸泡仍待通知。"
   },
   "milestones": [
     {

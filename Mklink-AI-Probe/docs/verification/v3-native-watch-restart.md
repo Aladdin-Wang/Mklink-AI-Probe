@@ -201,3 +201,47 @@ to acquisition continuity. Future batch-work experiments may use additional
 bounded buffers where measured headroom permits. Compare P99/maximum gaps,
 average throughput and DAP preemption against the retained baseline; smaller
 work units alone do not establish an improvement. V3 has no display.
+
+## Resolved: fitting an offscreen terminal stopped following output
+
+Instrumented the real candidate dashboard in WebView2 while receiving V3 RTT
+0–7. A normally launched desktop owned the shared connection and a second
+desktop reused it. Local diagnostic instrumentation only recorded terminal
+buffers and events; input used the native GUI. No firmware changes were made.
+
+Before the fix, maximizing changed terminal rows from 26 to 24. Channels 2–7,
+which had been outside the visible grid, changed to `isUserScrolling=true`
+without wheel or focus input. At the first recorded mismatch their base was
+187 but viewport was 179; later the base reached 299 while viewport remained
+179. Channels 0/1 still followed. xterm pauses renderer measurements offscreen;
+fitting a shrinking terminal buffer against those stale measurements can
+generate a scroll interpreted as history browsing.
+
+The component now defers fitting offscreen terminals until IntersectionObserver
+reports visibility. Output buffering and parsing continue. It uses the existing
+FitAddon and does not force scrolling on writes, reach into private xterm state,
+or change firmware or dependencies. The observer is disconnected on unmount.
+
+Validation:
+
+- Four affected RTT GUI suites: **72 passed**. The new case checks offscreen
+  output delivery, deferred fitting, re-entry, and observer cleanup.
+- Type checking and production frontend build passed. The existing large-chunk
+  advisory remains.
+- Loaded that production frontend into the same desktop WebView2 with local
+  diagnostic asset interception, using the existing frozen backend and real V3.
+  Eight-channel capture, native maximize, and outer-grid scrolling to channels
+  6/7 all retained following. The final snapshot had base=viewport for all eight
+  channels; none had entered user-scrolling mode. Lower channels visibly advanced.
+  This validates the changed frontend in the native shell, not a new NSIS package.
+- A separate WebView2 full-channel fixture checked intentional history browsing
+  through the public terminal API: channel 7 moved from base/view 375/375 to
+  375/325, then remained at view 325 as base reached 425 and 475, including
+  hiding, width changes and re-entry. The other seven continued following.
+  This is a synthetic history test, not an additional physical-wheel assertion.
+
+The diagnostic desktop's bounded observation run ended before its planned manual
+history-wheel check. That check is not claimed. The normal desktop was closed,
+and subsequent process/listener checks found no candidate processes or temporary
+diagnostic listeners. Full installer qualification and remaining hardware matrix
+items retain their previous status.
