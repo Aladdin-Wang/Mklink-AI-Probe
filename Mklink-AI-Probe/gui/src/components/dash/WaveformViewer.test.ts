@@ -900,6 +900,28 @@ describe('WaveformViewer VOFA binary transport', () => {
     } finally { runtime.cleanup() }
   })
 
+  it('does not replace a user zoom when the first complete buffer establishes the default span', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      runtime.probe.syncStatus({ state: 'running', interval: .001 })
+      runtime.probe.setBufferCapacity(16)
+      const summary = (count: number) => runtime.viewer.acceptBinarySummary({
+        sequence: BigInt(count), timestampNs: BigInt(count * 1000000000),
+        collectedItemCount: count, bufferedItemCount: count,
+        channelCount: 1, latestTimeMs: count * 1000, bufferStartMs: 1000, bufferEndMs: count * 1000,
+        latestValues: Float32Array.of(1).buffer,
+      })
+      summary(8)
+      document.getElementById('x-axis-hit')!.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 400, bubbles: true }))
+      const before = runtime.probe.visibleTimeRange()
+      const span = before.tMax - before.tMin
+      summary(16)
+      const after = runtime.probe.visibleTimeRange()
+      expect(after.tMax - after.tMin).toBeCloseTo(span, 6)
+    } finally { runtime.cleanup() }
+  })
+
   it('keeps a paused zoom span after a fresh acquisition grows beyond that span', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch', 50000)
     try {

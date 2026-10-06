@@ -36,3 +36,27 @@ arguments started, but browser automation refused the local URL with
 launcher expired and released its client. No cancelled installation was retried.
 
 Validation: WaveformViewer.test.ts: 108 passed. Project memory validation and git diff --check passed. Final runtime status was an empty list.
+
+## Follow-up: first full buffer overwrites explicit zoom
+
+A second native run reproduced the widening view after Start. A read-only
+acquisition-status snapshot reported zero CRC errors, parser frame drops,
+firmware sample-drop flags and backend dropped items. These counters describe
+transport integrity; they do not prove uniform target sampling.
+
+Inspection of the owned test WebView showed that initial capacity attachment
+arms `superwatchTimelineCapturePending`. When the first full history arrives,
+`captureSuperwatchTimelineSpanIfReady` unconditionally replaces the current
+span with half the measured buffer duration, including after a user zoom.
+A regression demonstrated an explicit 0.4-second view changing to 7.5 seconds.
+
+The source now distinguishes explicit zoom from the initial default. It still
+learns the measured default for axis reset, but preserves the chosen span and
+lag when that default becomes available. An explicit axis reset clears that
+choice. Stream restart leaves it intact.
+
+Validation: 109 waveform tests passed; Vue type checking and production build
+passed. Native post-fix validation remains pending; this proven overwrite path
+must not yet be claimed to explain every native restart symptom. Both owned
+windows were closed, runtime status was empty, and the temporary loopback
+WebView diagnostic listener was no longer present. No firmware was modified.
