@@ -60,3 +60,29 @@ passed. Native post-fix validation remains pending; this proven overwrite path
 must not yet be claimed to explain every native restart symptom. Both owned
 windows were closed, runtime status was empty, and the temporary loopback
 WebView diagnostic listener was no longer present. No firmware was modified.
+
+## Native post-fix verification
+
+The native frontend built at ac29feac was exercised with the unchanged
+cb1cf41b sidecar. This mixed candidate isolates the frontend change; it is
+neither a new installer nor installed-version acceptance evidence.
+
+An initial shell-launched diagnostic instance failed probe selection with
+HTTP 500. Its lobby log located WinError 5 at subprocess.Popen while creating
+the probe runtime, before target connection. After closing that owned instance,
+the exact same payload launched through the normal desktop application path
+connected to explicitly selected V3 on the first attempt with both probes
+attached. This supports a launch-context dependency, not a firmware failure;
+the underlying Windows job constraint was not independently proved or changed.
+
+In the normal native run, one changing byte was collected at 1 ms. At about
+28108 points, Pause followed by a wheel zoom selected an approximately
+11-second time window (2 s/div). Clicking Start reset the acquisition history.
+At about 16242 new points the visible axis covered approximately 5–16 seconds;
+after reaching the full 50000-point history it covered approximately
+40–51 seconds, still at 2 s/div. At Stop around 65 seconds it retained that
+span. The curve remained visible across the plot and the displayed rate was
+approximately 1000 Hz. Thus this native sequence now preserves explicit zoom
+across restart and first full history. It does not certify every zoom, pan,
+trigger or multi-channel combination. Sampling was stopped and the owned
+window closed normally. No probe or target firmware was changed.

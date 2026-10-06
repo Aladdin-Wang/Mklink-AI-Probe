@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T05:33:43.0744609+08:00`
+- 更新时间：`2026-10-07T05:48:23.6625989+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V3持续优化：桌面重现Watch重启后时间窗扩大；发现首次满缓冲计算默认跨度覆盖用户缩放，已修复并通过109项波形测试及生产构建。真实新版客户端复验待做，不能宣称原生问题全部解决。见docs/verification/v3-native-watch-restart.md。V3固件保持已验证版本，安装UAC取消不重试。
+- 当前任务：V3持续优化：ac29feac原生候选配cb1cf41b后台，双探针明确选择V3首次连接成功。1ms单字节Watch暂停缩放再Start，约11秒窗口跨首次50000点满缓冲保持，曲线完整。shell诊断启动出现Popen WinError5，正常桌面启动同包成功，未改Windows限制。报告docs/verification/v3-native-watch-restart.md；候选非覆盖安装。下一步继续V3批间尾延迟优化，以内存换性能但测量ILM/栈余量，DAP最高优先级。安装UAC取消不重试。
 - 状态：`in_progress`
 
 ## 里程碑
