@@ -934,6 +934,21 @@ def test_superwatch_actual_rate_counts_only_complete_samples_on_a_monotonic_wind
     assert status["actual_rate"] == pytest.approx(4.0)
 
 
+def test_superwatch_batched_rate_counts_samples_and_expires_old_window():
+    now = [0.0]
+    manager = SuperWatchStreamManager(clock=lambda: now[0])
+    for timestamp, count in ((0.0, 100), (0.25, 500), (0.5, 1000)):
+        now[0] = timestamp
+        manager._record_sample_rate_locked(count)
+    assert manager.get_status()["actual_rate"] == pytest.approx(3000)
+    now[0] = 2.0
+    manager._record_sample_rate_locked(100)
+    assert manager.get_status()["actual_rate"] == 0
+    now[0] = 2.5
+    manager._record_sample_rate_locked(200)
+    assert manager.get_status()["actual_rate"] == pytest.approx(400)
+
+
 def test_superwatch_preserves_device_sample_times_across_host_batch_jitter():
     hub = Mock()
     manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=2)

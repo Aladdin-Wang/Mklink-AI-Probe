@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "paused",
-    "current_task": "有限性能修复与OpenOCD抢占已实机通过，持续目标/长稳保持暂停。分组协议配套升级，旧0x30/status8删除；采集栈恢复ILM、热点O3/ILM、复用多变量内核和USB完成唤醒。最终3秒STM208.23k/HPM114.71k，四区域24.07k/33.53k；20秒193.16k/111.41k是JTAG恢复修复前相同热路径。OpenOCD双目标暂停/单步/烧录校验/采集恢复通过，修复JTAG退出后重连；STM Boot不变。新版NSIS/Skill正在同步，尚未确认安装。详见superwatch-performance-20261006.md。"
+    "current_task": "有限性能修复与OpenOCD抢占已实机通过，持续目标/长稳保持暂停。分组协议配套升级，旧0x30/status8删除；采集栈恢复ILM、热点O3/ILM、复用多变量内核和USB完成唤醒。最终3秒STM208.23k/HPM114.71k，四区域24.07k/33.53k；20秒193.16k/111.41k是JTAG恢复修复前相同热路径。OpenOCD双目标暂停/单步/烧录校验/采集恢复通过，修复JTAG退出后重连；STM Boot不变。新版NSIS/Skill正在同步，尚未确认安装。详见superwatch-performance-20261006.md。 afca安装态发现主机逐样本开销导致接收丢弃；已改有界256样本批统计/锁和编译覆盖掩码，284回归通过，源码GUI186.39k/约100万组零丢弃；最终包重建中。"
   },
   "milestones": [
     {
@@ -76,7 +76,7 @@
   ],
   "hardware": {
     "state": "双V4已升级最终性能固件f26dc5c7；STM32 RTT8+Watch及pyOCD/OpenOCD下载仿真、Boot不变通过；HPM5301 OpenOCD下载仿真与JTAG恢复通过。SDK/Arm2D/MicroBoot不改；无电压变化，长稳暂停。",
-    "installer": "当前安装与本地Skill仍0.3.0/90cee876；本轮性能与GUI源码尚待新NSIS覆盖安装和Skill更新。",
+    "installer": "已安装afca6334且Skill同步，发现主机吞吐瓶颈，最终批处理优化待重打包验收。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [

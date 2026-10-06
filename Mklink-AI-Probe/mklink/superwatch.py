@@ -89,12 +89,12 @@ class CompiledFrameDecoder:
         self.channel_index = {name: index for index, name in enumerate(channel_names)}
         self.region_fields = region_fields
         self._values = [0.0] * len(channel_names)
-        self._seen = [0] * len(channel_names)
-        self._generation = 0
+        self._region_masks = tuple(sum({1 << field.channel_index for field in fields})
+                                   for fields in region_fields)
+        self._complete_mask = (1 << len(channel_names)) - 1
 
     def decode(self, frame: dict) -> list[float] | None:
-        self._generation += 1
-        generation = self._generation
+        seen = 0
         for region_index, region_data in frame.get("regions", ()):
             if not 0 <= region_index < len(self.region_fields):
                 continue
@@ -105,8 +105,8 @@ class CompiledFrameDecoder:
                 if field.bit_mask is not None:
                     value = (int(value) >> field.bit_offset) & field.bit_mask
                 self._values[field.channel_index] = float(value)
-                self._seen[field.channel_index] = generation
-        if any(marker != generation for marker in self._seen):
+            seen |= self._region_masks[region_index]
+        if seen != self._complete_mask:
             return None
         return self._values
 

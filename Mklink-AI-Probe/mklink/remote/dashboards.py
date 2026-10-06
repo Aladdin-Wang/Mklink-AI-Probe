@@ -2143,32 +2143,38 @@ class SuperWatchStreamManager:
                                         self._origin_us = origin_us
                                 if not self._collecting.is_set():
                                     continue
-                                for frame in frames:
-                                    row = decoder.decode(frame)
-                                    timestamp_us = int(frame["timestamp_us"])
-                                    if origin_us is None:
-                                        origin_us = timestamp_us
-                                    sample_time_ms = (timestamp_us - origin_us) / 1000.0
+                                # Amortize clocks/statistics/locking while keeping
+                                # configuration and stop latency bounded.
+                                for offset in range(0, len(frames), 256):
                                     with self._read_lock:
                                         if config_generation != self._config_generation:
-                                            self._dropped_read_cycles += 1
+                                            self._dropped_read_cycles += len(frames) - offset
                                             break
-                                        if row is None:
-                                            self._dropped_read_cycles += 1
-                                            continue
-                                        self._origin_us = origin_us
-                                        published = self._publish_sample_values_locked(
-                                            row,
-                                            channel_count=scalar_count,
-                                            sample_time=sample_time_ms,
-                                        )
-                                        snapshot_updated = self._update_array_snapshot_values_locked(
-                                            row, decoder.channel_index, timestamp_us,
-                                        )
-                                        if snapshot_updated and not published:
-                                            self._record_sample_rate_locked()
-                                        if published or snapshot_updated:
-                                            self._completed_read_cycles += 1
+                                        if not self._collecting.is_set():
+                                            break
+                                        batch_time = self._clock()
+                                        completed = 0
+                                        for frame in frames[offset:offset+256]:
+                                            row = decoder.decode(frame)
+                                            timestamp_us = int(frame["timestamp_us"])
+                                            sample_time_ms = (timestamp_us - origin_us) / 1000.0
+                                            if row is None:
+                                                self._dropped_read_cycles += 1
+                                                continue
+                                            published = self._publish_sample_values_locked(
+                                                row,
+                                                channel_count=scalar_count,
+                                                sample_time=sample_time_ms,
+                                                batch_time=batch_time,
+                                            )
+                                            snapshot_updated = self._update_array_snapshot_values_locked(
+                                                row, decoder.channel_index, timestamp_us,
+                                            )
+                                            if published or snapshot_updated:
+                                                completed += 1
+                                        if completed:
+                                            self._completed_read_cycles += completed
+                                            self._record_sample_rate_locked(completed)
                         finally:
                             session.stop()
                             self._stream_integrity = _sum_counter_snapshots(
@@ -2663,6 +2669,7 @@ class SuperWatchStreamManager:
         *,
         channel_count: int,
         sample_time: float | None,
+        batch_time: float | None = None,
     ) -> bool:
         """Append one numeric row to typed batch buffers without row objects."""
         if channel_count <= 0 or len(values) < channel_count:
@@ -2678,7 +2685,7 @@ class SuperWatchStreamManager:
                 self._flush_binary_batch_locked()
             if self._pending_sample_count == 0:
                 self._pending_channel_count = channel_count
-                self._pending_started_at = self._clock()
+                self._pending_started_at = self._clock() if batch_time is None else batch_time
             for index in range(channel_count):
                 self._pending_values.append(float(values[index]))
             self._pending_sample_times.append(
@@ -2687,21 +2694,22 @@ class SuperWatchStreamManager:
         except (OverflowError, TypeError, ValueError):
             return False
         self._pending_sample_count += 1
-        if time.monotonic() - self._last_metadata_publish_monotonic >= 1.0:
+        if (time.monotonic() if batch_time is None else batch_time) - self._last_metadata_publish_monotonic >= 1.0:
             self._publish_cached_metadata()
-        self._record_sample_rate_locked()
-        if self._binary_batch_due_locked():
+        if batch_time is None:
+            self._record_sample_rate_locked()
+        if self._binary_batch_due_locked(batch_time):
             self._flush_binary_batch_locked()
         return True
 
-    def _binary_batch_due_locked(self) -> bool:
+    def _binary_batch_due_locked(self, now: float | None = None) -> bool:
         if self._pending_sample_count <= 0:
             return False
         estimated_bytes = self._pending_sample_count * (
             self._pending_channel_count * 4 + 8
         )
         elapsed = (
-            self._clock() - self._pending_started_at
+            (self._clock() if now is None else now) - self._pending_started_at
             if self._pending_started_at is not None else 0.0
         )
         return (
@@ -2717,16 +2725,17 @@ class SuperWatchStreamManager:
                 return True
             return self._flush_binary_batch_locked()
 
-    def _record_sample_rate_locked(self) -> None:
+    def _record_sample_rate_locked(self, count: int = 1) -> None:
         completed_at = self._clock()
-        self._rate_timestamps.append(completed_at)
+        total = (self._rate_timestamps[-1][1] if self._rate_timestamps else 0) + count
+        self._rate_timestamps.append((completed_at, total))
         cutoff = completed_at - 1.0
-        while self._rate_timestamps and self._rate_timestamps[0] < cutoff:
+        while self._rate_timestamps and self._rate_timestamps[0][0] < cutoff:
             self._rate_timestamps.popleft()
         if len(self._rate_timestamps) >= 2:
-            elapsed = self._rate_timestamps[-1] - self._rate_timestamps[0]
+            elapsed = self._rate_timestamps[-1][0] - self._rate_timestamps[0][0]
             self._actual_rate = (
-                (len(self._rate_timestamps) - 1) / elapsed if elapsed > 0 else 0.0
+                (total - self._rate_timestamps[0][1]) / elapsed if elapsed > 0 else 0.0
             )
         else:
             self._actual_rate = 0.0
