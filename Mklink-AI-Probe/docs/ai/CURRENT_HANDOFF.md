@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T18:01:50.386389+08:00`
+- 更新时间：`2026-10-06T18:31:29.8891920+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：时间栅格和打印清理：SuperWatch 1/2/5等时主栅格/五小格/自适应时间单位/每格时长已实现；107相关回归和真实浏览器双通道暂停缩放恢复验证，10.4609628s窗口保留。清理两份查看器18处临时打印。新界面尚未重新覆盖安装包/Skill，当前安装01d89c60。STM固件ded5f2b直接喂狗已实测；残余266us为前轮3秒短测，抖动继续定位，不宣称无漏采。GUI其余矩阵仍有未测项；长稳及旧持续目标暂停。
+- 当前任务：已修复固件多变量 SWD 重复初始化、超周期额外等待与 DAP 退出时钟恢复；STM32 真机升级，2/4 分散变量全速约35k/18.4k组每秒，100us双变量桌面/Web约9.8kHz。18布局32575样本精确校验，RTT8+OpenOCD抢占/APP烧录校验/Bootloader不变及显式恢复通过。采样最大间隙仍308–483us，原因继续定位，不能以传输零丢包声称无漏采。HPM本轮未升级；时间栅格已在源码092e7c1，安装/Skill仍01d89c60，尚待更新。全功能矩阵剩余项与长期验证未完成，持续目标保持暂停。
 - 状态：`in_progress`
 
 ## 里程碑
