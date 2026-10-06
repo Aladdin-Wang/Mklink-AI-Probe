@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T06:43:49.9658413+08:00`
+- 更新时间：`2026-10-07T07:02:08.9230554+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：3e65f1ad空闲截止修复已构建本地0.3.0 NSIS候选并更新本地Skill（备份在构建盘）。提取包39个Web资源逐字节匹配，7059目标/2224算法；Windows-only PATH下冻结MCP和Skill MCP查询通过。V3包内多SDK/CLI/Skill MCP/RTT8通过，端口5.241秒释放、进程5.427秒退出；无Python子进程。见runtime-idle-deadline.md。未覆盖安装/新GUI验收，之前UAC取消不重试；继续收敛剩余功能矩阵。
+- 当前任务：3e65f1ad完整提取候选桌面实机补验：双探针首次选择V3连接成功，KK启动、RTT八通道接收及停止通过；1ms单字节Watch暂停缩放/Start/首次50000满缓冲仍保持约10秒和1秒每格，约996–1000Hz，停止后保留。正常关闭8秒后候选全部进程已退出，V3串口可重开。见v3-native-watch-restart.md。部分RTT终端在最大化/滚动后停留历史位置、计数仍增长，需隔离核查跟随/resize。未覆盖安装、未新增Web验收；之前UAC取消不重试。V3批间优化维持实测较优固件，拒绝两种无稳定收益的拆分实验；继续功能收敛。
 - 状态：`in_progress`
 
 ## 里程碑

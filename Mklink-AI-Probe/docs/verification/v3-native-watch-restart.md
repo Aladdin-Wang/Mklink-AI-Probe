@@ -86,3 +86,37 @@ approximately 1000 Hz. Thus this native sequence now preserves explicit zoom
 across restart and first full history. It does not certify every zoom, pan,
 trigger or multi-channel combination. Sampling was stopped and the owned
 window closed normally. No probe or target firmware was changed.
+
+## Packaged native recheck: 3e65f1ad
+
+Exercised the extracted NSIS desktop and matching frozen backend, with its
+footer and process path confirming 3e65f1ad. The launch helper initially resolved
+the older installed application by basename; that window was closed normally
+and excluded from qualification. Launching the explicit process path selected
+the candidate correctly. No installer was executed.
+
+With both probes attached, explicitly selecting V3 connected on the first
+attempt. The KK startup animation displayed. RTT channels 0–7 each received
+their matching channel/sequence output in the three-column layout. Counters
+increased, with buffer zero and drops 0/0. Stopping acquisition succeeded.
+Several terminal viewports remained at earlier sequence positions while their
+line counters increased, following window maximization and panel scrolling.
+This needs an isolated terminal follow/resize investigation; it is not evidence
+of firmware packet loss or a completed terminal usability acceptance.
+
+With RTT stopped, collected one changing byte at a 1 ms interval. Paused at
+about 24140 points and zoomed the horizontal axis from 2 s/div to 1 s/div,
+leaving roughly a ten-second visible span. Start reset acquisition history.
+At 20476 points the plot covered approximately 11–20 seconds. After reaching
+the 50000-point buffer it covered approximately 51–60 seconds, still at
+1 s/div, with data across the plot. Stop around 71 seconds retained that span.
+Displayed rate was about 996–1000 Hz. This confirms the specific pause/zoom/
+Start/first-full-buffer sequence in the complete candidate, not every gesture
+or sampling configuration.
+
+Closed the owned desktop normally. At an eight-second post-close check no
+candidate desktop or sidecar process remained; the V3 console reopened and
+closed without sending commands. This check is not a precise shutdown timing
+measurement. Firmware, target Flash, voltage and protection were unchanged.
+The earlier cancelled overwrite installation and blocked browser qualification
+remain separate, unresolved gates.
