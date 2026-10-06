@@ -172,3 +172,32 @@ were absent at the subsequent check. The owned browser session and local
 fixture server were also closed. No production patch is claimed. Next
 investigation should capture WebView buffer/viewport and scroll-event ordering
 at the resize boundary, preserving intentional history browsing.
+
+## WebView component and channel-layout exclusions
+
+Ran synthetic eight-panel fixtures inside the exact candidate's WebView2
+engine (Edg/130.0.2849.56), with the current Vue terminal component and global
+theme/viewer CSS. During continuous output, a real native maximize changed
+columns from 75 to 71. All eight baseY/viewportY pairs remained equal at 2578,
+including after revealing the lower row, and advanced together to 2678.
+Reading the native accessibility tree during another maximize run did not
+change that result.
+
+Expanded the fixture to the actual RttChannelPanel layout and its terminal
+child. Synthetic text entered the child's exposed write method; device streams
+were disabled. All eight pairs progressed 75/75, 275/275 and 375/375 across a
+container-width change and outer-grid scrolling. This excludes those controlled
+layout cases, not the production worker/stream path or the original native bug.
+No production fix is claimed. Next capture should instrument the full native
+acquisition page, including input and scroll events, rather than add another
+unconditional scroll-to-bottom patch.
+
+Owned fixture processes and temporary loopback diagnostic listeners were
+closed; subsequent checks found no candidate desktop or listeners on the two
+diagnostic ports. No hardware or production source was changed in this step.
+
+The maintainer clarified the V3 performance policy: RAM footprint is secondary
+to acquisition continuity. Future batch-work experiments may use additional
+bounded buffers where measured headroom permits. Compare P99/maximum gaps,
+average throughput and DAP preemption against the retained baseline; smaller
+work units alone do not establish an improvement. V3 has no display.

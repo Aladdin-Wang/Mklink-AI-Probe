@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T07:16:37.2577040+08:00`
+- 更新时间：`2026-10-07T07:26:40.3960780+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：3e65f1ad候选已完成双探针V3首次连接、RTT8、Watch暂停缩放/Start/首次满缓冲及关闭释放的原生补验。RTT视口问题在原生第二次复现：小窗八路采集→最大化→滚动到6/7，旧序号不动但计数增长；手动向下滚动可见更晚序号，确认新数据已进终端。真实Chrome组件夹具即使持续写入中调整宽高也全部保持跟随，不能将其当作修复证据。下一步需捕获WebView重排时buffer/viewport及滚动事件顺序，保留历史阅读；未改生产代码/固件。所有自建GUI、浏览器、夹具服务已关闭。覆盖安装仍未完成且不重试已取消UAC；持续目标保持功能收敛，长期浸泡待通知。
+- 当前任务：V3性能优先：用户明确RAM节省次要，可用有界缓冲降低长批间空隙，以P99/最大值、平均吞吐及DAP抢占对比，V3无屏。RTT原生八路最大化后不跟随仍待定位：新数据已在buffer，不能判为采集丢失。本轮在候选WebView2 130中测试真实Terminal组件+全局CSS+实际最大化+UIA读取，八路base/view始终一致；完整RttChannelPanel布局夹具也一致，但绕过真实Worker输入，不是生产修复证据。下一步捕获完整原生采集页面事件和buffer/view变化。夹具进程及临时诊断监听已关闭，无生产或固件改动。保留既有3e65f1ad原生Watch/首次连接证据；覆盖安装取消后不自动重试，长期浸泡仍待通知。
 - 状态：`in_progress`
 
 ## 里程碑
