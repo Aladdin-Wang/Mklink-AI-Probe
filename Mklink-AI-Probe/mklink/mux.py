@@ -151,7 +151,7 @@ class MuxTransport:
                 if len(self._rx) < 16:
                     return
                 _, version, op, n, epoch, req = struct.unpack_from('<4sBBHII', self._rx)
-                limit = 1024 if op == 0x41 and self.capabilities & 4 else 256
+                limit = 1024 if op == 0x41 and self.capabilities & 8 else 256
                 if version != 1 or n > limit:
                     self.fail('Malformed multiplex frame')
                     self._rx.clear()
