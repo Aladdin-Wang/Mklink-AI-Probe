@@ -45,6 +45,7 @@ class MuxTransport:
         self.epoch = 0
         self.nonce = secrets.token_bytes(8)
         self.ready = False
+        self.capabilities = 0
         self.rtt_mask = 0
         self.watch_running = False
         self._last_command = time.monotonic()
@@ -120,6 +121,7 @@ class MuxTransport:
         caps = self.request(1)
         if len(caps) != 8 or struct.unpack_from('<I', caps)[0] & 3 != 3:
             raise MuxError('Firmware does not support multiplex target operations')
+        self.capabilities = struct.unpack_from('<I', caps)[0]
         if self.request(4, self.nonce) != self.nonce:
             raise MuxError('Session claim mismatch')
         self.ready = True
@@ -149,7 +151,8 @@ class MuxTransport:
                 if len(self._rx) < 16:
                     return
                 _, version, op, n, epoch, req = struct.unpack_from('<4sBBHII', self._rx)
-                if version != 1 or n > 256:
+                limit = 1024 if op == 0x41 and self.capabilities & 4 else 256
+                if version != 1 or n > limit:
                     self.fail('Malformed multiplex frame')
                     self._rx.clear()
                     return

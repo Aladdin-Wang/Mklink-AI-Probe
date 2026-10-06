@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-06T03:04:13.8827137Z",
+  "updated_at": "2026-10-06T05:11:12.285526+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "paused",
-    "current_task": "有限收尾已完成，暂停扩展审计。最终安装/Skill 0.3.0/90cee876，NSIS覆盖哈希一致；修复冻结MCP缺FastMCP模块/元数据，安装stdio MCP真实调用通过。双GUI RTT8+Watch+Skill MCP/CLI通过，6.08秒释放；双V4安装后台独立退出、配置持久化、算法/Pack目录、安全拒绝、任务去重和unknown重启查询、同机WLAN双远程隔离通过。Python4314/GUI885全量基线及打包48/版本18补测通过。双V4最终UF2 ce7ba3a2，STM32 RTT8/DAP与HPM5301 BIN/HEX验证见矩阵。长期、跨物理主机及矩阵剩余实体项未通过；不恢复无限目标，不合并发布。"
+    "current_task": "有限性能与GUI优化进行中；持续目标保持暂停。固件16ccdee：20us阈值同步legacy/MUX，RTT1ms，复用SWD/JTAG批量与样本池，DAP安全边界抢占，屏幕低优先级。双V4已升级相同b542c669 UF2。STM32直连156k/GUI149kHz，HPM86kHz；20us分别41k/39kHz，不能宣称200k或所有条件超过旧路径。403项主机相关、89项脱机、885项GUI及18项固件回归通过。启动动画、布局、移除本地独立窗口与GUI VOFA入口已完成源码/浏览器验证；NSIS和Skill尚未替换。详见superwatch-performance-20261006.md。"
   },
   "milestones": [
     {
@@ -75,12 +75,12 @@
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "双V4仍03d72f5。STM32保持上一轮12KiB fixture AXF 976acece，APP0x08005000与Boot未动。HPM相同hello BIN现已正确写到0x80000400，51244字节全读回SHA57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025；tick/RTT/复位启动通过，4KiB数组恢复，后台退出。旧基址0x80000000测试镜像禁止用作恢复。 本轮正确布局HEX经MCP/CLI/脱机脚本各烧录启动通过，最终tick9860→15720、新RTT日志，后台退出。H盘offline.hex/python/audithex.py为正确布局版本。 GUI在线及脱机正确HEX补验通过，最后tick27616→33413；H盘新增hpm-hello-elf-base.hex及Python/audit-correct-hex.py，10MHz，不启用安全操作。",
-    "installer": "474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。",
+    "state": "双V4同版性能候选b542c669ca9275bb54cf30532492a75cada9ef04a4e64b0cb8c2554c6e94dee3；STM32 RTT8收发+Watch与DAP单步/APP烧录读回通过，Boot不变；HPM5301只读单独Watch比较通过。无电压改变。长期与HPM新批次DAP实体并发尚未验证。",
+    "installer": "当前安装与本地Skill仍0.3.0/90cee876；本轮性能与GUI源码尚待新NSIS覆盖安装和Skill更新。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
-    "新MUX主机协议47需配套V4 MUX_TARGET=1固件；实体只验STM32两个Up/一个Down。SuperWatch最多15个128B区域，最短2ms，非原子快照；调试/烧录/时钟仍需停流，未知写入不重放。配套桌面安装包及本地Skill已更新，全仓测试未完全通过。",
+    "2026-10-06性能扩展：HELLO bit4、0x32微秒与1KiB Watch事件；旧固件保持0x30最短2ms。历史known_limits按其阶段阅读，不覆盖本轮报告。单变量快批次不等于多变量峰值；定时间隔中位数达标而平均采样率受USB/调度影响，仍有毫秒间隙。",
     "149是MUX帧基础，尚无多通道目标调度。后台约5秒触发退出，安装版完整清理约5.4至6.05秒；异常网络排空额外最多2秒。GUI靠在线连接保活，AI每秒续约/5秒过期；未打开的远程窗口仍有90秒回收上限。长期和跨物理主机未验证。 A5已收敛。A6活动MCP已扩展只读目录检查，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。",
     "0.3.0第七阶段：专用CLI、低层Device调用方未全部迁移，共享SDK不是完整Device替代。共享断点仅FPBv1，未制造真实HardFault；Bootloader重枚举升级、非Windows共享MSC受限。物理擦除/恢复、操作中拔插/休眠和断电未验收；长期测试按用户要求暂停。HPM FreeRTOS SystemView已短时真机验证，其他RTOS待验。MAP/C回退仅基本全局标量，新增声明须显式重载，不等于源码与固件匹配；稀疏类型待验。VOFA现有独立Vue路由复用WaveformViewer和二进制流，通道由CLI/AI配置；Chrome显示/暂停恢复及导出内容已验，系统保存对话框/原生保存待验；Float32不保留大整数低位，后端历史500点。UART开口前后身份校验、COM别名及启停事务已统一，读错误须显式重启；Modbus执行中结果未知不重放。现有UART/Modbus共享能力及专用CLI覆盖见详细报告，嵌套循环归属、逐请求断开取消、真实从站/拔插/OS阻塞仍待验。远程RTT/SystemView版本2及双探针本机LAN短时通过。旧111候选物理MSC三文件部署/哈希/双盘保持/清理通过，不等于触发烧录。114源码将offline.deploy接入RuntimeJobs，协议35/flash.offline版本2，GUI和SDK可按request_id查询；模拟取消/日志失败/换盘/去重及真实Chrome受控查询通过，115实包LAN查询/重复请求/正常重启保留已通过，116临时磁盘生产部署子进程中断通过；117已登记强杀恢复目录，仅供人工核查、可能已清理；物理MSC中断和完整GUI真实部署仍待验。最多64条记录，缺失不代表未执行，未知结果不得重放。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",

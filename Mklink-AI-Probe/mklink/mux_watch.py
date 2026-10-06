@@ -16,8 +16,14 @@ class MuxWatchSession:
                       for offset in range(0, size, 128)]
         if not self.parts or len(self.parts) > 15:
             raise MuxWatchCapacityError('Multiplex watch allows 15 regions of at most 128 bytes; select fewer/smaller variables')
-        self.period = max(2, math.ceil(period*1000))
-        if self.period > 60000:
+        if not math.isfinite(period) or period < 0:
+            raise MuxWatchCapacityError('Multiplex watch period must be finite and nonnegative')
+        self.requested_period = period
+        self.microseconds = bool(getattr(transport, 'capabilities', 0) & 4)
+        self.period = max(1 if self.microseconds else 2, math.ceil(period*(1000000 if self.microseconds else 1000)))
+        if period == 0:
+            self.period = 2000 if self.microseconds else 2
+        if self.period > (60000000 if self.microseconds else 60000):
             raise MuxWatchCapacityError('Multiplex watch period exceeds 60 seconds')
         self._pending = []
         self._last_clock = None
@@ -26,11 +32,18 @@ class MuxWatchSession:
         self.gaps = 0
 
     def start(self):
+        # DumpMemoryStreamSession validates capacity before opening transport.
+        # Negotiate units only after the real firmware capabilities are known.
+        self.microseconds = bool(getattr(self.transport, 'capabilities', 0) & 4)
+        self.period = max(1 if self.microseconds else 2,
+                          math.ceil(self.requested_period*(1000000 if self.microseconds else 1000)))
+        if self.requested_period == 0:
+            self.period = 2000 if self.microseconds else 2
         self.transport.drain(0x41, 255)
-        body = struct.pack('<HB', self.period, len(self.parts))
+        body = struct.pack('<IB' if self.microseconds else '<HB', self.period, len(self.parts))
         body += b''.join(struct.pack('<IB', address, size) for _, address, size in self.parts)
         with self.transport._commands:
-            self.transport.request(0x30, body)
+            self.transport.request(0x32 if self.microseconds else 0x30, body)
             self.transport.watch_running = True
             self.transport.drain(0x41, 255)
 
@@ -41,6 +54,16 @@ class MuxWatchSession:
             if status == 7:
                 self._pending = []
                 raise RuntimeError('DAP changed the target; SuperWatch capture was invalidated. Restart capture after debugging.')
+            if status == 8:
+                if (not self.microseconds or len(self.parts) != 1 or self.parts[0][2] != 4
+                        or len(event) < 4 or event[0] or event[3] or not 1 <= event[2] <= 127
+                        or len(event) != 4+8*event[2]):
+                    raise RuntimeError('Invalid multiplex watch batch')
+                self._pending = []
+                for offset in range(4, len(event), 8):
+                    timestamp = struct.unpack_from('<I', event, offset)[0]
+                    result.append(self._frame(timestamp, [(0, event[offset+4:offset+8])]))
+                continue
             timestamp = struct.unpack_from('<I', event, 2)[0]
             if index == 0:
                 if self._pending:
@@ -57,13 +80,17 @@ class MuxWatchSession:
             for (logical, _, _), data in zip(self.parts, self._pending):
                 regions[logical].extend(data)
             self._pending = []
-            if self._last_clock is not None and timestamp < self._last_clock:
-                self._clock_high += 1 << 32
-            self._last_clock = timestamp
-            self.samples += 1
-            result.append({'format': 'mux', 'timestamp_us': (timestamp+self._clock_high)*1000,
-                           'flags': 0, 'regions': [(i, bytes(data)) for i, data in enumerate(regions)]})
+            result.append(self._frame(timestamp, [(i, bytes(data)) for i, data in enumerate(regions)]))
         return result
+
+    def _frame(self, timestamp, regions):
+        if self._last_clock is not None and timestamp < self._last_clock:
+            self._clock_high += 1 << 32
+        self._last_clock = timestamp
+        self.samples += 1
+        return {'format': 'mux',
+                'timestamp_us': (timestamp+self._clock_high)*(1 if self.microseconds else 1000),
+                'flags': 0, 'regions': regions}
 
     def write(self, address, data, future):
         try:

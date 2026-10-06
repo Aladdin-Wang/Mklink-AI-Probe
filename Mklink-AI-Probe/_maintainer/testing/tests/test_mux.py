@@ -299,3 +299,82 @@ def test_finite_bulk_never_falls_back_after_mux_start_failure():
     with pytest.raises(RuntimeError,match='response lost'):session.start()
     bridge._leave_multiplex.assert_not_called()
     assert not bridge.calls
+
+
+@pytest.mark.parametrize('capabilities,op,unit', [(3, 0x30, 1000), (7, 0x32, 1)])
+def test_watch_negotiates_precision_and_clock_wrap(capabilities, op, unit):
+    transport, calls = peer()
+    transport.handshake()
+    transport.capabilities = capabilities
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .000001)
+    watch.start()
+    assert calls[-1][0] == op
+    expected = struct.pack('<IB' if unit == 1 else '<HB', 1 if unit == 1 else 2, 1)
+    assert calls[-1][1][8:].startswith(expected)
+    for seq, timestamp in enumerate([0xfffffffe, 3], 1):
+        transport.feed(packet(0x41, 17, seq, struct.pack('<BBI', 0, 0, timestamp)+b'abcd'))
+    frames = watch.read_frames()
+    assert frames[1]['timestamp_us']-frames[0]['timestamp_us'] == 5*unit
+
+
+@pytest.mark.parametrize('period', [-.1, -1, float('nan'), float('inf'), 60.1])
+def test_watch_rejects_invalid_period_before_target_command(period):
+    transport, calls = peer()
+    transport.capabilities = 7
+    with pytest.raises(ValueError):
+        MuxWatchSession(transport, [(0x20000000, 4)], period)
+    assert not calls
+
+
+def test_watch_compact_batch_preserves_values_and_microsecond_wrap():
+    transport, _ = peer()
+    transport.handshake()
+    transport.capabilities = 7
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .000019)
+    watch.start()
+    payload = bytes([0, 8, 2, 0])+struct.pack('<IIII', 0xfffffffe, 123, 3, 456)
+    transport.feed(packet(0x41, 17, 1, payload))
+    frames = watch.read_frames()
+    assert [struct.unpack('<I', f['regions'][0][1])[0] for f in frames] == [123, 456]
+    assert frames[1]['timestamp_us']-frames[0]['timestamp_us'] == 5
+    assert watch.samples == 2
+
+
+@pytest.mark.parametrize('payload', [bytes([0,8,0,0,0,0]), bytes([0,8,128,0,0,0]),
+                                      bytes([0,8,1,1])+bytes(8), bytes([0,8,2,0])+bytes(8)])
+def test_watch_rejects_malformed_compact_batch(payload):
+    transport, _ = peer()
+    transport.handshake()
+    transport.capabilities = 7
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .000001)
+    transport.feed(packet(0x41, 17, 1, payload))
+    with pytest.raises(RuntimeError, match='Invalid multiplex watch batch'):
+        watch.read_frames()
+
+
+def test_watch_negotiates_after_deferred_transport_assignment():
+    watch = MuxWatchSession(None, [(0x20000000, 4)], .000020)
+    transport, calls = peer()
+    transport.handshake()
+    transport.capabilities = 7
+    watch.transport = transport
+    watch.start()
+    assert calls[-1][0] == 0x32
+    assert calls[-1][1][8:13] == struct.pack('<IB', 20, 1)
+
+
+def test_watch_accepts_bounded_large_event_only_after_capability_negotiation():
+    payload = bytes([0,8,127,0])+b''.join(struct.pack('<II', i*4,i) for i in range(127))
+    for capabilities in (3,7):
+        transport, _ = peer()
+        transport.handshake()
+        transport.capabilities = capabilities
+        watch = MuxWatchSession(transport, [(0x20000000,4)], .000001)
+        import binascii
+        raw = struct.pack('<4sBBHII', b'MLX1', 1, 0x41, len(payload), 17, 1)+payload
+        transport.feed(raw+struct.pack('<I', binascii.crc32(raw)&0xffffffff))
+        if capabilities==3:
+            with pytest.raises(MuxError): watch.read_frames()
+        else:
+            frames=watch.read_frames()
+            assert len(frames)==127 and frames[-1]['timestamp_us']==504
