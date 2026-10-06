@@ -830,6 +830,57 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
+  it('does not invent empty history around a subsecond high-rate buffer after pause and restart', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.probe.syncStatus({ state: 'running', interval: 0.000001, actual_rate: 200000, items: [] })
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 1_250_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, i) => i).buffer,
+        times: Float64Array.from({ length: 8 }, (_, i) => 1000 + i * 250 / 7).buffer,
+      })
+      expect(runtime.viewer.acceptBinarySummary({
+        sequence: 2n, timestampNs: 1_250_000_000n, collectedItemCount: 50000, bufferedItemCount: 50000,
+        channelCount: 1, latestTimeMs: 1250, bufferStartMs: 1000, bufferEndMs: 1250,
+        latestValues: Float32Array.of(7).buffer,
+      })).toBe(true)
+      expect(runtime.probe.fullTimeRange().tMax - runtime.probe.fullTimeRange().tMin).toBeCloseTo(.25)
+      const requestFrozenRange = vi.fn()
+      runtime.viewer.setBinaryVisibleRangeRequester(requestFrozenRange)
+      const snapshotEnvelope = {
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 4, pixelWidth: 800, channelCount: 1, pointCount: 2,
+        candidateSampleCount: 2, times: Float64Array.of(1050, 1250).buffer,
+        timeIndices: Uint32Array.of(0, 1).buffer, values: Float32Array.of(1, 7).buffer,
+        channelOffsets: Uint32Array.of(0, 2).buffer, frozenStartMs: 1050, frozenEndMs: 1300,
+      }
+      runtime.viewer.renderBinaryEnvelope(snapshotEnvelope)
+      document.getElementById('btn-pause')!.click()
+      runtime.viewer.renderBinaryEnvelope(snapshotEnvelope, true)
+      expect(requestFrozenRange).toHaveBeenCalledOnce()
+      expect(runtime.probe.fullTimeRange().tMin).toBeCloseTo(.05)
+      expect(runtime.probe.fullTimeRange().tMax).toBeCloseTo(.30)
+      runtime.viewer.renderBinaryEnvelope(snapshotEnvelope, true)
+      expect(requestFrozenRange).toHaveBeenCalledOnce()
+      const axis = document.getElementById('x-axis-hit')!
+      for (let i = 0; i < 12; i++) axis.dispatchEvent(wheelEvent({ deltaY: 100, clientX: 400, bubbles: true }))
+      const pausedRange = runtime.probe.visibleTimeRange()
+      expect(pausedRange.tMax - pausedRange.tMin).toBeLessThanOrEqual(.250001)
+      runtime.probe.syncStatus({ state: 'running', items: [] })
+      document.getElementById('btn-start')!.click()
+      await flushPromises()
+      runtime.viewer.acceptBinarySummary({
+        sequence: 3n, timestampNs: 1_550_000_000n, collectedItemCount: 50000, bufferedItemCount: 50000,
+        channelCount: 1, latestTimeMs: 1550, bufferStartMs: 1300, bufferEndMs: 1550,
+        latestValues: Float32Array.of(8).buffer,
+      })
+      const resumed = runtime.probe.visibleTimeRange()
+      expect(resumed.tMax - resumed.tMin).toBeCloseTo(pausedRange.tMax - pausedRange.tMin)
+      expect(resumed.tMin).toBeGreaterThanOrEqual(runtime.probe.fullTimeRange().tMin)
+    } finally { runtime.cleanup() }
+  })
+
   it('keeps the chosen X scale while restarting after stop with fresh data', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch', 8)
     try {

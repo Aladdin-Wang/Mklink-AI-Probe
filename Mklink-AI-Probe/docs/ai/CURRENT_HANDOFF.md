@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T16:17:41.1189401+08:00`
+- 更新时间：`2026-10-06T17:22:21.8891736+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：按新反馈修复SuperWatch子字性能、暂停缩放丢图与保留比例、双探针首次连接。Web真实操作复现并修复，uint8约21.9k提升至203.8k；双目标48组宽度/偏移/周期原始字节及符号解码通过。GUI886与相关后端276/69通过，正在打包安装并复验桌面及Skill。当前固件无需更改；长期和旧持续目标保持暂停。详见superwatch-ui-alignment-20261006.md。
+- 当前任务：GUI全功能实操审计继续：1acbf856已完成NSIS覆盖、Skill及安装态MCP/CLI/双GUI，单字节约204kHz。发现并修复短历史强制1秒、冻结快照边界延迟、窄窗口裁切、Memory回读改写地址及RTT自动搜索未复用共享符号。相关186 GUI和90后端通过；正在打包最终安装复验。STM在线/脱机HEX实烧成功，在线Boot哈希不变，脱机Boot待补验。当前逐项覆盖与未测项见gui-full-audit-20261006.md；长稳及旧持续目标保持暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -40,7 +40,7 @@
 ## 真机环境
 
 - **state**：双V4已升级最终性能固件f26dc5c7；STM32 RTT8+Watch及pyOCD/OpenOCD下载仿真、Boot不变通过；HPM5301 OpenOCD下载仿真与JTAG恢复通过。SDK/Arm2D/MicroBoot不改；无电压变化，长稳暂停。
-- **installer**：当前安装/本地Skill为0.3.0候选e19addc3，KK启动图案已实看，NSIS覆盖安装退出0，三负载哈希一致。双GUI RTT8/Watch/Skill MCP/CLI、冻结MCP算法/安全拒绝、双探针任务隔离及原生桌面启动退出通过。性能数据取同一采样实现的1ac8389a安装版；KK只改一条SVG路径。算法7059目标/2224 blobs；本地未签名包。
+- **installer**：当前安装及本地Skill为0.3.0 / 1acbf856，NSIS退出0，三负载哈希一致，Windows-only PATH冻结MCP/本地Skill MCP及CLI验证通过。当前新增GUI修复仍待新包覆盖。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作

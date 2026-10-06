@@ -3385,6 +3385,19 @@ function renderBinaryEnvelope(envelope, renderWhilePaused) {
     return false;
   }
   canvas.dataset.binaryEnvelopeState = 'rendered';
+  // The worker can advance past the last UI summary before handling pause.
+  // Use the retained snapshot's bounds, then request its actual visible range.
+  if (IS_SUPERWATCH_MODE && paused && frozenFullTimeRange && binaryTimeOrigin !== null &&
+      Number.isFinite(envelope.frozenStartMs) && Number.isFinite(envelope.frozenEndMs) &&
+      envelope.frozenEndMs > envelope.frozenStartMs) {
+    var actualMin = envelope.frozenStartMs / 1000 - binaryTimeOrigin;
+    var actualMax = envelope.frozenEndMs / 1000 - binaryTimeOrigin;
+    if (frozenFullTimeRange.tMin !== actualMin || frozenFullTimeRange.tMax !== actualMax) {
+      frozenFullTimeRange = { tMin: actualMin, tMax: actualMax };
+      if (binaryVisibleRangeRequester) binaryVisibleRangeRequester();
+      return true;
+    }
+  }
   canvas.dataset.binaryEnvelopePoints = String(envelope.pointCount);
   binaryEnvelope = parsed;
   if (!paused || renderWhilePaused) {
@@ -3511,7 +3524,8 @@ function computeFullTimeRange() {
       Number.isFinite(binaryBufferStart) && Number.isFinite(binaryBufferEnd)) {
     var retainedMin = binaryBufferStart - binaryTimeOrigin;
     var retainedMax = binaryBufferEnd - binaryTimeOrigin;
-    if (!singleTriggerCaptureFrozen && retainedMax - retainedMin < 1) retainedMin = retainedMax - 1;
+    // Do not invent a one-second history when a high-rate buffer retains less.
+    if (retainedMax <= retainedMin) retainedMin = retainedMax - 0.000001;
     return { tMin: retainedMin, tMax: retainedMax };
   }
   var tMax = 0, tMin = Infinity;

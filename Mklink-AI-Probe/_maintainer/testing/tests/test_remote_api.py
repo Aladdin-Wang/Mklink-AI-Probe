@@ -624,6 +624,26 @@ def test_rtt_find_uses_explicit_source_without_persisting_project_config(tmp_pat
     save_rtt_config.assert_not_called()
 
 
+@pytest.mark.parametrize('explicit', [False, True])
+def test_rtt_find_new_gui_uses_loaded_symbols_and_honors_explicit_source(tmp_path, explicit):
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state['device'] = SimpleNamespace(
+        connected=True, axf_status={'loaded': True, 'axf_path': 'active.axf'},
+    )
+    result = SimpleNamespace(addr='0x20001000', source='binary', details=[], warnings=[])
+    with patch('mklink.rtt_addr.diagnose_rtt_addr', return_value=result) as diagnose, patch(
+        'mklink.project_config.load_keil_project',
+        side_effect=AssertionError('loaded source must bypass unrelated project discovery'),
+    ), patch('mklink.project_config.save_rtt_config') as save:
+        response = asyncio.run(_route_endpoint(app, '/api/rtt-find')(
+            source_path='selected.axf' if explicit else None,
+        ))
+    expected = 'selected.axf' if explicit else 'active.axf'
+    diagnose.assert_called_once_with(expected)
+    assert response['source_path'] == expected and response['found']
+    save.assert_not_called()
+
+
 def test_rtt_find_runs_symbol_diagnosis_outside_the_event_loop_thread(tmp_path):
     result = SimpleNamespace(
         addr="0x20001A40", source="binary:firmware.axf", details=[], warnings=[],

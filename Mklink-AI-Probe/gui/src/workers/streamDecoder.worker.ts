@@ -103,6 +103,8 @@ export type WorkerOutput =
       channelCount: number
       pointCount: number
       candidateSampleCount: number
+      frozenStartMs?: number
+      frozenEndMs?: number
       channelOffsets: ArrayBuffer
       times: ArrayBuffer
       timeIndices: ArrayBuffer
@@ -1120,6 +1122,9 @@ export class StreamDecoder {
       channelCount: ring.channelCount,
       pointCount: selection.pointCount,
       candidateSampleCount: selection.candidateSampleCount,
+      ...(this.frozenRing && ring.length ? {
+        frozenStartMs: ring.timeAt(0), frozenEndMs: ring.timeAt(ring.length - 1),
+      } : {}),
       channelOffsets: selection.channelOffsets.buffer as ArrayBuffer,
       times: times.buffer,
       timeIndices: timeIndices.buffer,

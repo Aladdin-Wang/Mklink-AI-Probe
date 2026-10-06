@@ -1420,6 +1420,13 @@ def create_app(
         )
         from mklink.rtt_addr import diagnose_rtt_addr
 
+        if not source_path:
+            device = _state.get("device")
+            if device is not None and device.connected:
+                active_symbols = device.axf_status
+                if active_symbols.get("loaded"):
+                    source_path = active_symbols.get("axf_path")
+
         if source_path:
             result = await asyncio.to_thread(diagnose_rtt_addr, source_path)
             return {
