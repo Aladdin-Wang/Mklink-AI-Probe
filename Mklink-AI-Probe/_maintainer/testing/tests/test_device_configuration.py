@@ -139,6 +139,17 @@ def test_description_preserves_probe_model_restrictions():
         assert not result["security"]["lock_supported"]
 
 
+@pytest.mark.parametrize("model", ["V2", "V3"])
+@pytest.mark.parametrize("part", ["HPM5301", "HPM5301XEGX"])
+def test_hpm_configuration_rejects_unsupported_probe_before_io(model, part):
+    description = describe_configuration(part, model)
+    assert not description["supported"] and not description["read_supported"]
+    device = HpmDevice()
+    with pytest.raises(ValueError, match="HPM targets require V4"):
+        read_configuration(device, part, model)
+    assert device.reads == []
+
+
 def test_legacy_mcp_uses_the_same_snapshot(monkeypatch):
     import fastmcp
     from mklink import mcp_server

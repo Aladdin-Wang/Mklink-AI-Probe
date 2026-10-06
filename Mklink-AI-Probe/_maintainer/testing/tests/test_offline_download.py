@@ -551,7 +551,8 @@ def test_offline_security_rejects_unvalidated_target_and_accepts_board_voltage()
         parse_offline_config(payload)
 
 @pytest.mark.parametrize("model", ["V2", "V3", "V4"])
-def test_hpm_offline_script_uses_rom_api_without_flm(model):
+@pytest.mark.parametrize("image_format", ["bin", "hex"])
+def test_hpm_offline_script_uses_rom_api_without_flm(model, image_format):
     payload = {
         "model": model,
         "script_name": "hpm-offline.py",
@@ -563,21 +564,28 @@ def test_hpm_offline_script_uses_rom_api_without_flm(model):
         "algorithms": [],
         "firmwares": [{
             "id": "app",
-            "file_name": "app.bin",
-            "format": "bin",
+            "file_name": "app." + image_format,
+            "format": image_format,
             "base_address": "0x80000400",
             "algorithm_id": "",
             "upload_index": 0,
         }],
     }
 
+    if model != "V4":
+        with pytest.raises(OfflineDownloadError, match="HPM targets require V4"):
+            parse_offline_config(payload)
+        return
     config = parse_offline_config(payload)
     script = generate_offline_script(config)
 
     assert config.algorithms == ()
     assert "import hpm" in script
     assert 'hpm.board("hpm5301evklite")' in script
-    assert 'hpm.program("app.bin", 0x80000400)' in script
+    if image_format == "bin":
+        assert 'hpm.program("app.bin", 0x80000400)' in script
+    else:
+        assert 'hpm.program_hex("app.hex")' in script
     assert "load.flm" not in script
     assert "cmd.set_reset()" not in script
     assert "cmd.cpu_run()" not in script

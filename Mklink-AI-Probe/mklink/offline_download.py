@@ -198,6 +198,8 @@ def parse_offline_config(
     from mklink.hpm_config import is_hpm_target, normalize_hpm_configuration
 
     hpm_target = is_hpm_target(target_part)
+    if hpm_target and model != "V4":
+        raise OfflineDownloadError("HPM targets require V4 downloader firmware")
     erase_all_before_download = _strict_bool(
         payload.get("erase_all_before_download", False),
         "erase-all-before-download",
@@ -303,8 +305,6 @@ def parse_offline_config(
         if not hpm_target and algorithm_id.casefold() not in seen_algorithm_ids:
             raise OfflineDownloadError("firmware references an unknown FLM algorithm")
         base_address = None
-        if hpm_target and image_format == "hex" and model != "V4":
-            raise OfflineDownloadError("HPM HEX requires V4 downloader firmware")
         if image_format == "bin":
             if raw.get("base_address") in (None, ""):
                 raise OfflineDownloadError("BIN firmware requires a base address")

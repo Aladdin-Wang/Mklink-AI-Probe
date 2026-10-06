@@ -16,6 +16,12 @@ def _profile(part: str, model: str):
     if model not in ("V2", "V3", "V4"):
         raise ValueError("Select a V2/V3/V4 probe model")
     if part in ("HPM5301", "HPM5301XEGX"):
+        if model != "V4":
+            return dict(
+                part_number=part, model=model, kind="otp", supported=False,
+                read_supported=False, fields=[], source="", security=None,
+                reason="HPM targets require V4 downloader firmware",
+            ), None
         # SDK 1.11.0 HPM5301: hpm_otp_table.h and hpm_soc_ip.h.
         rows = [
             ("HARD_LOCK", "永久写保护位图", 0, 0, 32, "位为1表示对应组已永久禁止烧写。用户组18保护Word72–75，组19保护Word76–79。请在下方选择组，不要手工修改整个位图。"),
