@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-07T04:01:52.007858+08:00",
+  "updated_at": "2026-10-07T05:18:25.1420261+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "V3持续验收：主机cb1cf41b完整Python4406通过/2跳过、GUI889通过；本地NSIS已生成，本地Skill已更新且MCP/CLI目录检查通过。桌面覆盖安装因Windows UAC取消未完成，旧安装版仍在；不可将提取包入口测试当作安装态验收。后续仍需实际新版GUI/多客户端、UART及采样长尾验证。"
+    "current_task": "V3持续优化继续，内存以性能和可靠性为先。候选桌面cb1cf41b实测暂停缩放后Start未保持时间跨度；新增fresh-session回归在当前源码通过，尚未复现根因，不得称已修复。见docs/verification/v3-native-watch-restart.md。实际新版覆盖安装仍未完成，不重试此前取消的UAC。"
   },
   "milestones": [
     {

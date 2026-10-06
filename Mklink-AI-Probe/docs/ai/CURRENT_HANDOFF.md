@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T04:01:52.007858+08:00`
+- 更新时间：`2026-10-07T05:18:25.1420261+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V3持续验收：主机cb1cf41b完整Python4406通过/2跳过、GUI889通过；本地NSIS已生成，本地Skill已更新且MCP/CLI目录检查通过。桌面覆盖安装因Windows UAC取消未完成，旧安装版仍在；不可将提取包入口测试当作安装态验收。后续仍需实际新版GUI/多客户端、UART及采样长尾验证。
+- 当前任务：V3持续优化继续，内存以性能和可靠性为先。候选桌面cb1cf41b实测暂停缩放后Start未保持时间跨度；新增fresh-session回归在当前源码通过，尚未复现根因，不得称已修复。见docs/verification/v3-native-watch-restart.md。实际新版覆盖安装仍未完成，不重试此前取消的UAC。
 - 状态：`in_progress`
 
 ## 里程碑

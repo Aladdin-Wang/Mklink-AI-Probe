@@ -900,6 +900,38 @@ describe('WaveformViewer VOFA binary transport', () => {
     } finally { runtime.cleanup() }
   })
 
+  it('keeps a paused zoom span after a fresh acquisition grows beyond that span', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 50000)
+    try {
+      const channels = [{ name: 'signal', addr: 0x20000100, size: 4, type: 'uint32' }]
+      runtime.viewer.configureBinaryChannels(channels)
+      runtime.probe.syncStatus({ state: 'running', interval: .001 })
+      const summary = (end: number) => runtime.viewer.acceptBinarySummary({
+        sequence: BigInt(end), timestampNs: BigInt(end * 1000000),
+        collectedItemCount: end, bufferedItemCount: end,
+        channelCount: 1, latestTimeMs: end, bufferStartMs: 0, bufferEndMs: end,
+        latestValues: Float32Array.of(1).buffer,
+      }, channels)
+      summary(18000)
+      document.getElementById('btn-pause')!.click()
+      const axis = document.getElementById('x-axis-hit')!
+      for (let i = 0; i < 2; i++) axis.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 400, bubbles: true }))
+      const frozen = runtime.probe.visibleTimeRange()
+      const span = frozen.tMax - frozen.tMin
+      expect(span).toBeLessThan(9)
+      document.getElementById('btn-start')!.click()
+      await flushPromises()
+      runtime.viewer.resetBinaryStream()
+      runtime.viewer.configureBinaryChannels(channels)
+      for (const end of [100, 9000, 24000]) {
+        summary(end)
+        const view = runtime.probe.visibleTimeRange()
+        expect(view.tMax - view.tMin).toBeCloseTo(Math.min(end / 1000, span), 6)
+        expect(view.tMax).toBeCloseTo(runtime.probe.fullTimeRange().tMax, 6)
+      }
+    } finally { runtime.cleanup() }
+  })
+
   it('keeps the chosen X scale while restarting after stop with fresh data', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch', 8)
     try {
