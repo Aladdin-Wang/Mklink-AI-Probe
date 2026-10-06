@@ -147,3 +147,28 @@ scroll events and the full acquisition-to-terminal path still need isolation.
 The local fixture servers and owned browser session were closed. Production
 code, dependencies and firmware were unchanged; fixture files remain only in
 ignored build reports.
+
+## Native reproduction confirmed, reception distinguished from scrolling
+
+A fresh run of the same candidate connected V3 on the first attempt with both
+probes present. Started eight channels in the small desktop window, waited for
+output, maximized into three columns, then scrolled the outer grid to channels
+6 and 7. Their visible text remained at sequence 24620 while line counters
+increased from 450 to 833 and then 937, with drops 0/0. A downward wheel action
+inside channel 7 revealed sequence 24909 and later records; channel 6 remained
+at the earlier position. This confirms buffered newer output and a viewport
+follow symptom, rather than proof that the terminal stopped receiving.
+
+The browser component fixture was extended to resize during continuous writes:
+400 records with a width change after 900 ms, followed by 300 records with a
+panel-height change after 200 ms. All eight viewports still equalled their
+buffer bases (381 and 672 respectively), including after revealing the last
+row. This controlled case does not reproduce the WebView behavior. The bundled
+dashboard includes the current xterm viewport synchronization implementation;
+there is no evidence here supporting a dependency downgrade or a firmware fix.
+
+Stopped acquisition and normally closed the owned desktop. Candidate processes
+were absent at the subsequent check. The owned browser session and local
+fixture server were also closed. No production patch is claimed. Next
+investigation should capture WebView buffer/viewport and scroll-event ordering
+at the resize boundary, preserving intentional history browsing.
