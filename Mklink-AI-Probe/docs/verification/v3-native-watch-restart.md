@@ -120,3 +120,30 @@ closed without sending commands. This check is not a precise shutdown timing
 measurement. Firmware, target Flash, voltage and protection were unchanged.
 The earlier cancelled overwrite installation and blocked browser qualification
 remain separate, unresolved gates.
+
+## Terminal follow investigation: controlled browser exclusions
+
+Ran the current xterm 6 dependency and then the actual RttTerminalPanel Vue
+component in a local Chromium fixture, with eight panels and synthetic text.
+No device backend was involved. Read the public active-buffer baseY and
+viewportY rather than inferring reception from screenshots alone.
+
+All eight components followed output while offscreen: after 200 lines both
+positions were 181. Switching from a one-column 950-pixel container to a
+three-column 1600-pixel container changed columns from 119 to 64 without
+separating the positions. Another 100 lines moved both to 281; scrolling the
+outer grid to the last panels retained equality. Clear followed by 100 lines,
+switching back to the narrow layout, hiding the grid during another 100 lines,
+showing it, and continuing output also retained equality on every panel.
+
+Explicitly scrolling one terminal back by 50 lines produced base 281/view 231.
+Another 30 lines advanced its base to 311 while view stayed 231; the other
+seven remained at 311/311. Resizing again preserved that intentional history
+position. Thus unconditional scroll-to-bottom on writes or resize would break
+valid history reading and is not justified by the native observation.
+
+These exclusions do not reproduce or fix the desktop symptom. Native WebView
+scroll events and the full acquisition-to-terminal path still need isolation.
+The local fixture servers and owned browser session were closed. Production
+code, dependencies and firmware were unchanged; fixture files remain only in
+ignored build reports.
