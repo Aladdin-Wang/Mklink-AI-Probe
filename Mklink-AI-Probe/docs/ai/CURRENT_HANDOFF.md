@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T22:23:12+08:00`
+- 更新时间：`2026-10-06T22:55:55+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：增量打包/CRC已实施并收敛，固件cb88321 / UF2 830ddd11，两台V4已升级。每4组CPU分块、最终校验后发布；缓存打包参数、4字帧头、360MHz精确MULHU换算，无新增线程/缓冲/手写汇编。全速批间中位STM单变量94→57~63us、HPM34→24~26us；STM吞吐下降2.4~4.1%是明确取舍。额外单变量专用循环未稳定获益已撤回。10套固件测试、双目标18布局、全速/1ms OpenOCD抢占下载仿真与恢复通过。见superwatch-incremental-packing-20261006.md。孤立HPM 1879us长间隔仍待归因；安装/Skill和长期暂停状态不变。
+- 当前任务：用户授权配套收尾：V4全功能回归后合并固件main，GUI/CLI/MCP完整验证、NSIS覆盖安装、本地Skill、MicroBoot文档与GitHub提交，再交接内置云端来财。首轮Python4365通过、21失败/4错误由缺少算法资产引起；正确资产环境下offline 89通过，远程干净包6项复验通过。GUI889通过；固件31套与DAP恢复通过；双板18布局、OpenOCD抢占下载/调试恢复、八路MUX与传统RTT、HPM5301在线/脱机BIN和HEX实测通过。暂未合并或安装，正在准备NSIS和安装态GUI矩阵。见v4-030-closeout-20261006.md。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -45,9 +45,10 @@
 
 ## 下一动作
 
-1. 继续GUI全功能矩阵：远程服务、RTOS回放、异常文件导入和剩余原生操作；尚未全覆盖。
-2. 本轮增量组帧收敛完成。如继续优化，先定位孤立中断/调度尖峰和SWD短批CRC重算成本，同时看所有相邻间隔及吞吐，不只看批尾中位。不要重复引入已撤回且未稳定获益的单变量专用循环，也不优先扩展USB环预留/新线程。
-3. 源码时间栅格及1us全速说明尚未重打NSIS/本地Skill，当前安装01d89c60；两下载器830ddd11短测通过，CRC帧格式未变。长期及旧持续目标保持暂停，不合并或发布。
+1. 完成远程包资产门禁及双目标实机/八通道回归，补齐GUI矩阵；记录实体外设、跨主机、破坏性操作和长稳限制，不误报全覆盖。
+2. 更新并校验Skill说明，构建NSIS覆盖安装与本地Skill，实际安装态Web/桌面/CLI/MCP多客户端及退出验证。
+3. 验收后按本次明确授权合并V4 PR1的已检查HEAD；主机仍走PR30，不签名/公开发布/改版本渠道。
+4. 独立MicroBoot仓库以最新main 38e0ceb创建codex/v4-030-acceptance-docs，补充文档、构建审计后提交GitHub，准备给侧栏来财的交接；接收任务身份尚未映射，不声称已发送。长期与旧持续目标仍暂停。
 
 ## 已知限制
 

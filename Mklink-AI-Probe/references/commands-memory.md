@@ -333,6 +333,12 @@ CDC 多路复用微秒采样；当前开发固件设置 1 μs（`0.000001` 秒�
 `cmd.dump_memory(addr1, size1, ..., period)` 的 `MPMDMPMD` 帧；旧 MUX 为毫秒采样。
 公共 CLI `python -m mklink dump-memory ...` 自动选择协议。旧 `--dump-mem` 仍接受。
 
+判断数据质量时分开记录：目标采样时间戳的相邻间隔、持续采样率、协议序号缺口、
+传输丢弃和客户端历史覆盖。`drops=0` 仅说明相应传输/缓存层没有报告丢弃，不能
+证明采样间隙内没有遗漏目标变化；未知目标信号也不能据此计算“误码率”。GUI
+栅格和缩放仅改变显示，不改变设备采样周期。暂停/停止后可缩放，恢复时保留时间
+窗口宽度；历史不足时只能显示已保留的数据。
+
 ```bash
 python -m mklink superwatch g_counter,g_sensor --source path/to/firmware.axf --visualize --period 0.01
 ```
