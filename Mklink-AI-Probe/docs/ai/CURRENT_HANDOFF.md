@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T00:50:01.846974+00:00`
+- 更新时间：`2026-10-06T01:11:17.312576+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：持续目标保持暂停。用户要求清理和有限交付估算：已安全删约213MiB测试垃圾，E盘剩约0.85GiB；runs含链接约14.73GiB需手动处理，不整删.build。按3轮正常路径/第4轮阻断修复收尾：完整回归→双板核心真机→NSIS/本地Skill与安装态多客户端验收。HPM实体已换HPM5301，工程hello_world含新hpm5301evklite构建目录；尚未连接确认，禁止沿用HPM6E80镜像和地址，OTP不操作。详见full-function-audit-030.md有限收尾计划。
+- 当前任务：用户已授权有限收尾执行，增加配置/任务生命周期/Pack算法/安全保护/GUI-CLI-MCP为必验项，4轮正常路径+第5轮阻断修复，旧无限持续目标不恢复。现因用户确认runs仍在删除，等待完成通知后启动全回归；E盘仍约0.85GiB。本轮仅完成测试覆盖清单与HPM5301磁盘ELF检查，未连接或烧录、未运行测试。HPM5301 ELF entry80003000/Flash最小文件段80000400/RTT880dc，仅静态信息待实板验证。见full-function-audit-030.md末尾执行准备。
 - 状态：`paused`
 
 ## 里程碑
