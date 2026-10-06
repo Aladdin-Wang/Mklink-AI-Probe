@@ -408,3 +408,32 @@ def test_grouped_batch_preserves_region_order_and_capacity(sizes):
     for t, frame in enumerate(frames):
         assert frame['regions'] == [(i,bytes([t])*n) for i,n in enumerate(sizes)]
     assert watch.gaps == 0
+
+
+def test_bounded_drain_keeps_order_and_queue_accounting():
+    transport, _ = peer()
+    transport.handshake()
+    payloads = [bytes([0, 0])+struct.pack('<I', i)+bytes(100) for i in range(10)]
+    for i, payload in enumerate(payloads):
+        transport.feed(packet(0x41, 17, i+1, payload))
+    assert transport.drain(0x41, 255, max_bytes=220) == payloads[:2]
+    assert transport._sizes[(0x41, 255)] == 8*106
+    # A budget smaller than one event still makes progress without splitting it.
+    assert transport.drain(0x41, 255, max_bytes=1) == payloads[2:3]
+    assert transport.drain(0x41, 255) == payloads[3:]
+    assert (0x41, 255) not in transport._sizes
+    assert transport.stats()['watch_dropped_bytes'] == 0
+
+
+def test_watch_burst_budget_is_bounded_and_does_not_enlarge_rtt_queues():
+    transport, _ = peer()
+    transport.handshake()
+    for i in range(3000):
+        transport.feed(packet(0x41, 17, i+1, bytes([0, 0])+struct.pack('<I', i)+bytes(100)))
+    assert 0 < transport._sizes[(0x41, 255)] <= transport.WATCH_QUEUE_BYTES
+    assert transport.stats()['watch_dropped_bytes'] > 0
+    for i in range(1000):
+        transport.feed(packet(0x40, 17, i+3001, bytes(106)))
+    assert 0 < transport._sizes[(0x40, 0)] <= transport.MAX_QUEUE_BYTES
+    assert transport.stats()['rtt_dropped_bytes'][0] > 0
+    assert transport.request(2, b'alive') == b''

@@ -43,7 +43,10 @@ class MuxWatchSession:
 
     def read_frames(self):
         result = []
-        for event in self.transport.drain(0x41, 255):
+        # Keep decoding/publication bursts below the bounded RX queue's time
+        # budget. Draining 64 KiB expands into thousands of Python sample
+        # objects and can stall the next drain long enough to overflow it.
+        for event in self.transport.drain(0x41, 255, max_bytes=16384):
             index, status = event[:2]
             if status == 7:
                 self._pending = []

@@ -9,7 +9,7 @@
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：有限性能修复与OpenOCD抢占已实机通过，持续目标/长稳保持暂停。分组协议配套升级，旧0x30/status8删除；采集栈恢复ILM、热点O3/ILM、复用多变量内核和USB完成唤醒。最终3秒STM208.23k/HPM114.71k，四区域24.07k/33.53k；20秒193.16k/111.41k是JTAG恢复修复前相同热路径。OpenOCD双目标暂停/单步/烧录校验/采集恢复通过，修复JTAG退出后重连；STM Boot不变。新版NSIS/Skill正在同步，尚未确认安装。详见superwatch-performance-20261006.md。 afca安装态发现主机逐样本开销导致接收丢弃；已改有界256样本批统计/锁和编译覆盖掩码，284回归通过，源码GUI186.39k/约100万组零丢弃；最终包重建中。
+- 当前任务：有限性能修复与OpenOCD双目标抢占通过；固件a8967f6/f26dc5c7已升级双V4。配套新分组协议、热点O3/ILM及快速栈恢复，最终固件3秒STM208.23k/HPM114.71k。主机批统计/锁/区域掩码、16KiB解码窗口和固定256KiB Watch突发余量；20秒源码GUI4419346组/末段201.47k、各层零丢弃，84 MUX/284主机回归通过。72145f4d已安装但最终突发优化包重建中，待安装验证。持续目标与长期保持暂停，分支不合并。
 - 状态：`paused`
 
 ## 里程碑

@@ -32,6 +32,10 @@ def packet(op, epoch, request, payload=b''):
 
 class MuxTransport:
     MAX_QUEUE_BYTES = 65536
+    # ~160 ms at 200k 4-byte samples/s (timestamp + value). RTT queues keep
+    # their original limit; replies bypass event queues. Still drop oldest on
+    # sustained overload, never block the sole USB reader or command replies.
+    WATCH_QUEUE_BYTES = 262144
 
     def __init__(self, write, command_lock=None):
         self._write = write
@@ -194,7 +198,8 @@ class MuxTransport:
                     key = (op, payload[0] if op == 0x40 else 255)
                     queue = self._queues.setdefault(key, deque())
                     size = self._sizes.get(key, 0)
-                    while queue and size+len(payload) > self.MAX_QUEUE_BYTES:
+                    budget = self.WATCH_QUEUE_BYTES if op == 0x41 else self.MAX_QUEUE_BYTES
+                    while queue and size+len(payload) > budget:
                         removed = queue.popleft()
                         size -= len(removed)
                         self.dropped_bytes[key] = self.dropped_bytes.get(key, 0)+len(removed)-6
@@ -208,12 +213,28 @@ class MuxTransport:
                     'rtt_dropped_bytes': {ch: self.dropped_bytes.get((0x40, ch), 0) for ch in range(8)},
                     'watch_dropped_bytes': self.dropped_bytes.get((0x41, 255), 0)}
 
-    def drain(self, op, channel):
+    def drain(self, op, channel, *, max_bytes=None):
         with self._condition:
             self._check()
             key = (op, channel)
-            frames = list(self._queues.pop(key, ()))
-            self._sizes.pop(key, None)
+            if max_bytes is None:
+                frames = list(self._queues.pop(key, ()))
+                self._sizes.pop(key, None)
+                return frames
+            if max_bytes <= 0:
+                raise ValueError('Drain budget must be positive')
+            queue = self._queues.get(key)
+            frames = []
+            used = 0
+            while queue and (not frames or used+len(queue[0]) <= max_bytes):
+                frame = queue.popleft()
+                frames.append(frame)
+                used += len(frame)
+            if queue:
+                self._sizes[key] -= used
+            else:
+                self._queues.pop(key, None)
+                self._sizes.pop(key, None)
             return frames
 
     def read_memory(self, address, size):
