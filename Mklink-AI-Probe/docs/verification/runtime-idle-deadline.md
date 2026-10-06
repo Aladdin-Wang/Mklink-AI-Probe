@@ -81,3 +81,8 @@ Local evidence: stage67-local-bundle.log, stage67-shared-clients.json and the
 candidate artifact directory's payload.json, entrypoints.json and
 skill-install.json. Generated Web resources are retained in the source branch.
 Long-running AI clients need a restart to load the updated Skill runtime.
+After recording package hashes, normalized only the tracked generated HTML's
+mixed CRLF/LF endings to LF for repository whitespace checks. Candidate and
+installed Skill retain their tested bytes; the normalized HTML has identical
+content after line-ending normalization. No package hash is changed by this
+source-only normalization.
