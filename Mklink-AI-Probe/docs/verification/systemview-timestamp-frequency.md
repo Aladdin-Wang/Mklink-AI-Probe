@@ -57,4 +57,5 @@ Logs: v3-stage45-python.log, v3-stage45-gui.log, v3-stage45-bundle.log;
 artifact evidence: install-v3-cb1cf41b/package-entrypoints.json and
 skill-install.json. Full-test temporary directory contains links and was
 retained by the safe-cleanup policy; it was not forcibly deleted.
-`nTracked generated index.html line endings were normalized after packaging; the retained installer/Skill archives preserve the exact built bytes and hashes above.
+
+Tracked generated index.html line endings were normalized after packaging; the retained installer/Skill archives preserve the exact built bytes and hashes above.
