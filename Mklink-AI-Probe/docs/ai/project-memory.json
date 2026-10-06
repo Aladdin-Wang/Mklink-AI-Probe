@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-07T06:37:23.7956109+08:00",
+  "updated_at": "2026-10-07T06:43:49.9658413+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "V3阶段64/65的更小打包及等待余量候选均无稳定收益，已恢复stage62固件；详见V3任务分支报告。共享后台退出量化修复：临近5秒空闲截止点准确唤醒，44项测试通过，源码V3多SDK/CLI/本地Skill MCP/RTT8实测端口5.633→5.232秒、进程5.841→5.420秒。见docs/verification/runtime-idle-deadline.md。未重新打包安装或更新本地Skill；UAC取消仍不重试。后续继续功能矩阵收敛。"
+    "current_task": "3e65f1ad空闲截止修复已构建本地0.3.0 NSIS候选并更新本地Skill（备份在构建盘）。提取包39个Web资源逐字节匹配，7059目标/2224算法；Windows-only PATH下冻结MCP和Skill MCP查询通过。V3包内多SDK/CLI/Skill MCP/RTT8通过，端口5.241秒释放、进程5.427秒退出；无Python子进程。见runtime-idle-deadline.md。未覆盖安装/新GUI验收，之前UAC取消不重试；继续收敛剩余功能矩阵。"
   },
   "milestones": [
     {
@@ -40,7 +40,7 @@
     },
     {
       "area": "149固件与后台空闲退出",
-      "result": "docs/verification/runtime-idle-mux-149.md：最终安装版GUI退出6.05秒、AI强杀5.40秒释放COM；真实双网页退出通过，网络排空上限回归4项通过，5508bd06三项CI及固件4ab77c2两项CI通过。 新补验：runtime-idle-deadline.md：保留5秒租约和所有忙碌保护，仅消除最长约1秒的轮询量化；44测试通过，源码真机多客户端和RTT8通过，端口5.232秒释放，后台5.420秒退出。不承诺硬实时5秒；打包安装待后续。"
+      "result": "docs/verification/runtime-idle-mux-149.md：最终安装版GUI退出6.05秒、AI强杀5.40秒释放COM；真实双网页退出通过，网络排空上限回归4项通过，5508bd06三项CI及固件4ab77c2两项CI通过。 新补验：runtime-idle-deadline.md：保留5秒租约和所有忙碌保护，仅消除最长约1秒的轮询量化；44测试通过，源码真机多客户端和RTT8通过，端口5.232秒释放，后台5.420秒退出。不承诺硬实时5秒；打包安装待后续。 打包补验：3e65f1ad本地NSIS已生成、本地Skill更新；冻结MCP+Skill MCP精简PATH通过，提取包多客户端RTT8/CLI真机端口5.241秒释放，进程5.427秒退出，无Python子进程。包内Web39文件一致；非覆盖安装。"
     },
     {
       "area": "统一远程GUI",

@@ -45,3 +45,39 @@ Local evidence: stage66-{baseline,candidate}-clients.json and MCP logs in the
 firmware application's ignored reports directory. No device IDs, local project
 paths or raw logs are needed in this document. No firmware, target Flash,
 voltage, permanent protection, SDK or submodule code changed.
+
+## Packaged candidate and local Skill follow-up
+
+Built a local unsigned v0.3.0 NSIS from source 3e65f1ad using the repository
+builder, with fresh frozen backend and production GUI. No signing key was
+loaded, installer executed, update channel changed or release published.
+Previously cancelled overwrite installation remains unqualified.
+
+Extracted the NSIS payload and compared all 39 bundled Web files byte-for-byte
+with this production build. The validated algorithm manifest has 7059 targets
+and 2224 blobs. Installed the public Skill archive through its existing updater,
+with its prior contents backed up on the build drive. The Skill records source
+3e65f1ad; its GUI matches this build and idle-monitor source matches after
+normalizing Git line endings. No maintainer content was added to the Skill.
+
+Both frozen MCP and newly installed Skill MCP initialized with a Windows-only
+PATH and returned STM32 catalog/security queries without opening hardware.
+The extracted sidecar then passed V3 shared-client hardware verification:
+two SDK clients shared one protocol-49 backend, CLI read exact RAM bytes, and
+installed Skill MCP read RTT channels 0–7. Observer detachment preserved the
+owner's RTT acquisition. Final detach released the port in 5.241 s and exited
+the process in 5.427 s; serial reopening succeeded. The backend process tree
+contained no Python interpreter. These results qualify the extracted payload,
+not an overwrite installation or a new rendered GUI acceptance run.
+
+Candidate SHA256:
+
+- NSIS: ee96d94c3ad90fc216ce5cea04c44a6b1650903fa1462cf56e77e93f5581c0b4
+- Sidecar: 01f79d9d098d99d13e75103eebc541da22a9325ab650df76adb287e669194d06
+- Desktop: 4947da8c624d9bac7855ae21d1092e072054eb93d7fdf5995268178c702305a2
+- Skill ZIP: a5db4de7ce9db635c5b1503b27939ee21071193b2c95a4aa2c03df627d081eb6
+
+Local evidence: stage67-local-bundle.log, stage67-shared-clients.json and the
+candidate artifact directory's payload.json, entrypoints.json and
+skill-install.json. Generated Web resources are retained in the source branch.
+Long-running AI clients need a restart to load the updated Skill runtime.
