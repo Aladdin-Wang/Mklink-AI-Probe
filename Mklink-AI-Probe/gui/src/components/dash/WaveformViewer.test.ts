@@ -190,6 +190,7 @@ async function loadRttViewerRuntime(
     'function updateWatchTable() { window.__watchTableUpdates++;',
   ) + `
 window.__rttTestProbe = {
+  timeGrid: timeGrid,
   fields: function() { return FIELDS; },
   metadata: function() { return CHANNEL_METADATA; },
   binary: function() { return {
@@ -368,6 +369,24 @@ describe('WaveformViewer VOFA binary transport', () => {
     } finally {
       runtime.cleanup()
     }
+  })
+
+  it('anchors readable time divisions while panning and adapts units on zoom', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      const grid = runtime.probe.timeGrid(2.5945, 2.6678, 800)
+      expect(grid.division).toBe('10 ms/div')
+      const major = grid.ticks.filter((t: any) => t.major)
+      expect(major.map((t: any) => grid.label(t.time))).toEqual(['2600','2610','2620','2630','2640','2650','2660'])
+      const pan = runtime.probe.timeGrid(2.5955, 2.6688, 800)
+      expect(pan.ticks.filter((t: any) => t.major).map((t: any) => t.time)).toEqual(major.map((t: any) => t.time))
+      expect(runtime.probe.timeGrid(0, 0.000073, 800).division).toBe('10 μs/div')
+      expect(runtime.probe.timeGrid(0, 73, 800).division).toBe('10 s/div')
+      expect(runtime.probe.timeGrid(0, 0, 800)).toBeNull()
+      expect(runtime.probe.timeGrid(0, Infinity, 800)).toBeNull()
+      expect(runtime.probe.timeGrid(0, 73, 100000).ticks.length).toBeLessThanOrEqual(100)
+      expect(runtime.probe.timeGrid(-0.03, 0.04, 800).label(0)).toBe('0')
+    } finally { runtime.cleanup() }
   })
 
   it('labels a standalone array snapshot by index and counts its elements', async () => {

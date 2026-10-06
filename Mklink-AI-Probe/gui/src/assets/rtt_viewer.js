@@ -1692,19 +1692,16 @@ function _buildWatchRowHtml(name, m) {
   if (treeNode) {
     hasChildren = treeNode.children && treeNode.children.length > 0
       && treeNode.kind !== 'bitfield' && !treeNode.enumValues;
-    console.log('[watch-row] name=' + name + ' treeNode found, hasChildren=' + hasChildren + ' children=' + (treeNode.children ? treeNode.children.length : 0) + ' kind=' + treeNode.kind);
   } else {
     // No cached tree: show expand button for struct-sourced items or top-level names
     var baseName = name.split('.')[0];
     var treeCached = !!_inspectCache[baseName];
     if (treeCached) {
       hasChildren = false; // tree exists but this path not found -> leaf
-      console.log('[watch-row] name=' + name + ' treeCached but path not found -> hasChildren=false');
     } else {
       // No tree cached yet: guess based on metadata / name pattern
       hasChildren = (CHANNEL_METADATA[name] && CHANNEL_METADATA[name].source === 'struct')
         || (name.indexOf('.') < 0);
-      console.log('[watch-row] name=' + name + ' no tree cached, guess hasChildren=' + hasChildren + ' source=' + (CHANNEL_METADATA[name] ? CHANNEL_METADATA[name].source : 'null'));
     }
   }
   var isExpanded = !!_expandedRows[name];
@@ -1836,7 +1833,6 @@ function _rebuildWatchTable() {
   // Skip rebuild if any row is being edited (dblclick editing in progress)
   if (tbody.querySelector('tr.watch-editing')) return;
   var names = sortedFieldNames();
-  console.log('[rebuildWatch] names=' + names.join(', ') + ' expanded=' + Object.keys(_expandedRows).join(','));
   var html = '';
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
@@ -1845,7 +1841,6 @@ function _rebuildWatchTable() {
     if (name.indexOf('.') >= 0) {
       var baseName = name.split('.')[0];
       if (FIELDS[baseName]) {
-        console.log('[rebuildWatch] skipping child ' + name + ' because parent ' + baseName + ' exists');
         continue;
       }
     }
@@ -1877,7 +1872,6 @@ function _bindWatchDelegates(tbody) {
       setChannelVisible(el.dataset.name, el.checked);
     } else if (el.classList.contains('watch-child-add-toggle')) {
       var childPath = el.dataset.childPath;
-      console.log('[watch-child-toggle] path=' + childPath + ' checked=' + el.checked);
       if (el.checked) {
         superwatchAddName(childPath);
       } else {
@@ -2132,7 +2126,6 @@ function applyChannelMetadata(channels, purge) {
   for (var name in channels) {
     if (!channels.hasOwnProperty(name)) continue;
     var meta = channels[name] || {};
-    console.log('[applyMeta] name=' + name + ' source=' + meta.source + ' isNew=' + !FIELDS[name] + ' purge=' + purge);
     CHANNEL_METADATA[name] = Object.assign({}, CHANNEL_METADATA[name] || {}, meta);
     if (!FIELDS[name]) {
       FIELDS[name] = {
@@ -3994,6 +3987,28 @@ function formatTimeAxisValue(seconds) {
   return (seconds * 1000).toFixed(1) + 'ms';
 }
 
+// Stable 1/2/5 time divisions anchored to acquisition time, not viewport edges.
+function timeGrid(min, max, width) {
+  var span = max - min;
+  if (!isFinite(span) || span <= 0) return null;
+  var raw = span / Math.max(2, Math.min(10, Math.floor(width / 100)));
+  var magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+  var fraction = raw / magnitude;
+  var step = (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * magnitude;
+  var scale = step < 0.001 ? 1000000 : step < 1 ? 1000 : 1;
+  var unit = scale === 1000000 ? 'μs' : scale === 1000 ? 'ms' : 's';
+  var decimals = Math.max(0, Math.min(6, -Math.floor(Math.log10(step * scale) + 1e-9)));
+  function label(value) {
+    return (Math.abs(value) < step * 1e-8 ? 0 : value * scale).toFixed(decimals);
+  }
+  var ticks = [], minor = step / 5;
+  var first = Math.ceil(min / minor - 1e-8);
+  for (var index = first; index * minor <= max + minor * 1e-8 && ticks.length < 100; index++) {
+    ticks.push({ time: index * minor, major: index % 5 === 0 });
+  }
+  return { step: step, unit: unit, label: label, division: label(step) + ' ' + unit + '/div', ticks: ticks };
+}
+
 function formatYAxisValue(value, span) {
   var absValue = Math.abs(value);
   var absSpan = Math.abs(span);
@@ -4176,29 +4191,35 @@ function drawChart() {
   else drawPanelGrid(mainTop, mainHeight, IS_SUPERWATCH_MODE ? mainYRange : { yMin: yMin, yMax: yMax });
   if (splitActive) drawPanelGrid(splitTop, splitHeight, splitYRange);
 
-  // Time grid is shared, but each split panel gets its own vertical strokes.
-  for (var i = 0; i <= 5; i++) {
-    var xv = tMin + (tMax - tMin) * i / 5;
+  // Shared time divisions across all panels; minor ticks stay visually secondary.
+  var timingGrid = IS_SUPERWATCH_MODE && !arrayOnly ? timeGrid(tMin, tMax, pw) : null;
+  var timeTicks = timingGrid ? timingGrid.ticks : [0,1,2,3,4,5].map(function(i) {
+    return {time:tMin+(tMax-tMin)*i/5,major:true,index:i};
+  });
+  for (var i = 0; i < timeTicks.length; i++) {
+    var tick = timeTicks[i], xv = tick.time;
     var xp = Math.round(tx(xv)) + 0.5;
+    ctx.globalAlpha = tick.major ? 1 : 0.35;
+    ctx.lineWidth = tick.major ? 0.8 : 0.5;
     ctx.beginPath();
     if (workspacePanels) workspacePanels.forEach(function(panel){ctx.moveTo(xp,panel.top);ctx.lineTo(xp,panel.top+panel.height);});
-    else {ctx.moveTo(xp, mainTop); ctx.lineTo(xp, mainTop + mainHeight);}
-    if (splitActive) {
-      ctx.moveTo(xp, splitTop); ctx.lineTo(xp, splitTop + splitHeight);
-    }
+    else {ctx.moveTo(xp, mainTop);ctx.lineTo(xp, mainTop+mainHeight);}
+    if (splitActive) {ctx.moveTo(xp,splitTop);ctx.lineTo(xp,splitTop+splitHeight);}
     ctx.stroke();
+    ctx.globalAlpha = 1;
+    if (!tick.major) continue;
     ctx.fillStyle = TEXT_DIM;
     ctx.font = '11px ' + getComputedStyle(document.body).getPropertyValue('--font-mono');
-    ctx.textAlign = 'center';
+    ctx.textAlign = xp < ml+35 ? 'left' : xp > ml+pw-35 ? 'right' : 'center';
     ctx.fillText(arrayOnly
-      ? String(arrayOnly.arrayStartIndex + Math.round((arrayOnly.arrayValues.length - 1) * i / 5))
-      : formatTimeAxisValue(xv), xp, mt + ph + 16);
+      ? String(arrayOnly.arrayStartIndex + Math.round((arrayOnly.arrayValues.length-1)*tick.index/5))
+      : timingGrid ? timingGrid.label(xv)+' '+timingGrid.unit : formatTimeAxisValue(xv),xp,mt+ph+16);
   }
-
   ctx.fillStyle = TEXT_DIM;
   ctx.font = '11px ' + getComputedStyle(document.body).getPropertyValue('--font-body');
   ctx.textAlign = 'center';
-  ctx.fillText(arrayOnly ? 'index' : 'time (' + timeUnit + ')', ml + pw/2, H - 4);
+  ctx.fillText(arrayOnly ? 'index' : timingGrid ? 'time ('+timingGrid.unit+') · '+timingGrid.division : 'time ('+timeUnit+')',ml+pw/2,H-4);
+
   ctx.save();
   ctx.translate(10, mainTop + mainHeight/2);
   ctx.rotate(-Math.PI/2);
@@ -5109,7 +5130,6 @@ function showInspectorTree(tree) {
 function superwatchAddName(name) {
   name = String(name || '').trim();
   if (!name) return;
-  console.log('[superwatchAdd] name=' + name + ' alreadyInFields=' + !!FIELDS[name]);
   fetch(API_SW + 'add', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -5117,7 +5137,6 @@ function superwatchAddName(name) {
   })
     .then(function(r){ return r.json(); })
     .then(function(d){
-      console.log('[superwatchAdd] response for ' + name + ':', JSON.stringify(d.item));
       if (d.item && d.item.name) {
         delete _removedChannels[d.item.name];
         var meta = {};

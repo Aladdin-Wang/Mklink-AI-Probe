@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-06T17:46:48.610814+08:00",
+  "updated_at": "2026-10-06T18:01:50.386389+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "GUI实操审计已完成01d89c60安装和Skill、双GUI缩放/Memory/MCP验证；桌面CSV确认100us采集存在最大1159us间隙。固件ded5f2b改为高速采集线程直接喂狗，取消每100ms强制休眠；STM下载器已升级ed77ec78，原始3秒100us最大266us，全速208.1kHz/最大418us，丢弃零。OpenOCD抢占、APP下载校验、Boot不变及RTT8/Watch恢复通过，固件两项CI通过。HPM尚未升级此补丁，GUI全矩阵未完成，详见gui-full-audit-20261006.md。长稳和旧持续目标仍暂停。"
+    "current_task": "时间栅格和打印清理：SuperWatch 1/2/5等时主栅格/五小格/自适应时间单位/每格时长已实现；107相关回归和真实浏览器双通道暂停缩放恢复验证，10.4609628s窗口保留。清理两份查看器18处临时打印。新界面尚未重新覆盖安装包/Skill，当前安装01d89c60。STM固件ded5f2b直接喂狗已实测；残余266us为前轮3秒短测，抖动继续定位，不宣称无漏采。GUI其余矩阵仍有未测项；长稳及旧持续目标暂停。"
   },
   "milestones": [
     {

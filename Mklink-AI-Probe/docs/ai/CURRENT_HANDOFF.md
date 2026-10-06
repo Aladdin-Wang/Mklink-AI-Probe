@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T17:46:48.610814+08:00`
+- 更新时间：`2026-10-06T18:01:50.386389+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：GUI实操审计已完成01d89c60安装和Skill、双GUI缩放/Memory/MCP验证；桌面CSV确认100us采集存在最大1159us间隙。固件ded5f2b改为高速采集线程直接喂狗，取消每100ms强制休眠；STM下载器已升级ed77ec78，原始3秒100us最大266us，全速208.1kHz/最大418us，丢弃零。OpenOCD抢占、APP下载校验、Boot不变及RTT8/Watch恢复通过，固件两项CI通过。HPM尚未升级此补丁，GUI全矩阵未完成，详见gui-full-audit-20261006.md。长稳和旧持续目标仍暂停。
+- 当前任务：时间栅格和打印清理：SuperWatch 1/2/5等时主栅格/五小格/自适应时间单位/每格时长已实现；107相关回归和真实浏览器双通道暂停缩放恢复验证，10.4609628s窗口保留。清理两份查看器18处临时打印。新界面尚未重新覆盖安装包/Skill，当前安装01d89c60。STM固件ded5f2b直接喂狗已实测；残余266us为前轮3秒短测，抖动继续定位，不宣称无漏采。GUI其余矩阵仍有未测项；长稳及旧持续目标暂停。
 - 状态：`in_progress`
 
 ## 里程碑
