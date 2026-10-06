@@ -227,6 +227,10 @@ def build_sidecar(force=False):
             "--workpath", str(work_root / "work"),
             "--specpath", str(work_root),
             "--collect-all", "mklink",
+            # FastMCP resolves its server lazily and reads distribution versions
+            # at runtime; static import analysis alone misses the frozen entry.
+            "--collect-all", "fastmcp",
+            "--recursive-copy-metadata", "fastmcp",
             "--collect-all", "elftools",
             "--collect-all", "pyocd",
             "--copy-metadata", "pyocd",

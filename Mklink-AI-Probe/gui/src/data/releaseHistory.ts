@@ -18,7 +18,7 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       '配套新版 V4 固件支持 CDC 多路复用，多通道 RTT、SuperWatch 与内存访问可并行。',
       'RTT 各通道功能一致，均支持日志、终端、HEX、曲线、独立暂停和发送；切换显示保留历史。',
       '全部客户端退出且无在途任务后约 5 秒启动后台清理，释放下载器端口。',
-      '当前完成 STM32 短测；长期、跨物理主机及八实体通道仍待验证。',
+      '已完成 STM32 八通道 RTT 与 DAP 并行短测、HPM5301 BIN/HEX 在线与脱机脚本验证；长期及跨物理主机测试仍待验证。',
     ],
     changesEn: [
       'GUI, AI, CLI and MCP share a backend per probe, with independent probes and local aliases.',
@@ -26,7 +26,7 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       'Companion V4 firmware multiplexes multichannel RTT, SuperWatch and memory access over CDC.',
       'Every RTT channel supports logs, terminal, HEX, charts, independent pause and sending; switching views retains history.',
       'About five seconds after the last client leaves and pending work completes, backend cleanup releases the probe.',
-      'STM32 short tests completed; long runs, separate remote hosts and eight physical channels remain unverified.',
+      'STM32 eight-channel RTT/DAP short tests and HPM5301 BIN/HEX online and offline-script checks completed; long runs and separate remote hosts remain unverified.',
     ],
   },
   {

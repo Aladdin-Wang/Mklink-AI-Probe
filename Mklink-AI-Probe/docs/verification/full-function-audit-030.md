@@ -850,3 +850,9 @@ GUI全量85文件/885通过，82.76秒；生产构建通过，footer ce10d348723
 最终镜像STM32实体8通道RTT+Watch+DAP下载/调试：8路均收到数据，每路下发256字节且目标计数和滚动哈希一致；Watch274帧；DAP单步、APP扇区重刷、全部镜像读回通过，20KiB Boot字节不变。DAP占用期间MUX目标请求返回busy、旧流明确失效；释放后显式重启8路RTT均恢复、Watch144帧。10.67秒是整个DAP下载/验证操作耗时，不是抢占延迟。堆used/peak测试前后均10680，无长稳结论。未改SDK/Arm2D/MicroBoot，未触碰OTP或电压。
 
 证据reports/closeout-hpm5301-flash-first.json、closeout-hpm5301-flash.json（原失败）、closeout-hpm5301-unknown-readback.json、closeout-hpm5301-aligned.json、closeout-hpm5301-offline.json、closeout-hpm5301-final-offline.json、closeout-rtt8-dap-flash.json及双板final-upgrade报告。下一步NSIS/本地Skill与配置/任务/Pack/安全/多入口安装态验收；不能据此宣称完整矩阵通过。
+
+### 安装态 closeout 补验与打包缺陷
+
+277d3e0c NSIS覆盖退出0，三项安装负载哈希匹配；本地Skill已覆盖，包内7059目标/2224算法内容验证通过。安装sidecar在Windows-only PATH下运行，双Web GUI均显示八路RTT，独立HEX/日志/曲线、暂停恢复、收起历史保留和配置保存刷新恢复通过；本地Skill stdio MCP并行读RTT/内存、CLI查询及SuperWatch正常，无页面脚本错误，最后客户端退出5.83秒释放端口。原生桌面启动及0.3.0版本窗口确认，正常关闭。
+
+进一步调用安装目录sidecar的mcp入口，发现FastMCP元数据缺失导致启动失败；Skill MCP成功不能覆盖此入口。打包器新增FastMCP动态模块和递归依赖元数据收集，48项打包器测试通过，需重建后用真实stdio握手/工具调用确认。版本说明同步更新八通道已验证的事实；未把长期、跨物理主机或脱机物理按键标记为通过。

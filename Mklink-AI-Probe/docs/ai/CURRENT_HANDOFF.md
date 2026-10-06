@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T02:46:29.5739078Z`
+- 更新时间：`2026-10-06T02:57:29.4807462Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：有限收尾继续。完整Python4314过/3跳过，算法目录修复补测4过/2可选observe跳过；GUI885过/生产构建过。发现HPM5301 HEX真实阻断，固件49e43d2修复未对齐源的抽象内存写入；18组固件契约过，双V4已升级最终UF2 ce7ba3a2。HPM5301 BIN/HEX在线及脱机脚本均读回运行通过，最终镜像脱机HEX补测过。STM32 RTT8收发+Watch+DAP调试/APP重刷及Boot保持通过。开始NSIS/Skill交付及配置/任务/Pack/安全、多入口安装态专项。旧持续目标/长期测试保持暂停，未合并发布。详情见full-function-audit-030.md末尾。
+- 当前任务：有限收尾：277d3e0c NSIS覆盖/Skill安装成功，双Web RTT8+Watch+Skill MCP/CLI通过，5.83秒释放端口。原生桌面启动版本确认。发现安装sidecar MCP缺FastMCP元数据，补齐动态模块和递归元数据并更新八通道验证说明；打包器48测试通过，正在重建并补安装态任务/算法/安全/双探针验收。双V4 ce7ba3a2、HPM5301及STM32真机证据见矩阵末尾。长期及无限目标保持暂停。
 - 状态：`paused`
 
 ## 里程碑
