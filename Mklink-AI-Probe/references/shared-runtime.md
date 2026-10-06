@@ -1,7 +1,7 @@
 # 0.3.0 共享 CDC 后台与多下载器
 
 本页对应 0.3.0 共享后台实现；使用前核对客户端与后台版本及能力。
-底层仍使用 CDC。单通道兼容旧固件；多通道 RTT 与 SuperWatch 并行需配套 `MUX_TARGET=1` 的 V4 开发固件。
+底层仍使用 CDC。单通道兼容旧固件；多通道 RTT 与 SuperWatch 并行需配套 `MUX_TARGET=1` 的 V3/V4 开发固件。按能力协商判断，不能只看旧的版本号字符串；V3 无屏幕，不支持 HPM 目标。
 
 ## 连接与选择
 
@@ -438,7 +438,7 @@ python -m mklink systemview-report --probe "电机板" --duration 6 --out report
 不能把旧地址和待发送数据自动重放到新固件。STM32/HPM 的 OpenOCD 下载、
 暂停/单步/运行及显式恢复已完成短时真机验证。
 
-配套 V4 固件报告 `MUX_TARGET=1` 后，GUI/CLI/MCP 自动使用同一个 CDC 帧通道。
+配套 V3/V4 固件报告 `MUX_TARGET=1` 后，GUI/CLI/MCP 自动使用同一个 CDC 帧通道。
 仍然只有后台打开串口和读取 USB，客户端读取后台缓存。外部串口助手的旧 RTT
 映射仍保留；它与后台不能同时打开命令口。
 
@@ -464,7 +464,7 @@ python -m mklink systemview-report --probe "电机板" --duration 6 --out report
 - 任一超时/CRC/会话错误关闭本次协议会话，不重放未知写入，也不自动降级原始命令。
   后台异常退出后，显式重连可恢复本机记录的帧模式。
 
-STM32 已验证八个活动 RTT 通道，HPM5301 已验证其测试程序实际提供的 RTT 通道，
+V3/STM32 已验证八通道双向、与 SuperWatch 共存、安装版 CLI/Skill MCP 共享访问及最后客户端退出后的串口释放；完整 GUI 和长期验证尚未完成。V4/STM32 已验证八个活动 RTT 通道，V4/HPM5301 已验证其测试程序实际提供的 RTT 通道，
 两目标均完成 SuperWatch 与 DAP 抢占短测。这不代表跨物理主机或长时间采集验收；
 旧程序需更新配套主机版本才会出现新界面。
 

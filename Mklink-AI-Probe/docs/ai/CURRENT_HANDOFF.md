@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T02:13:22.3522423+08:00`
+- 更新时间：`2026-10-07T02:37:07.9433303+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V3应用层持续迁移与验收：无屏幕、不支持HPM、不新增WinUSB；保留充足栈/缓冲，DAP优先。V3原生脱机BIN/HEX及APP全量回读、Bootloader保持通过；配置读取在绑定现有校验资产后通过，错误容量拒绝。主机修正V2/V3 HPM BIN/HEX脱机配置与HPM5301只读描述边界，111项相关测试通过。未更新安装包，未合并/发布，完整矩阵仍进行中。此前V4收尾见v4-030-closeout-20261006.md。
+- 当前任务：V3应用层迁移持续验收：最新CRC修正固件已通过八通道RTT双向+Watch、18种布局34314精确样本、OpenOCD抢占下载校验恢复、安装后台/CLI/Skill MCP共存及5.5秒释放。V4共性代码原生编译通过，真机尚待验收。已修正并同步本地Skill的V3八通道能力与HPM限V4说明；未更新安装包，未合并发布，完整GUI/UART及长尾问题仍待处理。
 - 状态：`in_progress`
 
 ## 里程碑

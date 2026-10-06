@@ -44,7 +44,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 - **flush**：单批总数据最多 **12 KiB**、最多 **8 个地址项**。超额时按批串行，
   每批等待提示符；不得与 dump、VOFA、RTT 或 SystemView 并发。
 - **RTT/SystemView**：地址只允许省略或传目标已知可写 RAM 内的 4 字节对齐地址，
-  不得拼接 Pika 表达式；旧固件/SystemView 通道为 **0~2**；支持 `MUX_TARGET=1` 的 V4 RTT 可订阅 **0~7**，以目标实际活动通道为准。搜索窗口为 **0~65536 字节**且不得
+  不得拼接 Pika 表达式；旧固件/SystemView 通道为 **0~2**；配套 `MUX_TARGET=1` 的 V3/V4 RTT 可订阅 **0~7**，以目标实际活动通道为准。搜索窗口为 **0~65536 字节**且不得
   越出已知目标 RAM。让工具拒绝越界参数，不得改用
   原始命令绕过，也不得对失败的启动循环重试。MCP `rtt_write` 单次最多 **256
   字节**（文本 `rtt_write` 或二进制 `rtt_write_hex`），超限不得自动拆分；文件或日志走 YMODEM/串口专用传输，禁止拆分
@@ -59,7 +59,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
   不能改成 `custom` 绕过匹配。缺少精确型号名称不等于没有兼容算法：先按
   [FLM 兼容性规则](references/firmware-download-priority.md#flm-兼容性)核对工程与 Pack。
   能确定唯一兼容项时显式指定；确有歧义再请用户选择，均不兼容或缺文件才停止。
-- **HPM**：只用 ROM API，不用 Pack/FLM 或通用 SWD reset。传精确 `target_part`
+- **HPM**：限 V4，只用 ROM API，不用 Pack/FLM 或通用 SWD reset。传精确 `target_part`
   及 `board` 或四字 `hpm_flash_cfg`。BIN 需 `base_address`；HEX 用文件内地址，
   需新版 V4 固件，工具自动检查能力。
 - **供电**：`set_power_on` 每次都先确认 1800/3300/5000 mV 并传

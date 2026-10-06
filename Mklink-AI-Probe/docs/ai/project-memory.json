@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-07T02:13:22.3522423+08:00",
+  "updated_at": "2026-10-07T02:37:07.9433303+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "V3应用层持续迁移与验收：无屏幕、不支持HPM、不新增WinUSB；保留充足栈/缓冲，DAP优先。V3原生脱机BIN/HEX及APP全量回读、Bootloader保持通过；配置读取在绑定现有校验资产后通过，错误容量拒绝。主机修正V2/V3 HPM BIN/HEX脱机配置与HPM5301只读描述边界，111项相关测试通过。未更新安装包，未合并/发布，完整矩阵仍进行中。此前V4收尾见v4-030-closeout-20261006.md。"
+    "current_task": "V3应用层迁移持续验收：最新CRC修正固件已通过八通道RTT双向+Watch、18种布局34314精确样本、OpenOCD抢占下载校验恢复、安装后台/CLI/Skill MCP共存及5.5秒释放。V4共性代码原生编译通过，真机尚待验收。已修正并同步本地Skill的V3八通道能力与HPM限V4说明；未更新安装包，未合并发布，完整GUI/UART及长尾问题仍待处理。"
   },
   "milestones": [
     {
