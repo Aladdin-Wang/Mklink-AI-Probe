@@ -153,7 +153,10 @@ def parse_timestamped_read_ram_response(response: str) -> TimestampedRead:
     )
 
 
-def build_read_blocks(items: list[WatchItem], *, max_gap: int = 16) -> list[ReadBlock]:
+def build_read_blocks(
+    items: list[WatchItem], *, max_gap: int = 16,
+    ram_ranges: tuple[tuple[int, int], ...] = (),
+) -> list[ReadBlock]:
     if not items:
         return []
     sorted_items = sorted(items, key=lambda i: (i.source != "ram", i.address))
@@ -173,19 +176,29 @@ def build_read_blocks(items: list[WatchItem], *, max_gap: int = 16) -> list[Read
         current_source = ""
 
     for item in sorted_items:
+        item_start = item.address
         item_end = item.address + max(1, item.size)
+        # Only widen reads within a known writable ELF/profile RAM range.
+        # Decoding still uses each item's original address/width, including
+        # packed values crossing a word boundary. Never widen MMIO accesses.
+        aligned_start = item_start & ~3
+        aligned_end = (item_end + 3) & ~3
+        if (item.source == "ram" and aligned_end - aligned_start <= 128
+                and any(start <= aligned_start and aligned_end <= end
+                        for start, end in ram_ranges)):
+            item_start, item_end = aligned_start, aligned_end
         if (
             current_items
             and item.source == current_source
             and (item.source == "ram" or item.address == current_start)
-            and item.address <= current_end + max_gap
+            and item_start <= current_end + max_gap
         ):
             current_items.append(item)
             current_end = max(current_end, item_end)
             continue
         flush()
         current_items = [item]
-        current_start = item.address
+        current_start = item_start
         current_end = item_end
         current_source = item.source
     flush()
@@ -685,12 +698,13 @@ class SuperWatchRuntime:
         self.items = list(items)
         self.dwarf_info = dwarf_info
         self.symbol_catalog = symbol_catalog
+        self.ram_ranges = tuple(getattr(symbol_catalog, "_ram_ranges", ()))
         self.svd_registers = svd_registers or {}
         self.peripheral_items = peripheral_items or {}
         self.port = port
         self.read_lock = read_lock or threading.Lock()
         self.blocks = build_read_blocks(
-            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
+            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP, ram_ranges=self.ram_ranges,
         )
         self.blocks_version = 0
 
@@ -776,7 +790,7 @@ class SuperWatchRuntime:
         candidate_items = [*self.items, item]
         try:
             candidate_blocks = build_read_blocks(
-                candidate_items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
+                candidate_items, max_gap=SUPERWATCH_DUMP_MERGE_GAP, ram_ranges=self.ram_ranges,
             )
             compile_frame_decoder(candidate_items, candidate_blocks)
         except ValueError as exc:
@@ -802,7 +816,7 @@ class SuperWatchRuntime:
             return {"error": str(exc), "removed": False, "name": name}
         self.items = candidate_items
         self.blocks = build_read_blocks(
-            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
+            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP, ram_ranges=self.ram_ranges,
         )
         self.blocks_version += 1
         return {"removed": True, "name": name}

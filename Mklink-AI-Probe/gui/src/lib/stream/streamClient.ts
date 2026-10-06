@@ -189,6 +189,11 @@ export class StreamClient {
     this.worker.postMessage({ type: 'waveform-detail', enabled } satisfies WorkerInput)
   }
 
+  setWaveformFrozen(frozen: boolean): void {
+    if (this.disposed) return
+    this.worker.postMessage({ type: 'waveform-freeze', frozen } satisfies WorkerInput)
+  }
+
   requestHistorySnapshot(requestId: number): void {
     if (this.disposed) return
     this.worker.postMessage({ type: 'history-snapshot', requestId } satisfies WorkerInput)

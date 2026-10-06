@@ -191,6 +191,7 @@ def test_superwatch_low_rate_sample_flushes_immediately():
 
 class _MutableWatchRuntime:
     def __init__(self):
+        self.ram_ranges = ()
         self.items = [_watch_item("a", 0x20000000)]
         self._rebuild_blocks()
 
@@ -1599,7 +1600,7 @@ def test_superwatch_array_snapshot_reads_only_requested_slice(tmp_path):
         "samples[2]", "samples[3]", "samples[4]",
     ]
     assert [(block.address, block.size) for block in dump_blocks] == [
-        (0x20000024, 6),
+        (0x20000024, 8),  # word padding stays in RAM; only 3 requested values are decoded
     ]
     assert manager._update_array_snapshot_locked([{
         "timestamp_us": 25,

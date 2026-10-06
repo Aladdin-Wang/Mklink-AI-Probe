@@ -31,6 +31,7 @@ export type WorkerInput =
   | { type: 'waveform-detail'; enabled: boolean }
   | { type: 'waveform-capacity'; capacity: number; requestId?: number }
   | { type: 'history-snapshot'; requestId: number }
+  | { type: 'waveform-freeze'; frozen: boolean }
   | { type: 'serial-port'; port: string }
   | { type: 'reset' }
 
@@ -246,6 +247,7 @@ function systemViewQuantile(sortedValues: number[], q: number): number {
 export class StreamDecoder {
   private readonly post: PostOutput
   private ring: TypedRingBuffer | null = null
+  private frozenRing: TypedRingBuffer | null = null
   private lastDataSequence: bigint | null = null
   private transportDroppedBatches = 0
   private backendDroppedBatches = 0
@@ -303,6 +305,10 @@ export class StreamDecoder {
       case 'waveform-detail':
         this.waveformSummaryOnly = !message.enabled
         break
+      case 'waveform-freeze':
+        if (!message.frozen) this.frozenRing = null
+        else if (!this.frozenRing && this.ring && !this.systemViewMode) this.frozenRing = this.ring.frozenCopy()
+        break
       case 'waveform-capacity':
         try {
           if (!this.ring || this.systemViewMode || this.decoderMode !== 'default') {
@@ -356,6 +362,7 @@ export class StreamDecoder {
       const ring = new TypedRingBuffer(capacity, channelCount)
       const scratch = new Int32Array(capacity)
       this.ring = ring
+      this.frozenRing = null
       this.configuredCapacity = capacity
       this.decoderMode = decoderMode
       this.waveformSummaryOnly = waveformSummaryOnly
@@ -615,6 +622,7 @@ export class StreamDecoder {
       const nextCount = Math.max(1, channels.length)
       const nextRing = new TypedRingBuffer(currentRing.capacity, nextCount)
       this.ring = nextRing
+      this.frozenRing = null
       this.superwatchMetadataVersion = version
       this.superwatchMetadataSignature = signature
       this.lastNumericTimestampMs = null
@@ -707,7 +715,8 @@ export class StreamDecoder {
   }
 
   private historySnapshot(requestId: number): void {
-    if (!this.ring) {
+    const ring = this.frozenRing ?? this.ring
+    if (!ring) {
       this.post({ type: 'error', code: 'NOT_CONFIGURED', message: 'configure the worker before export' })
       return
     }
@@ -715,12 +724,12 @@ export class StreamDecoder {
       this.post({ type: 'error', code: 'INVALID_RANGE', message: 'history request id is invalid' })
       return
     }
-    const snapshot = this.ring.copyAll()
+    const snapshot = ring.copyAll()
     const output: Extract<WorkerOutput, { type: 'history-snapshot' }> = {
       type: 'history-snapshot',
       requestId,
       itemCount: snapshot.times.length,
-      channelCount: this.ring.channelCount,
+      channelCount: ring.channelCount,
       times: snapshot.times.buffer as ArrayBuffer,
       values: snapshot.values.buffer as ArrayBuffer,
     }
@@ -780,6 +789,7 @@ export class StreamDecoder {
     const channelChanged = nextRing !== currentRing
     if (channelChanged) {
       this.ring = nextRing
+      this.frozenRing = null
       this.post({ type: 'channels', channelCount })
     }
     if (this.lastDataSequence !== null && decoded.sequence > this.lastDataSequence + 1n) {
@@ -1041,7 +1051,8 @@ export class StreamDecoder {
   }
 
   private visibleRange(message: Extract<WorkerInput, { type: 'visible-range' }>): void {
-    if (!this.ring) {
+    const ring = this.frozenRing ?? this.ring
+    if (!ring) {
       this.post({ type: 'error', code: 'NOT_CONFIGURED', message: 'configure the worker before ranges' })
       return
     }
@@ -1059,12 +1070,13 @@ export class StreamDecoder {
       this.systemViewVisibleRange(message)
       return
     }
-    const selection = this.ring.selectMinMaxEnvelope(
+    const selection = ring.selectMinMaxEnvelope(
       message.start, message.end, message.pixelWidth,
     )
     const selectedLogical = selection.logicalIndices.subarray(0, selection.pointCount)
-    const timeIndexByLogical = this.timeIndexScratch as Int32Array
-    let firstLogical = this.ring.length
+    if (!this.timeIndexScratch || this.timeIndexScratch.length < ring.length) this.timeIndexScratch = new Int32Array(ring.length)
+    const timeIndexByLogical = this.timeIndexScratch
+    let firstLogical = ring.length
     let lastLogical = -1
     for (let point = 0; point < selectedLogical.length; point += 1) {
       const logical = selectedLogical[point]
@@ -1082,18 +1094,18 @@ export class StreamDecoder {
     for (let logical = firstLogical; logical <= lastLogical; logical += 1) {
       const oneBasedTimeIndex = timeIndexByLogical[logical]
       if (oneBasedTimeIndex > 0) {
-        times[oneBasedTimeIndex - 1] = this.ring.timeAt(logical)
+        times[oneBasedTimeIndex - 1] = ring.timeAt(logical)
       }
     }
     const timeIndices = new Uint32Array(selection.pointCount)
     const values = new Float32Array(selection.pointCount)
-    for (let channel = 0; channel < this.ring.channelCount; channel += 1) {
+    for (let channel = 0; channel < ring.channelCount; channel += 1) {
       const first = selection.channelOffsets[channel]
       const afterLast = selection.channelOffsets[channel + 1]
       for (let point = first; point < afterLast; point += 1) {
         const logical = selectedLogical[point]
         timeIndices[point] = timeIndexByLogical[logical] - 1
-        values[point] = this.ring.valueAt(logical, channel)
+        values[point] = ring.valueAt(logical, channel)
       }
     }
     for (let point = 0; point < selectedLogical.length; point += 1) {
@@ -1105,7 +1117,7 @@ export class StreamDecoder {
       timestampKind: 'sample-milliseconds',
       requestId: message.requestId,
       pixelWidth: message.pixelWidth,
-      channelCount: this.ring.channelCount,
+      channelCount: ring.channelCount,
       pointCount: selection.pointCount,
       candidateSampleCount: selection.candidateSampleCount,
       channelOffsets: selection.channelOffsets.buffer as ArrayBuffer,
@@ -1251,6 +1263,7 @@ export class StreamDecoder {
   }
 
   private resetSession(): void {
+    this.frozenRing = null
     this.ring?.reset()
     this.systemViewMode = false
     this.systemViewEvents = null

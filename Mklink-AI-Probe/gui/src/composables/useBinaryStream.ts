@@ -16,6 +16,7 @@ export interface BinaryStreamClient {
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void
   selectSerialPort?(port: string): void
   setWaveformDetail?(enabled: boolean): void
+  setWaveformFrozen?(frozen: boolean): void
   requestHistorySnapshot?(requestId: number): void
   dispose(): void
 }
@@ -296,6 +297,10 @@ export function useBinaryStream(
     client.setWaveformDetail?.(enabled)
   }
 
+  function setWaveformFrozen(frozen: boolean): void {
+    client.setWaveformFrozen?.(frozen)
+  }
+
   function requestHistorySnapshot(requestId: number): void {
     client.requestHistorySnapshot?.(requestId)
   }
@@ -331,6 +336,7 @@ export function useBinaryStream(
     selectSerialPort,
     requestVisibleRange,
     setWaveformDetail,
+    setWaveformFrozen,
     requestHistorySnapshot,
   }
 }

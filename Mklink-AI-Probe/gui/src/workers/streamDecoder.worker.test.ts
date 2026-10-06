@@ -388,6 +388,40 @@ describe('StreamDecoder worker controller', () => {
     expect(messages.filter(message => message.type === 'waveform-batch')).toHaveLength(1)
   })
 
+  it('keeps paused history after live wrap, exports it, and releases it on resume/reset', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 3, channelCount: 1, waveformSummaryOnly: true })
+    const metadata = new TextEncoder().encode(JSON.stringify({ version: 1, channels: [{ name: 'a' }] }))
+    decoder.handle({ type: 'frame', buffer: frame(1n, 0, metadata, StreamType.SUPERWATCH, 1n, 0x02), connectionGeneration: 1, frameTicket: 1 })
+    const send = (sequence: bigint, values: number[]) => decoder.handle({
+      type: 'frame', buffer: frame(sequence, values.length, floats(...values), StreamType.SUPERWATCH, sequence * 1_000_000n, 0x01),
+      connectionGeneration: 1, frameTicket: Number(sequence),
+    })
+    send(2n, [0, 1, 2])
+    send(3n, [3]) // freeze a wrapped ring, not just contiguous storage
+    decoder.handle({ type: 'waveform-freeze', frozen: true })
+    send(4n, [4, 5, 6])
+    decoder.handle({ type: 'waveform-capacity', capacity: 2, requestId: 10 })
+    decoder.handle({ type: 'waveform-freeze', frozen: true }) // idempotent, never replace the pause snapshot
+    decoder.handle({ type: 'visible-range', requestId: 1, start: 0, end: 10, pixelWidth: 100 })
+    const envelope = messages.at(-1)
+    if (envelope?.type !== 'render-envelope') throw new Error('expected envelope')
+    expect(Array.from(new Float32Array(envelope.values))).toEqual([1, 2, 3])
+    decoder.handle({ type: 'history-snapshot', requestId: 2 })
+    const snapshot = messages.at(-1)
+    if (snapshot?.type !== 'history-snapshot') throw new Error('expected snapshot')
+    expect(Array.from(new Float32Array(snapshot.values))).toEqual([1, 2, 3])
+    decoder.handle({ type: 'waveform-freeze', frozen: false })
+    decoder.handle({ type: 'history-snapshot', requestId: 3 })
+    const live = messages.at(-1)
+    if (live?.type !== 'history-snapshot') throw new Error('expected live snapshot')
+    expect(Array.from(new Float32Array(live.values))).toEqual([5, 6])
+    decoder.handle({ type: 'waveform-freeze', frozen: true })
+    decoder.handle({ type: 'reset' })
+    decoder.handle({ type: 'history-snapshot', requestId: 4 })
+    expect(messages.at(-1)).toMatchObject({ type: 'history-snapshot', itemCount: 0 })
+  })
+
   it('rejects stale metadata, nonfinite samples, bad flags, and reset clears versions', () => {
     const { decoder, messages } = setup()
     decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })

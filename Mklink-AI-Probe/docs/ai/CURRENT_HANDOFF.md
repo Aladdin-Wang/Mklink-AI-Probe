@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T15:29:52.0009923+08:00`
+- 更新时间：`2026-10-06T16:17:41.1189401+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：有限性能修复与OpenOCD双目标抢占已完成；最终固件a8967f6/f26dc5c7升级双V4，主机1ac8389a的0.3.0 NSIS覆盖安装及本地Skill更新完成。安装态GUI单变量STM202.14k/s、HPM113.08k/s，短测各层零丢弃；双GUI RTT8+Watch+Skill CLI/MCP、冻结MCP算法与安全拒绝、任务去重/未知不重放、双探针独立退出通过。持续目标与长期保持暂停，分支不合并。详见superwatch-performance-20261006.md。 随后按要求将启动图案ML改为KK，源码e19addc3重新生成并覆盖安装NSIS、同步Skill；安装版KK/双GUI RTT8/Watch/MCP/CLI和冻结MCP双探针边界再次通过，原生启动退出通过。
-- 状态：`paused`
+- 当前任务：按新反馈修复SuperWatch子字性能、暂停缩放丢图与保留比例、双探针首次连接。Web真实操作复现并修复，uint8约21.9k提升至203.8k；双目标48组宽度/偏移/周期原始字节及符号解码通过。GUI886与相关后端276/69通过，正在打包安装并复验桌面及Skill。当前固件无需更改；长期和旧持续目标保持暂停。详见superwatch-ui-alignment-20261006.md。
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -45,10 +45,8 @@
 
 ## 下一动作
 
-1. 本次有限性能修复、OpenOCD抢占及配套安装验收收尾；保持持续目标与长期测试暂停，等待用户下一项任务。
-2. 其他功能矩阵未覆盖的物理拔插/断电、跨物理主机、外部电源精度和芯片组合等仍按详细报告记录，不把短测等同全功能认证。
-3. 固件与主机任务分支已推送供评审，未授权合并或正式发布；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。
-4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
+1. 完成本轮NSIS覆盖安装、原生桌面缩放/首次连接与本地Skill验收，记录确切结果。
+2. 提交并推送任务分支，不合并或发布；长期和旧持续目标保持暂停。
 
 ## 已知限制
 

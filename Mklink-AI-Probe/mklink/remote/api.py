@@ -1626,8 +1626,10 @@ def create_app(
         if not _state.get("shared_runtime"):
             return {"same_runtime": True}
         from mklink.probes import select_probe
-        from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime
+        from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime, connect_gui_target
         selector = body.get("probe") or body.get("port")
+        if "connect" in body and not isinstance(body["connect"], dict):
+            raise HTTPException(422, "connect must be an object")
         if selector is not None and not isinstance(selector, str):
             raise HTTPException(422, "probe must be a string")
         if not selector and _state.get("shared_probe_id") != "lobby":
@@ -1637,6 +1639,8 @@ def create_app(
             if selected["probe_id"] == _state.get("shared_probe_id") and not body.get("open_browser"):
                 return {"same_runtime": True}
             target = await run_in_threadpool(ensure_runtime, project_root=_state["project_root"], probe=selected["probe_id"])
+            if "connect" in body:
+                await run_in_threadpool(connect_gui_target, target, body["connect"])
             if body.get("open_browser") is True:
                 import webbrowser
                 await run_in_threadpool(webbrowser.open, browser_url(target))

@@ -186,7 +186,7 @@ export function useMklinkApi() {
   async function connectDevice(req: ConnectRequest): Promise<DeviceStatus> {
     if (sharedRuntime.value) {
       const selection = await api<{ same_runtime: boolean; runtime_url?: string; reload?: boolean }>('/api/runtime/select', {
-        method: 'POST', body: JSON.stringify({ port: req.port }),
+        method: 'POST', body: JSON.stringify({ port: req.port, connect: req }),
       })
       if (selection.runtime_url) {
         window.location.assign(selection.runtime_url)

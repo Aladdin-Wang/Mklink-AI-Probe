@@ -66,6 +66,19 @@ export class TypedRingBuffer {
     return next
   }
 
+  /** Independent bounded history for navigating a paused display. */
+  frozenCopy(): TypedRingBuffer {
+    const next = new TypedRingBuffer(Math.max(1, this.sampleCount), this.channelCount)
+    const firstCount = Math.min(this.sampleCount, this.capacity - this.startSlot)
+    next.timestamps.set(this.timestamps.subarray(this.startSlot, this.startSlot + firstCount))
+    next.values.set(this.values.subarray(this.startSlot * this.channelCount, (this.startSlot + firstCount) * this.channelCount))
+    const remaining = this.sampleCount - firstCount
+    next.timestamps.set(this.timestamps.subarray(0, remaining), firstCount)
+    next.values.set(this.values.subarray(0, remaining * this.channelCount), firstCount * this.channelCount)
+    next.sampleCount = this.sampleCount
+    return next
+  }
+
   timeAt(logicalIndex: number): number {
     if (!Number.isInteger(logicalIndex) || logicalIndex < 0 || logicalIndex >= this.sampleCount) {
       return Number.NaN

@@ -91,6 +91,10 @@ function attachSuperwatchRequesters(viewer: any): void {
     binary.setWaveformDetail?.(enabled)
   })
   viewer.setBinaryVisibleRangeRequester?.(() => requestLatestVisibleRange(true))
+  viewer.setBinaryFreezeRequester?.((frozen: boolean) => {
+    resetVisibleRangeRequests()
+    binary.setWaveformFrozen?.(frozen)
+  })
 }
 
 function channelSignature(channels: readonly Record<string, unknown>[]): string {

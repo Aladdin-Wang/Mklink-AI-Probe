@@ -212,6 +212,22 @@ def browser_url(info: dict, *, page: str = "config") -> str:
     return f"http://127.0.0.1:{info['port']}/_runtime/open{query}#{info['token']}"
 
 
+def connect_gui_target(info: dict, options: dict):
+    """Connect the selected backend once before the browser/desktop handoff."""
+    # Keep startup alive while symbol loading and device initialization run.
+    # This presence lease does not acquire the probe; the normal API does that.
+    client = RuntimeClient(info=info, kind='cli', name='GUI connection handoff')
+    try:
+        client.connect(scope='uart')
+        payload = {key: value for key, value in options.items()
+                   if key in {'axf', 'mcu', 'elf_backend', 'restore_last'}}
+        # The backend resolves its immutable probe ID. Never forward a COM
+        # selector from the previous window to the new device.
+        return request(info, 'POST', '/api/device/connect', payload)
+    finally:
+        client.close()
+
+
 def handoff_gui(info, prepare, *, timeout=60):
     """Keep a normal, hardware-free lease while prepare opens a GUI window."""
     client = RuntimeClient(info=info, kind='cli', name='GUI launcher')

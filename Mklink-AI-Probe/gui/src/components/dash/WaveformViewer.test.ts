@@ -830,7 +830,7 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
-  it('resets retained history when SuperWatch restarts after stop', async () => {
+  it('keeps the chosen X scale while restarting after stop with fresh data', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch', 8)
     try {
       runtime.probe.syncStatus({ state: 'running', interval: 0.25, actual_rate: 4, items: [] })
@@ -849,9 +849,12 @@ describe('WaveformViewer VOFA binary transport', () => {
       }
       expect(runtime.probe.timeline()).toMatchObject({ zoom: 1, offset: 0 })
       expect(runtime.probe.fields().signal.ringBuf.count).toBe(8)
+      const range = runtime.probe.visibleTimeRange()
 
       runtime.probe.syncStatus({ state: 'running', items: [] })
-      expect(runtime.probe.timeline()).toMatchObject({ zoom: 2, offset: 1 })
+      const resumed = runtime.probe.visibleTimeRange()
+      expect(resumed.tMax - resumed.tMin).toBeCloseTo(range.tMax - range.tMin, 12)
+      expect(runtime.probe.timeline().offset).toBe(1)
       expect(runtime.probe.fields().signal.ringBuf.count).toBe(0)
       expect(runtime.probe.collectionState()).toMatchObject({
         state: 'running', paused: false, renderPaused: false,
@@ -1350,10 +1353,10 @@ describe('VOFA viewer hot path source guard', () => {
 
   it('documents live and paused SuperWatch navigation accurately in both languages', () => {
     expect(i18nSource).toContain('后端采集不会停止')
-    expect(i18nSource).toContain('恢复时会清空冻结快照')
+    expect(i18nSource).toContain('恢复或重新开始时保留缩放比例')
     expect(i18nSource).toContain('保持与最新数据的固定时间差并继续前移')
     expect(i18nSource).toContain('backend acquisition continues')
-    expect(i18nSource).toContain('Resume clears the frozen snapshot')
+    expect(i18nSource).toContain('Resume or restart keeps your zoom scale')
     expect(i18nSource).toContain('keeps a fixed lag from the latest data and continues moving forward')
   })
 

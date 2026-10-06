@@ -1964,7 +1964,10 @@ class SuperWatchStreamManager:
         return (
             scalar_items,
             items,
-            tuple(build_read_blocks(items, max_gap=SUPERWATCH_DUMP_MERGE_GAP)),
+            tuple(build_read_blocks(
+                items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
+                ram_ranges=self._runtime.ram_ranges if self._runtime else (),
+            )),
         )
 
     def _validate_sampling_layout_locked(self, snapshot, scalar_items=None):
