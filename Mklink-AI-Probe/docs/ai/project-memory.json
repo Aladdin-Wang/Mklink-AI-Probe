@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-06T15:18:50.6185860+08:00",
+  "updated_at": "2026-10-06T15:29:52.0009923+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "paused",
-    "current_task": "有限性能修复与OpenOCD双目标抢占已完成；最终固件a8967f6/f26dc5c7升级双V4，主机1ac8389a的0.3.0 NSIS覆盖安装及本地Skill更新完成。安装态GUI单变量STM202.14k/s、HPM113.08k/s，短测各层零丢弃；双GUI RTT8+Watch+Skill CLI/MCP、冻结MCP算法与安全拒绝、任务去重/未知不重放、双探针独立退出通过。持续目标与长期保持暂停，分支不合并。详见superwatch-performance-20261006.md。"
+    "current_task": "有限性能修复与OpenOCD双目标抢占已完成；最终固件a8967f6/f26dc5c7升级双V4，主机1ac8389a的0.3.0 NSIS覆盖安装及本地Skill更新完成。安装态GUI单变量STM202.14k/s、HPM113.08k/s，短测各层零丢弃；双GUI RTT8+Watch+Skill CLI/MCP、冻结MCP算法与安全拒绝、任务去重/未知不重放、双探针独立退出通过。持续目标与长期保持暂停，分支不合并。详见superwatch-performance-20261006.md。 随后按要求将启动图案ML改为KK，源码e19addc3重新生成并覆盖安装NSIS、同步Skill；安装版KK/双GUI RTT8/Watch/MCP/CLI和冻结MCP双探针边界再次通过，原生启动退出通过。"
   },
   "milestones": [
     {
@@ -64,7 +64,7 @@
     },
     {
       "area": "实机与SuperWatch",
-      "result": "最终固件a8967f6/f26dc5c7：3秒原始采集STM208.23k/HPM114.71k，四区域24.07k/33.53k；56布局/周期字节验证、RTT8收发、pyOCD与OpenOCD双目标下载仿真/退出后显式采集恢复通过，STM Boot不变。最终主机1ac8389a NSIS和Skill已安装；GUI约5秒STM202.14k/HPM113.08k、各层零丢弃，源码20秒GUI4419346组/末段201.47k零丢弃。双GUI RTT8+Watch+CLI/MCP、冻结MCP算法/安全拒绝及任务/双探针退出通过。相关主机377/284/84测试组及固件18组通过；主机三项CI通过。详见superwatch-performance-20261006.md，不外推长期。"
+      "result": "最终固件a8967f6/f26dc5c7：3秒原始采集STM208.23k/HPM114.71k，四区域24.07k/33.53k；56布局/周期字节验证、RTT8收发、pyOCD与OpenOCD双目标下载仿真/退出后显式采集恢复通过，STM Boot不变。最终主机1ac8389a NSIS和Skill已安装；GUI约5秒STM202.14k/HPM113.08k、各层零丢弃，源码20秒GUI4419346组/末段201.47k零丢弃。双GUI RTT8+Watch+CLI/MCP、冻结MCP算法/安全拒绝及任务/双探针退出通过。相关主机377/284/84测试组及固件18组通过；主机三项CI通过。详见superwatch-performance-20261006.md，不外推长期。 KK补充e19addc3重打包/安装/Skill及相应安装态复验通过，三项CI通过。"
     }
   ],
   "decisions": [
@@ -76,7 +76,7 @@
   ],
   "hardware": {
     "state": "双V4已升级最终性能固件f26dc5c7；STM32 RTT8+Watch及pyOCD/OpenOCD下载仿真、Boot不变通过；HPM5301 OpenOCD下载仿真与JTAG恢复通过。SDK/Arm2D/MicroBoot不改；无电压变化，长稳暂停。",
-    "installer": "0.3.0开发候选1ac8389a覆盖安装退出0，三负载哈希匹配；Skill同步，算法7059目标/2224 blobs校验。真实安装态两目标GUI性能、双GUI RTT8与Watch/Skill MCP/CLI、冻结MCP与双探针任务边界通过；本地未签名包，不是正式更新发布。",
+    "installer": "当前安装/本地Skill为0.3.0候选e19addc3，KK启动图案已实看，NSIS覆盖安装退出0，三负载哈希一致。双GUI RTT8/Watch/Skill MCP/CLI、冻结MCP算法/安全拒绝、双探针任务隔离及原生桌面启动退出通过。性能数据取同一采样实现的1ac8389a安装版；KK只改一条SVG路径。算法7059目标/2224 blobs；本地未签名包。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [

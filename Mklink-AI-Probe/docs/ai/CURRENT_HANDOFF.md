@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T15:18:50.6185860+08:00`
+- 更新时间：`2026-10-06T15:29:52.0009923+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：有限性能修复与OpenOCD双目标抢占已完成；最终固件a8967f6/f26dc5c7升级双V4，主机1ac8389a的0.3.0 NSIS覆盖安装及本地Skill更新完成。安装态GUI单变量STM202.14k/s、HPM113.08k/s，短测各层零丢弃；双GUI RTT8+Watch+Skill CLI/MCP、冻结MCP算法与安全拒绝、任务去重/未知不重放、双探针独立退出通过。持续目标与长期保持暂停，分支不合并。详见superwatch-performance-20261006.md。
+- 当前任务：有限性能修复与OpenOCD双目标抢占已完成；最终固件a8967f6/f26dc5c7升级双V4，主机1ac8389a的0.3.0 NSIS覆盖安装及本地Skill更新完成。安装态GUI单变量STM202.14k/s、HPM113.08k/s，短测各层零丢弃；双GUI RTT8+Watch+Skill CLI/MCP、冻结MCP算法与安全拒绝、任务去重/未知不重放、双探针独立退出通过。持续目标与长期保持暂停，分支不合并。详见superwatch-performance-20261006.md。 随后按要求将启动图案ML改为KK，源码e19addc3重新生成并覆盖安装NSIS、同步Skill；安装版KK/双GUI RTT8/Watch/MCP/CLI和冻结MCP双探针边界再次通过，原生启动退出通过。
 - 状态：`paused`
 
 ## 里程碑
@@ -27,7 +27,7 @@
 - **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
 - **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
-- **实机与SuperWatch**：最终固件a8967f6/f26dc5c7：3秒原始采集STM208.23k/HPM114.71k，四区域24.07k/33.53k；56布局/周期字节验证、RTT8收发、pyOCD与OpenOCD双目标下载仿真/退出后显式采集恢复通过，STM Boot不变。最终主机1ac8389a NSIS和Skill已安装；GUI约5秒STM202.14k/HPM113.08k、各层零丢弃，源码20秒GUI4419346组/末段201.47k零丢弃。双GUI RTT8+Watch+CLI/MCP、冻结MCP算法/安全拒绝及任务/双探针退出通过。相关主机377/284/84测试组及固件18组通过；主机三项CI通过。详见superwatch-performance-20261006.md，不外推长期。
+- **实机与SuperWatch**：最终固件a8967f6/f26dc5c7：3秒原始采集STM208.23k/HPM114.71k，四区域24.07k/33.53k；56布局/周期字节验证、RTT8收发、pyOCD与OpenOCD双目标下载仿真/退出后显式采集恢复通过，STM Boot不变。最终主机1ac8389a NSIS和Skill已安装；GUI约5秒STM202.14k/HPM113.08k、各层零丢弃，源码20秒GUI4419346组/末段201.47k零丢弃。双GUI RTT8+Watch+CLI/MCP、冻结MCP算法/安全拒绝及任务/双探针退出通过。相关主机377/284/84测试组及固件18组通过；主机三项CI通过。详见superwatch-performance-20261006.md，不外推长期。 KK补充e19addc3重打包/安装/Skill及相应安装态复验通过，三项CI通过。
 
 ## 架构决策
 
@@ -40,7 +40,7 @@
 ## 真机环境
 
 - **state**：双V4已升级最终性能固件f26dc5c7；STM32 RTT8+Watch及pyOCD/OpenOCD下载仿真、Boot不变通过；HPM5301 OpenOCD下载仿真与JTAG恢复通过。SDK/Arm2D/MicroBoot不改；无电压变化，长稳暂停。
-- **installer**：0.3.0开发候选1ac8389a覆盖安装退出0，三负载哈希匹配；Skill同步，算法7059目标/2224 blobs校验。真实安装态两目标GUI性能、双GUI RTT8与Watch/Skill MCP/CLI、冻结MCP与双探针任务边界通过；本地未签名包，不是正式更新发布。
+- **installer**：当前安装/本地Skill为0.3.0候选e19addc3，KK启动图案已实看，NSIS覆盖安装退出0，三负载哈希一致。双GUI RTT8/Watch/Skill MCP/CLI、冻结MCP算法/安全拒绝、双探针任务隔离及原生桌面启动退出通过。性能数据取同一采样实现的1ac8389a安装版；KK只改一条SVG路径。算法7059目标/2224 blobs；本地未签名包。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
