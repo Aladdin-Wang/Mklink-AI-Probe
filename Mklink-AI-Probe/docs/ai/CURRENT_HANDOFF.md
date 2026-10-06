@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T23:14:56+08:00`
+- 更新时间：`2026-10-06T23:17:24.2286540+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V4收尾：固件PR1已按授权合并main edbbbf785（测试头cb883217，应用树一致）；主机cd342984的0.3.0 NSIS覆盖安装及Skill同步已完成。GUI889、固件31套+DAP、Python初轮4365及资产补验89+6通过。双板布局、DAP下载调试抢占、8路RTT双向、HPM在线/脱机BIN/HEX通过；安装双GUI/CLI/MCP共存、LAN认证、多探针隔离、任务去重及安全拒绝通过。详见v4-030-closeout-20261006.md。两个非阻断GUI提示问题和缺件/跨物理主机/长稳边界未转绿。网站PR8已提交，正在发给用户指定的来财。
+- 当前任务：V4收尾：固件PR1已按授权合并main edbbbf785（测试头cb883217，应用树一致）；主机cd342984的0.3.0 NSIS覆盖安装及Skill同步已完成。GUI889、固件31套+DAP、Python初轮4365及资产补验89+6通过。双板布局、DAP下载调试抢占、8路RTT双向、HPM在线/脱机BIN/HEX通过；安装双GUI/CLI/MCP共存、LAN认证、多探针隔离、任务去重及安全拒绝通过。详见v4-030-closeout-20261006.md。两个非阻断GUI提示问题和缺件/跨物理主机/长稳边界未转绿。网站PR8已提交，已通过工具成功发给用户指定的来财，随后云端新轮次inProgress。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 核实内置云端来财接收网站交接；MicroBoot PR8/HANDOFF_DOT.md为资料入口，不把本地安装或固件合并称正式发布。
+1. 网站交接已成功发送来财并触发新轮次；MicroBoot PR8/HANDOFF_DOT.md记录回执与资料。后续网站由云端处理，本地不声称其已改完或部署。
 2. 主机继续PR30；下一次修订改善采集中调速Conflict提示及另一窗口残留的符号重载停止提示。
 3. 未验外设、跨物理主机、拔插、电压精度、保护、安装回滚及长稳保持原矩阵边界；长期与旧持续目标仍暂停。
 
