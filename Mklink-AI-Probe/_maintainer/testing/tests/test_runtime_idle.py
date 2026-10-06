@@ -96,3 +96,31 @@ def test_gui_socket_presence_lifecycle(runtime):
     assert not c.views and c.inflight_requests==0
 
 from test_shared_runtime import runtime
+
+
+@pytest.mark.parametrize('renew', [False, True])
+def test_monitor_reaches_fractional_deadline_and_rechecks_activity(monkeypatch, renew):
+    import mklink.runtime_idle as idle
+    c = control()
+    c.last_activity = .35
+    clock = [0.0]
+    sleeps = []
+    stopped = []
+    c.shutdown = lambda: stopped.append(clock[0])
+    monkeypatch.setattr(idle, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
+    async def sleep(delay):
+        sleeps.append(delay)
+        clock[0] += delay
+        if renew and len(sleeps) == 6:
+            c.last_activity = clock[0]
+    monkeypatch.setattr(idle, 'asyncio', SimpleNamespace(
+        sleep=sleep, create_task=asyncio.create_task, CancelledError=asyncio.CancelledError))
+    idle.install_idle_shutdown(c.app, c)
+    async def run():
+        await c.app.router.on_startup[-1]()
+        await asyncio.sleep(0)
+        await c.app.router.on_shutdown[-1]()
+    asyncio.run(run())
+    assert sleeps[:5] == [1] * 5
+    assert sleeps[5] == pytest.approx(.35)
+    assert stopped == pytest.approx([10.35 if renew else 5.35])

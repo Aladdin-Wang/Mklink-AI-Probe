@@ -38,7 +38,11 @@ def install_idle_shutdown(app, control):
     task = None
     async def monitor():
         while True:
-            await asyncio.sleep(1)
+            # Keep the one-second activity scan, but wake at a nearer idle
+            # deadline instead of rounding it up to the next scan. If expired
+            # owners still block shutdown, retain the normal scan cadence.
+            remaining = IDLE_SECONDS - (time.monotonic() - control.last_activity)
+            await asyncio.sleep(remaining if 0 < remaining < 1 else 1)
             try:
                 if check_idle(control):
                     return
