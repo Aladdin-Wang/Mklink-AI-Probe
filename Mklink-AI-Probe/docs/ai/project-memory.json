@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-06T19:29:17.8790595+08:00",
+  "updated_at": "2026-10-06T20:49:56+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "本轮固件间隔/HPM补验完成：HPM首样本重复周期修复、电源换算49–55us降至35–38us并节省540B、CDC仅flush发送缓存行。双V4升级a49f8159 UF2；HPM100us单/四变量约9.91k/9.88k，最大202/211us；STM仍有最大377us间隙。HPM18布局33271样本、19/20/21/1000us及双目标OpenOCD抢占下载校验/显式恢复通过。仍非硬实时，报告superwatch-jitter-hpm-20261006.md。安装/Skill仍01d89c60，长期及持续目标保持暂停。"
+    "current_task": "本轮固件批间优化完成并推送bee9ddf：目标读取后释放锁，DLM直接组帧、按字CRC及精确时间换算，节省888B；取消估计20us阈值，1us全速，其余周期按实际读取能力运行，修复SWD超时额外等待。双V4升级48a309b9；STM/HPM单变量242k/125k，批间中位92/34us。双目标各18布局精确字节、44周期配置及OpenOCD抢占下载校验/恢复通过。报告superwatch-pipeline-20261006.md。仍有批间隙和中断抖动，非硬实时；安装/Skill仍01d89c60，长期及持续目标保持暂停。"
   },
   "milestones": [
     {
@@ -64,7 +64,7 @@
     },
     {
       "area": "实机与SuperWatch",
-      "result": "最终固件a8967f6/f26dc5c7：3秒原始采集STM208.23k/HPM114.71k，四区域24.07k/33.53k；56布局/周期字节验证、RTT8收发、pyOCD与OpenOCD双目标下载仿真/退出后显式采集恢复通过，STM Boot不变。最终主机1ac8389a NSIS和Skill已安装；GUI约5秒STM202.14k/HPM113.08k、各层零丢弃，源码20秒GUI4419346组/末段201.47k零丢弃。双GUI RTT8+Watch+CLI/MCP、冻结MCP算法/安全拒绝及任务/双探针退出通过。相关主机377/284/84测试组及固件18组通过；主机三项CI通过。详见superwatch-performance-20261006.md，不外推长期。 KK补充e19addc3重打包/安装/Skill及相应安装态复验通过，三项CI通过。"
+      "result": "最新批间优化见superwatch-pipeline-20261006.md：固件bee9ddf/UF2 48a309b9双V4升级，1us全速、2us以上尽力定时；单变量STM242159/HPM125056组每秒、四变量19121/36180，100us单变量9915/9922。两目标各18布局33457/33485精确样本，44周期配置，原生生产代码/CRC偏移/50000时间换算/USB/DMA/调度及SWD布局门禁通过。OpenOCD双目标启动至halt约0.31s，step/下载/校验及显式RTT/Watch恢复通过，STM Boot不变。CRC硬件候选无明显优势撤回，最终帧格式不变。前轮电源/间隔见superwatch-jitter-hpm-20261006.md；GUI/安装历史见superwatch-performance-20261006.md和gui-full-audit-20261006.md。源码时间栅格未重打包；长期保持暂停。"
     }
   ],
   "decisions": [
@@ -75,12 +75,12 @@
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "STM与HPM对应V4均升级UF2 a49f8159（HPM首样本/电源换算/DMA缓存修复）；双目标OpenOCD约0.32s抢占下载校验、显式RTT/Watch恢复通过，STM Boot不变。HPM18布局精确字节通过；SDK/Arm2D/MicroBoot原状保留。",
+    "state": "两台V4已升级UF2 48a309b9（固件bee9ddf），STM与HPM对应目标均通过本轮精确字节和OpenOCD抢占/下载/校验/显式恢复；STM Boot不变，目标代码未改。测试连接已关闭。SDK/Arm2D/MicroBoot原状保留。",
     "installer": "当前安装及本地Skill为0.3.0 / 01d89c60，NSIS退出0、三负载哈希一致，双GUI暂停缩放恢复、Windows-only PATH MCP/Skill/CLI验证通过。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
-    "最新双V4 UF2 a49f8159短测：HPM100us单/四变量最大202/211us、全速最大202/230us；STM对应253/321us、全速377/314us。传输零丢包不是采样无间隙；最大值非保证上界。20us分界有效但平均率受批次开销影响。DAP抢占使旧采集失效，须显式重启。非硬实时、未长期认证。安装/Skill仍01d89c60。",
+    "最终UF2 48a309b9短测：STM/HPM单变量242k/125k组每秒，批间中位92/34us；全速最大289/169us，四变量最大270/183us；传输零丢包不等于采样连续。1us明确请求全速，其余周期保留，无法跨越实际读取耗时；旧开发固件20us规则已取消。DLM余量392B。跨批绝对时间轴/等待间隙分片组帧未实施；没有额外定时器ISR或双缓冲线程。DAP使旧采集失效须显式重启。非硬实时、未长期认证，安装/Skill仍01d89c60。",
     "149是MUX帧基础，尚无多通道目标调度。后台约5秒触发退出，安装版完整清理约5.4至6.05秒；异常网络排空额外最多2秒。GUI靠在线连接保活，AI每秒续约/5秒过期；未打开的远程窗口仍有90秒回收上限。长期和跨物理主机未验证。 A5已收敛。A6活动MCP已扩展只读目录检查，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。",
     "0.3.0第七阶段：专用CLI、低层Device调用方未全部迁移，共享SDK不是完整Device替代。共享断点仅FPBv1，未制造真实HardFault；Bootloader重枚举升级、非Windows共享MSC受限。物理擦除/恢复、操作中拔插/休眠和断电未验收；长期测试按用户要求暂停。HPM FreeRTOS SystemView已短时真机验证，其他RTOS待验。MAP/C回退仅基本全局标量，新增声明须显式重载，不等于源码与固件匹配；稀疏类型待验。VOFA现有独立Vue路由复用WaveformViewer和二进制流，通道由CLI/AI配置；Chrome显示/暂停恢复及导出内容已验，系统保存对话框/原生保存待验；Float32不保留大整数低位，后端历史500点。UART开口前后身份校验、COM别名及启停事务已统一，读错误须显式重启；Modbus执行中结果未知不重放。现有UART/Modbus共享能力及专用CLI覆盖见详细报告，嵌套循环归属、逐请求断开取消、真实从站/拔插/OS阻塞仍待验。远程RTT/SystemView版本2及双探针本机LAN短时通过。旧111候选物理MSC三文件部署/哈希/双盘保持/清理通过，不等于触发烧录。114源码将offline.deploy接入RuntimeJobs，协议35/flash.offline版本2，GUI和SDK可按request_id查询；模拟取消/日志失败/换盘/去重及真实Chrome受控查询通过，115实包LAN查询/重复请求/正常重启保留已通过，116临时磁盘生产部署子进程中断通过；117已登记强杀恢复目录，仅供人工核查、可能已清理；物理MSC中断和完整GUI真实部署仍待验。最多64条记录，缺失不代表未执行，未知结果不得重放。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
@@ -91,8 +91,8 @@
   ],
   "next_actions": [
     "继续GUI全功能矩阵：远程服务、RTOS回放、异常文件导入和剩余原生操作；尚未全覆盖。",
-    "继续优化批次间打包/发送与采样共线程开销；STM单字全速中位批内3us、批间175us，仍有377us最大间隔。电源35–38us仅部分原因，USB中断/调度尚未完全分离，不降低DAP或电源保护优先级。",
-    "源码时间栅格尚未重打NSIS/本地Skill，当前安装01d89c60；两下载器最新固件短测已通过。长期及旧持续目标保持暂停，不合并或发布。"
+    "继续减少剩余批间与中断抖动：STM/HPM单变量批间中位92/34us；跨批绝对节拍、等待空隙增量组帧仍待设计验证。不得关中断或降低DAP/电源保护优先级；不修改目标板代码，不能声称无抖动。",
+    "源码时间栅格及1us全速说明尚未重打NSIS/本地Skill，当前安装01d89c60；两下载器48a309b9短测通过，源代码CRC帧格式未改变。长期及旧持续目标保持暂停，不合并或发布。"
   ],
   "continuation_protocol": [
     "交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。"
