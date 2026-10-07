@@ -156,14 +156,18 @@ class MuxTransport:
                     return
                 _, version, op, n, epoch, req = struct.unpack_from('<4sBBHII', self._rx)
                 limit = 1024 if op == 0x41 and self.capabilities & 8 else 256
-                if version != 1 or n > limit:
+                # Version 2 is restricted to advertised Watch events. Commands,
+                # replies and RTT retain their CRC-protected version 1 framing.
+                watch_raw = version == 2 and op == 0x41 and bool(self.capabilities & 16)
+                if (version != 1 and not watch_raw) or n > limit:
                     self.fail('Malformed multiplex frame')
                     self._rx.clear()
                     return
-                if len(self._rx) < n+20:
+                frame_size = n + (16 if watch_raw else 20)
+                if len(self._rx) < frame_size:
                     return
-                raw = bytes(self._rx[:n+20]); del self._rx[:n+20]
-                if binascii.crc32(raw[:-4]) & 0xffffffff != struct.unpack_from('<I', raw, n+16)[0]:
+                raw = bytes(self._rx[:frame_size]); del self._rx[:frame_size]
+                if not watch_raw and binascii.crc32(raw[:-4]) & 0xffffffff != struct.unpack_from('<I', raw, n+16)[0]:
                     self.fail('Multiplex CRC error; session requires explicit reconnect')
                     return
                 payload = raw[16:16+n]

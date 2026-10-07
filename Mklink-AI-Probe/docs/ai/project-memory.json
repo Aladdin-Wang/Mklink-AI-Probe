@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-07T07:46:21.5213192+08:00",
+  "updated_at": "2026-10-07T09:00:17.148626+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "RTT八通道原生跟随问题已定位并修复：实际WebView2真机记录显示最大化26→24行时原不可见的通道2–7无输入却进入isUserScrolling，view179而base增长至299。组件现在只在可见时fit，后台持续接收，不强制跳底、不改xterm私有状态。新生产前端加载到原生候选壳+冻结后台，V3八路小窗→最大化→下滚后全部base=view且userScrolling=false。WebView完整通道夹具验证历史view325在继续输出/隐藏/宽度变化/显示后保持，base375→475；原生手动历史滚轮因诊断限时结束未完成，不声称通过。RTT四套72通过、类型检查/生产构建通过。两个桌面与诊断监听均已关闭，无固件修改；详见v3-native-watch-restart.md末尾。V3以采样连续性优先、RAM节省次要，无屏，下一步回到批间性能与剩余矩阵；覆盖安装取消后不重试，长期浸泡仍待通知。"
+    "current_task": "V3 Watch免CRC帧及跨批SWD配置复用完成源码与真机验证，报告v3-watch-raw-frames.md。单变量跨批中位48→22us、P99 105→64/69us、速率239.6→258.7~260.1kHz；四变量仍65us，未达10us。主机MUX114通过，V3原生21套通过；OpenOCD+RTT8+Watch抢占下载校验恢复通过，Bootloader未变。用户明确要求不恢复固件、直接新版NSIS覆盖安装，撤销此前取消安装约束；正在打包安装验证。V4/SDK未改，持续目标未自动恢复。"
   },
   "milestones": [
     {

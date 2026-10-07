@@ -26,6 +26,29 @@ def peer():
     return transport, calls
 
 
+@pytest.mark.parametrize('split', range(27))
+def test_raw_watch_fragmentation_and_following_crc_reply(split):
+    transport, _ = peer()
+    transport.handshake()
+    transport.capabilities |= 16
+    payload = struct.pack('<BBI', 0, 0, 123) + b'abcd'
+    wire = struct.pack('<4sBBHII', b'MLX1', 2, 0x41, len(payload), 17, 1) + payload
+    transport.feed(wire[:split])
+    transport.feed(wire[split:])
+    assert transport.drain(0x41, 255) == [payload]
+    assert transport.request(2, b'') == b''
+
+
+@pytest.mark.parametrize('caps,op', [(15, 0x41), (31, 0x40), (31, 0x92)])
+def test_raw_version_rejected_outside_advertised_watch(caps, op):
+    transport, _ = peer()
+    transport.handshake()
+    transport.capabilities = caps
+    transport.feed(struct.pack('<4sBBHII', b'MLX1', 2, op, 0, 17, 1))
+    with pytest.raises(MuxError, match='Malformed'):
+        transport.request(2)
+
+
 @pytest.mark.parametrize('port,attach', [(1, True), (2, False)])
 def test_bridge_mux_attach_respects_reported_debug_port(monkeypatch, tmp_path, port, attach):
     from unittest.mock import Mock
