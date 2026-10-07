@@ -1,4 +1,5 @@
 import { API_BASE, IS_REMOTE } from './runtimeEndpoint'
+import { navigateToRuntime } from './runtimeNavigation'
 
 /** A transport-owned presence survives background timer throttling. */
 export function startSharedRuntimeView(present?: (tab: string) => Promise<void>): () => void {
@@ -34,7 +35,7 @@ export function startSharedRuntimeView(present?: (tab: string) => Promise<void>)
       // with sockets and symbols from the previous device.
       if (!stopped && !suspended && !IS_REMOTE && event?.code === 1012 && event.reason === 'runtime changed') {
         stop()
-        window.location.reload()
+        navigateToRuntime()
         return
       }
       // Only presence is retried. Remote sessions require explicit reconnection.

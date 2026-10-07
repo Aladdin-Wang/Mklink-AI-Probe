@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T14:15:03.6422377+08:00`
+- 更新时间：`2026-10-07T15:55:47.642920+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：SuperWatch跨GUI启停修复a226562f已推送、NSIS覆盖安装成功、三负载哈希匹配、39GUI文件及算法7059/2224验证、本地Skill2520文件匹配。111波形测试通过；安装态桌面+Chrome真机双向Stop/Start、桌面暂停不影响Web、另一端停止清本地暂停、高速重启以及暂停后Start恢复通过。测试末尾transport/backend丢包为0；非长稳/非性能基准。采集已停止，两窗口保留。固件未改，长期目标暂停。
+- 当前任务：V3/V4双STM32验证完成并按授权合并：V3 main b33038e，V4 main 15d9210。V4固件已升级，单字30秒约267k/270k点每秒，无>1ms；RTT8并行、14区域非对齐读取、OpenOCD应用下载校验/调试抢占恢复通过。V4首次开口有Windows枚举失败，明确重试及后续三次连接通过。GUI连接重放开机动画已修为切换提示并去重跳转；同后台不导航，Chrome实测连接通过。25 GUI/43 Python与生产构建通过。GUI修复尚未打新NSIS或更新本地Skill；长期目标暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -45,9 +45,10 @@
 
 ## 下一动作
 
-1. 网站交接已成功发送来财并触发新轮次；MicroBoot PR8/HANDOFF_DOT.md记录回执与资料。后续网站由云端处理，本地不声称其已改完或部署。
-2. 主机继续PR30；下一次修订改善采集中调速Conflict提示及另一窗口残留的符号重载停止提示。
-3. 未验外设、跨物理主机、拔插、电压精度、保护、安装回滚及长稳保持原矩阵边界；长期与旧持续目标仍暂停。
+1. GUI连接提示修复需要随下次NSIS交付；跨下载器仍为认证导航/页面重建而非SPA热切换。V4已有子模块本地修改未入库，干净依赖克隆构建未验。固件双机性能报告见各仓库。
+2. 网站交接已成功发送来财并触发新轮次；MicroBoot PR8/HANDOFF_DOT.md记录回执与资料。后续网站由云端处理，本地不声称其已改完或部署。
+3. 主机继续PR30；下一次修订改善采集中调速Conflict提示及另一窗口残留的符号重载停止提示。
+4. 未验外设、跨物理主机、拔插、电压精度、保护、安装回滚及长稳保持原矩阵边界；长期与旧持续目标仍暂停。
 
 ## 已知限制
 

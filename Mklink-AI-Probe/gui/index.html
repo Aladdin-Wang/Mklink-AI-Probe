@@ -11,6 +11,11 @@
       #startup-splash { position:fixed; inset:0; z-index:10000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:32px; box-sizing:border-box; padding:32px; overflow:hidden; background:radial-gradient(ellipse at 50% 44%,#222a35 0%,#11151b 58%); color:#edf1f7; font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif; transition:opacity 240ms ease; }
       #startup-splash::before { content:''; position:absolute; inset:0; opacity:.1; background-image:linear-gradient(#8193aa 1px,transparent 1px),linear-gradient(90deg,#8193aa 1px,transparent 1px); background-size:48px 48px; mask-image:radial-gradient(ellipse at center,#000,transparent 65%); pointer-events:none; }
       #startup-splash.is-complete { opacity:0; pointer-events:none; }
+      #startup-splash.is-probe-switch { background:var(--bg,#11151b); gap:0; }
+      #startup-splash.is-probe-switch::before,
+      #startup-splash.is-probe-switch .startup-visual,
+      #startup-splash.is-probe-switch .startup-heading,
+      #startup-splash.is-probe-switch .startup-progress { display:none; }
       .startup-visual { position:relative; width:min(440px,80vw); }
       .startup-circuit { display:block; width:100%; height:auto; overflow:visible; }
       .startup-track { fill:none; stroke:#3c4859; stroke-width:1.5; }
@@ -76,6 +81,15 @@
         const fill = document.getElementById('startup-progress-fill')
         const valueLabel = document.getElementById('startup-progress-value')
         const status = document.getElementById('startup-status')
+        const locationUrl = new URL(window.location.href)
+        const switching = locationUrl.searchParams.get('runtime_transition') === 'probe'
+        if (switching) {
+          splash.classList.add('is-probe-switch')
+          status.textContent = window.localStorage.getItem('mklink_lang') === 'en'
+            ? 'Switching probe…' : '正在切换下载器…'
+          locationUrl.searchParams.delete('runtime_transition')
+          history.replaceState(history.state, '', locationUrl.href)
+        }
         let value = 8
         let timer = 0
 
@@ -84,7 +98,7 @@
           fill.style.width = `${value}%`
           valueLabel.textContent = `${value}%`
           progress.setAttribute('aria-valuenow', String(value))
-          if (nextStatus) status.textContent = nextStatus
+          if (nextStatus && !switching) status.textContent = nextStatus
         }
 
         timer = window.setInterval(() => {

@@ -22,6 +22,30 @@ describe('RTT API contracts', () => {
     expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/api/ports', '/api/ports/uart'])
   })
 
+  it('connects the current probe without navigating or restarting the page', async () => {
+    sharedRuntime.value = true
+    const navigate = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ same_runtime: true }) })
+    await useMklinkApi().connectDevice({ port: 'COM9' })
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+      '/api/runtime/select', '/api/device/connect', '/api/device/status',
+    ])
+    expect(navigate).not.toHaveBeenCalled()
+    navigate.mockRestore()
+  })
+
+  it('marks a probe handoff and does not reconnect the previous device', async () => {
+    sharedRuntime.value = true
+    const navigate = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({
+      same_runtime: false, runtime_url: 'http://127.0.0.1:8766/_runtime/open#test-token',
+    }) })
+    await useMklinkApi().connectDevice({ port: 'COM10' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith('http://127.0.0.1:8766/_runtime/open?runtime_transition=probe#test-token')
+    navigate.mockRestore()
+  })
+
   it('queries an accepted shared reset job without issuing a second reset', async () => {
     sharedRuntime.value = true
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-one', state: 'running' }) })

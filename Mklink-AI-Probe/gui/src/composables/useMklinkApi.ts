@@ -25,6 +25,7 @@ import { API_BASE, IS_REMOTE } from '../lib/runtimeEndpoint'
 import { sharedRuntime } from './useBackendHealth'
 import { trackSymbolSource } from '../lib/trackedSymbolSource'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
+import { navigateToRuntime } from '../lib/runtimeNavigation'
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers)
@@ -189,11 +190,11 @@ export function useMklinkApi() {
         method: 'POST', body: JSON.stringify({ port: req.port, connect: req }),
       })
       if (selection.runtime_url) {
-        window.location.assign(selection.runtime_url)
+        navigateToRuntime(selection.runtime_url)
         return deviceStatus.value
       }
       if (selection.reload) {
-        window.location.reload()
+        navigateToRuntime()
         return deviceStatus.value
       }
     }

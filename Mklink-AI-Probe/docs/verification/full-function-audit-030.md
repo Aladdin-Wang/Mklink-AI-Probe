@@ -871,3 +871,14 @@ GUI全量85文件/885通过，82.76秒；生产构建通过，footer ce10d348723
 交付位于本地.build/artifacts/install-closeout-90cee876；安装包SHA256 0d0722df3260d856e621fd7345f4a0edc8df8e01f9bcfcec189bdd5c75ddd6bb；Skill ZIP SHA256 1e277007fee8a439294b690ab0b1641805bbd309fb37fcc7d8b82c4e0263000d。本地Skill覆盖后新会话重新加载，已有AI进程不会热更新。证据：该目录installed-boundaries.json、mux-gui-hil.json、installed-exit.json、payload-validation.json、checksums.json、skill-install.json；reports/final-installed-lan.json。最终运行代码对应90cee876，后续提交只收录生成Web资源及报告。
 
 本次有限收尾后暂停扩展审计。长期验证、跨物理主机、物理脱机按键、外部UART/Modbus/YMODEM对端、V2/V3实体、完整硬件故障注入及矩阵逐项剩余入口保持未验证；不能把本轮核心闭环和全量自动化等同于所有功能/所有边界真机全通过。未增加WinUSB，未改SDK/Arm2D/MicroBoot，未合并、签名、打tag或发布。
+
+## 2026-10-07：V3/V4 双机验收与连接时重复开机动画
+
+- V4 已移植 V3 的 Watch v2 无应用层 CRC 事件、固定地址 SWD 连续读取、热路径 ILM 和线程优先级修复；35 组应用测试及 USB DAP 恢复测试通过，SES Debug 编译与 SWD 时序布局检查通过。V3 21 组测试通过。
+- 双 STM32F103RET6 同时采集：30 秒单字采样 V3 267,023 点/秒、V4 270,071 点/秒，最大相邻间隔 77/94 μs，无 >1 ms 间隔，传输丢包为零。RTT8 并行约 229k/232k 点/秒、最大间隔 311/312 μs。每通道 256 字节下行哈希一致；上下行及 14 个不同大小/对齐/跨边界区域通过。
+- OpenOCD 在 RTT8+Watch 中抢占，两机应用 ELF 下载校验、单步及显式重启采集通过。V4 首次开口发生 Windows 设备不存在错误，重新枚举后的一次重试及后续三次独立开口通过。不能据此声称永不出现 USB 枚举异常。
+- V3 PR1 合并为 b33038e；V4 PR3 合并为 15d9210。固件报告在对应仓库 `docs/v3-v4-performance-parity-20261007.md`。本轮没有物理 HPM 测试和长稳；V4 原有 Arm-2D/MicroBoot 本地修改保留且未纳入提交，编译不是干净递归克隆验收。
+- Web GUI 的连接刷新来自明确的后台交接：lobby/另一个下载器会返回新的后台登录地址；桌面代理切换也会通知旧 socket 失效。旧实现重放了完整开机动画，并可能同时收到 HTTP 与 socket 两次跳转通知。
+- 现在交接使用一次性“正在切换下载器”提示，同次跳转去重；保留完整设备状态重建、登录认证以及旧流关闭，不将旧符号/波形迁到新设备。不是跨来源 SPA 热切换。同后台 connect 路径不导航。
+- 25 项相关 GUI 测试、43 项后台/代理测试和生产构建通过。本机 Chrome 已实际验证 lobby→V3、V3 断开再连、V3→V4：首次连接成功，同设备重连保留页面。新提示及重复通知去重另有执行级测试。
+- GUI 修复在开发分支与构建资源中；本轮未制作/覆盖安装新 NSIS，也未替换本地 Skill。测试浏览器已关闭，后台自然释放；既有安装包状态不可据此视为已更新。

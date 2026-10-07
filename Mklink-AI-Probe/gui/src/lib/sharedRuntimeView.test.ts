@@ -63,9 +63,10 @@ describe('shared window transport presence', () => {
     expect(Socket.all[1]!.url).toContain('/api/runtime/control/view/')
   })
   it('reloads device state when another desktop window changes the selected runtime', () => {
-    const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => {})
+    const reload = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
     Socket.all[0]!.onclose?.({ code: 1012, reason: 'runtime changed' })
     expect(reload).toHaveBeenCalledOnce()
+    expect(reload.mock.calls[0]![0]).toContain('runtime_transition=probe')
     vi.advanceTimersByTime(60000)
     expect(Socket.all).toHaveLength(1)
     reload.mockRestore()
