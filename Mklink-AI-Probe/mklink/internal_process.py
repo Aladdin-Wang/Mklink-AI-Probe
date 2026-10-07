@@ -5,6 +5,9 @@ import sys
 def dispatch_internal_process(arguments):
     """Return an exit code for an internal command, otherwise None."""
     values = list(arguments)
+    if values[:1] == ['--internal-serial-worker']:
+        from mklink._serial_worker import main
+        return main(values[1:])
     if values == ['--internal-pack-worker']:
         from mklink.cmsis_dap.pack_worker import main
         return main()

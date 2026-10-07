@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T10:03:51.053781+08:00`
+- 更新时间：`2026-10-07T10:35:52.732501+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：继续桌面/Web GUI及SuperWatch收益验收。发现桌面代理切探针后其他窗口旧WebSocket残留，现用代际事件关闭旧连接并让presence收到1012/runtime changed后刷新，防止设备状态混用；修复远程仪表盘测试mock缺router.replace。894 GUI、47相关后端测试通过。安装3cccf80d原生定向展示、1ms波形、暂停缩放/开始保持2s/div、RAM读/HardFault通过；安装后台单字全速复测约253–257kHz，偶发0.778–34.55ms长间隔仍待归因，不能称稳定<10us。准备新NSIS安装补验及全入口矩阵。旧持续目标暂停。
+- 当前任务：GUI验收见gui-watch-acceptance-20261007.md：64f27ca6已覆盖安装及更新Skill，双GUI首次连接与自动换后台、RTT8+MCP收发、虚拟串口及Modbus通过，Chrome单字节约260kHz暂停缩放开始通过。用户要求修复频繁毫秒级空隙：发现冻结程序禁用独立CDC接收。5次200ms主进程停顿复现旧路径5次10.7–15ms批间空隙，独立接收0次/最大161us。现复用internal-process入口支持冻结串口worker，39测试通过，待打包及自然负载对照，不声称所有尾延迟已消除。完整Python测试在40%中断且有2个fixture错误未归因；旧持续目标保持暂停。
 - 状态：`in_progress`
 
 ## 里程碑

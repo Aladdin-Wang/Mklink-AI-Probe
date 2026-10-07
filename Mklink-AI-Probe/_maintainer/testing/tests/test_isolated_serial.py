@@ -4,7 +4,7 @@ import time
 import pytest
 import serial
 
-from mklink._isolated_serial import IsolatedSerial
+from mklink._isolated_serial import IsolatedSerial, _worker_command
 
 
 def collect(port, size):
@@ -61,3 +61,11 @@ def test_worker_exit_is_visible_to_reader():
 def test_open_failure_is_reported_and_worker_is_reaped():
     with pytest.raises(serial.SerialException):
         IsolatedSerial('unsupported-mklink-test://', 115200)
+
+
+def test_frozen_worker_uses_internal_executable_contract(monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, 'executable', 'D:/MKLink/mklink-sidecar.exe')
+    assert _worker_command('COM42', 115200) == [
+        'D:/MKLink/mklink-sidecar.exe', '--internal-serial-worker', 'COM42', '115200']

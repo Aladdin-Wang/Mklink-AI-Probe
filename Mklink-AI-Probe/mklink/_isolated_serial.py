@@ -19,6 +19,12 @@ import time
 import serial
 
 
+def _worker_command(port, baudrate):
+    if getattr(sys, 'frozen', False):
+        return [sys.executable, '--internal-serial-worker', port, str(baudrate)]
+    return [sys.executable, str(Path(__file__).with_name('_serial_worker.py')), port, str(baudrate)]
+
+
 def _available(pipe) -> int:
     if os.name == 'nt':
         import ctypes
@@ -44,7 +50,7 @@ class IsolatedSerial:
         self._command_lock = threading.Lock()
         try:
             self._process = subprocess.Popen(
-                [sys.executable, str(Path(__file__).with_name('_serial_worker.py')), port, str(baudrate)],
+                _worker_command(port, baudrate),
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 bufsize=0, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
             )

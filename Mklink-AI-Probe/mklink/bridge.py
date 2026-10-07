@@ -137,7 +137,7 @@ class MKLinkSerialBridge:
             require_runtime_port(self._port)
             # The bundled desktop/CLI/MCP Python runtime can pause all threads
             # during GC or native parsing. Keep Windows CDC draining elsewhere.
-            isolated = (os.name == 'nt' and not getattr(sys, 'frozen', False)
+            isolated = (os.name == 'nt'
                         and getattr(serial.Serial, '__module__', '') == 'serial.serialwin32')
             constructor = IsolatedSerial if isolated else serial.Serial
             self._serial = constructor(self._port, self._baudrate, timeout=0.01)

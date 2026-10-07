@@ -55,9 +55,11 @@ def test_identity_change_before_open_never_constructs_serial(bound_probe, monkey
         bridge.close()
 
 
+@pytest.mark.parametrize('frozen', [False, True])
 @pytest.mark.parametrize('isolated', [False, pytest.param(True, marks=pytest.mark.skipif(os.name != 'nt', reason='Windows transport'))])
 @pytest.mark.parametrize('change', ['missing', 'replaced', 'renumbered', 'duplicate'])
-def test_identity_change_during_open_closes_without_commands(bound_probe, monkeypatch, change, isolated):
+def test_identity_change_during_open_closes_without_commands(bound_probe, monkeypatch, change, isolated, frozen):
+    monkeypatch.setattr(bridge_module.sys, 'frozen', frozen, raising=False)
     serial_port = Mock(is_open=True)
     serial_port.close.side_effect = lambda: setattr(serial_port, 'is_open', False)
     opened = []
@@ -68,7 +70,6 @@ def test_identity_change_during_open_closes_without_commands(bound_probe, monkey
     if isolated:
         # Select the real Windows bridge branch, replacing only its transport.
         constructor.__module__ = 'serial.serialwin32'
-        monkeypatch.setattr(bridge_module.sys, 'frozen', False, raising=False)
         monkeypatch.setattr(bridge_module, 'IsolatedSerial', constructor)
     monkeypatch.setattr(bridge_module.serial, 'Serial', constructor)
     bridge = MKLinkSerialBridge('COM10')

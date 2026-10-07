@@ -16,16 +16,19 @@ if __package__ in (None, ''):
 import serial
 
 
-def main():
+def main(arguments=None):
     def reply(value):
         sys.stderr.write(json.dumps(value) + '\n')
         sys.stderr.flush()
 
     try:
-        port = serial.serial_for_url(sys.argv[1], int(sys.argv[2]), timeout=.01, write_timeout=5)
+        arguments = sys.argv[1:] if arguments is None else arguments
+        if len(arguments) != 2:
+            raise ValueError('Serial worker requires port and baudrate')
+        port = serial.serial_for_url(arguments[0], int(arguments[1]), timeout=.01, write_timeout=5)
     except Exception as exc:
         reply({'error': str(exc)})
-        return
+        return 1
     stopped = threading.Event()
     read_lock = threading.Lock()
     pending = queue.Queue(maxsize=4096)  # at most 16 MiB, then explicit backpressure
@@ -98,7 +101,8 @@ def main():
     finally:
         stopped.set()
         port.close()
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())
