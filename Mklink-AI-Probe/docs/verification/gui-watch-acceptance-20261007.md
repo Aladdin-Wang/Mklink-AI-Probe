@@ -192,3 +192,21 @@ known layout issue is not a sampling failure and is not fixed in this acceptance
 These are bounded V3/STM32 installed-surface checks, not a full-product regression,
 V4 priority qualification or a long soak. Earlier OpenOCD and RTT8 coexistence
 evidence remains separate. No firmware or application source changed here.
+
+### Cross-window stop/restart correction
+
+The previous installed acceptance did not exercise a peer restart after the
+other window had issued Stop. That path closed the initiating window's binary
+subscription and status polling, so it could not follow the next shared start.
+SuperWatch now retains its subscription and renews status polling on a successful
+stop, preserving the last curve. A shared stopped status also clears the local
+display-pause latch. Start while locally paused and still sampling resumes the
+display without submitting another acquisition start. Ownership protection stays
+unchanged. The waveform suite passes 111 tests and the production build passes.
+
+A bounded two-Chrome test of the new production frontend against the installed
+backend observed shared status following and the formerly stopped window receiving
+50,000 points after a peer start. Temporary preview WebSocket proxy problems and
+a subsequent DAP target-change invalidation prevented a clean full live pass;
+this is not recorded as installed acceptance. A new local package and installed
+desktop/Web validation are pending.

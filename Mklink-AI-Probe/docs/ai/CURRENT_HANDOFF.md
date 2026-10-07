@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T12:53:36.425465+08:00`
+- 更新时间：`2026-10-07T14:03:54.716394+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：c9d2e502已完成NSIS覆盖安装（exit0、3个原生文件哈希匹配）及本地Skill2520文件一致性验证。实际桌面+Chrome+第三共享校验客户端：16799475点、约63s有效采集、266821Hz、最大91us、0次>1ms、采集/WS零丢弃；观察客户端退出不停止GUI。双下载器显式选择V3首次连接成功，桌面与Web暂停缩放开始完整波形、桌面停止缩放重启保持窗口、网页退出桌面继续通过。V3b19c470优先级和此前RTT8/OpenOCD证据保留；本轮未改固件。默认1200宽工具栏裁切仍存；不是全产品回归/V4新优先级/长期验收，持续目标保持暂停。详见gui-watch-acceptance-20261007.md。
+- 当前任务：修复SuperWatch跨GUI启停：Stop原来关闭该窗口WS与轮询，导致另一端Start无法跟随；现保留订阅并刷新状态轮询，共享stopped清本地pause，暂停时Start只恢复本窗口。111波形测试及生产构建通过。临时双Chrome生产前端曾收到另一端启动后的50000点，但预览代理问题及DAP目标改变导致未完成纯净验收，不能称安装通过。正在生成新NSIS，安装版及本地Skill仍c9d2e502；V3b19c470保持，固件未改，长期目标暂停。
 - 状态：`in_progress`
 
 ## 里程碑

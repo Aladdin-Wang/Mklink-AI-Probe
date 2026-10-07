@@ -223,6 +223,12 @@ function onVofaStreamState(event: Event): void {
     startVofaStatusPolling(false)
   } else if (state === 'stopped') {
     pendingBatch = null
+    // Stop the shared producer, not this window's subscription. Another GUI
+    // can start it again; retain history while still receiving status/metadata.
+    if (props.mode === 'SuperWatch') {
+      startVofaStatusPolling(false)
+      return
+    }
     binary.stop()
     stopVofaStatusPolling()
   }

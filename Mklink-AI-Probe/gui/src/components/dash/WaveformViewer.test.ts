@@ -408,7 +408,7 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
-  it('stops SuperWatch transport without clearing the retained viewer state', async () => {
+  it('keeps SuperWatch subscribed after stop so another GUI can restart it', async () => {
     const resetBinaryStream = vi.fn()
     ;(window as any).__waveformViewers.SuperWatch = { resetBinaryStream }
     const wrapper = mount(WaveformViewer, {
@@ -420,7 +420,7 @@ describe('WaveformViewer VOFA binary transport', () => {
 
     window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'stopped' }))
 
-    expect(mocks.binary.stop).toHaveBeenCalledOnce()
+    expect(mocks.binary.stop).not.toHaveBeenCalled()
     expect(mocks.binary.reset).not.toHaveBeenCalled()
     expect(resetBinaryStream).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -527,6 +527,34 @@ describe('WaveformViewer VOFA binary transport', () => {
     } finally {
       runtime.cleanup()
     }
+  })
+
+  it('follows a shared stop and restart after this window paused its display', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      await flushPromises()
+      runtime.probe.syncStatus({ state: 'running' })
+      document.getElementById('btn-pause')!.click()
+      runtime.probe.syncStatus({ state: 'running' })
+      expect(runtime.probe.collectionState().state).toBe('paused')
+      runtime.probe.syncStatus({ state: 'stopped' })
+      expect(runtime.probe.collectionState().state).toBe('stopped')
+      runtime.probe.syncStatus({ state: 'running' })
+      expect(runtime.probe.collectionState()).toMatchObject({ state: 'running', paused: false })
+    } finally { runtime.cleanup() }
+  })
+
+  it('resumes a locally paused display without restarting shared acquisition', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      await flushPromises()
+      runtime.probe.syncStatus({ state: 'running' })
+      document.getElementById('btn-pause')!.click()
+      const calls = vi.mocked(fetch).mock.calls.length
+      document.getElementById('btn-start')!.click()
+      expect(runtime.probe.collectionState()).toMatchObject({ state: 'running', paused: false })
+      expect(vi.mocked(fetch).mock.calls.length).toBe(calls)
+    } finally { runtime.cleanup() }
   })
 
   it('defaults SuperWatch to 1 ms and applies a new interval while running', async () => {
