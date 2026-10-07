@@ -130,3 +130,25 @@ virtual-port burst overflowed that test path; it is not counted as passing.
 V3 eight-channel RTT with Watch also passed 256-byte/channel target hashes, and
 OpenOCD halt/step/resume invalidated both streams and allowed explicit restart.
 Updated frozen installation acceptance remains pending at this checkpoint.
+
+### Downstream decode backlog
+
+The queued-read-only frozen build ran 95 seconds without heartbeat failure but
+still dropped 35,490 bytes from the bounded Watch event queue, producing three
+apparent waveform gaps (maximum 5.736 ms). It therefore did not pass the end-to-end
+no-gap gate, despite the raw CDC improvement.
+
+The shared SuperWatch manager now requests compact samples referencing validated
+batch bytes. Compiled scalar offsets decode directly from that payload, avoiding
+per-sample region lists, tuples and byte copies. Public/default dump frames retain
+their original representation. Alignment, signed subwords, cross-word values,
+multiple regions, bitfields, truncated data and timestamp rollover are checked.
+The related suites pass 296 tests. A local 1,016,000-sample expansion/decode
+benchmark improved from 997,881 to 1,286,469 samples/s (approximately 29%).
+
+The complete source backend plus binary WebSocket path then passed 95 seconds:
+25,300,217 received samples, 267,443 samples/s, maximum adjacent interval 104 us,
+zero intervals over 1 ms, zero Watch queue drops and zero WebSocket drops. Final
+state was running, not a stalled graph. Updated frozen build verification remains
+separate. The first NSIS attempt returned Windows "operation cancelled by user";
+the installed desktop remains old until system authorization is completed.

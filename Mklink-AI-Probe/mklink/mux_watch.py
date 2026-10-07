@@ -1,6 +1,13 @@
 """Adapt bounded multiplex watch events to the existing SuperWatch decoder."""
 import math
 import struct
+from typing import NamedTuple
+
+
+class PackedWatchSample(NamedTuple):
+    timestamp_us: int
+    payload: bytes
+    offset: int
 
 
 class MuxWatchCapacityError(ValueError):
@@ -41,7 +48,7 @@ class MuxWatchSession:
             self.transport.request(0x32, body)
             self.transport.watch_running = True
 
-    def read_frames(self):
+    def read_frames(self, *, packed=False):
         result = []
         # Keep decoding/publication bursts below the bounded RX queue's time
         # budget. Draining 64 KiB expands into thousands of Python sample
@@ -65,6 +72,9 @@ class MuxWatchSession:
                 self._pending = []
                 for offset in range(4, len(event), stride):
                     timestamp = struct.unpack_from('<I', event, offset)[0]
+                    if packed:
+                        result.append(PackedWatchSample(self._timestamp(timestamp), event, offset+4))
+                        continue
                     cursor = offset+4
                     regions = []
                     for index, (_, length) in enumerate(self.regions):
@@ -92,13 +102,15 @@ class MuxWatchSession:
         return result
 
     def _frame(self, timestamp, regions):
+        return {'format': 'mux', 'timestamp_us': self._timestamp(timestamp),
+                'flags': 0, 'regions': regions}
+
+    def _timestamp(self, timestamp):
         if self._last_clock is not None and timestamp < self._last_clock:
             self._clock_high += 1 << 32
         self._last_clock = timestamp
         self.samples += 1
-        return {'format': 'mux',
-                'timestamp_us': timestamp+self._clock_high,
-                'flags': 0, 'regions': regions}
+        return timestamp+self._clock_high
 
     def write(self, address, data, future):
         try:

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T11:52:48.6418680+08:00`
+- 更新时间：`2026-10-07T12:07:47.3665292+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V3 b19c470已升级：DAP5/USB6/采样7，后台任务降级，新RTT仍与Watch同任务；8通道收发及OpenOCD抢占/恢复通过。主机ms空隙已复现为独立接收线程停读反压：30ms停读旧路径7次约22ms，8x16KiB异步排队读取0次/最大111us；自然45s约1198万点267kHz最大91us、0次>1ms、零传输丢弃。130测试及虚拟串口生命周期通过。Watch非重试错误改为明确停止。待新NSIS/Skill与安装态验收；完整GUI验收未完成，不宣称任意负载无空隙。持续目标保持暂停。
+- 当前任务：V3 b19c470已升级，DAP/USB/采样优先，RTT8并行和OpenOCD抢占通过。2bbab719异步读取修复主机停读反压，30ms注入消除7次约22ms空隙；但95s打包后台仍有Watch队列35490B丢弃和3次长间隔。追加紧凑采样解码，基准吞吐+29%，296测试通过，源码完整后台+WS 95s约2530万点267kHz最大104us、0次>1ms、Watch与WS零丢弃。待最终打包验证。NSIS启动被Windows以用户取消拒绝，等待用户系统授权；桌面仍f5bba9b5，Skill暂2bbab719。GUI全面验收未完，持续目标暂停。
 - 状态：`in_progress`
 
 ## 里程碑

@@ -18,6 +18,7 @@ import webbrowser
 import xml.etree.ElementTree as ET
 
 from mklink.memory_access import parse_read_ram_response, read_memory
+from mklink.mux_watch import PackedWatchSample
 from mklink.watch import decode_value, resolve_variable_path
 
 
@@ -84,6 +85,7 @@ class CompiledFrameDecoder:
         self,
         channel_names: tuple[str, ...],
         region_fields: tuple[tuple[CompiledDecodeField, ...], ...],
+        region_sizes: tuple[int, ...] = (),
     ):
         self.channel_names = channel_names
         self.channel_index = {name: index for index, name in enumerate(channel_names)}
@@ -92,8 +94,25 @@ class CompiledFrameDecoder:
         self._region_masks = tuple(sum({1 << field.channel_index for field in fields})
                                    for fields in region_fields)
         self._complete_mask = (1 << len(channel_names)) - 1
+        self._packed_fields = []
+        offset = 0
+        for size, fields in zip(region_sizes, region_fields):
+            self._packed_fields.extend((offset + f.offset, f) for f in fields)
+            offset += size
+        self._packed_size = offset
+        self._packed_complete = {f.channel_index for _, f in self._packed_fields} == set(range(len(channel_names)))
 
-    def decode(self, frame: dict) -> list[float] | None:
+    def decode(self, frame: dict | PackedWatchSample) -> list[float] | None:
+        if isinstance(frame, PackedWatchSample):
+            if (not self._packed_complete or not self._packed_size or frame.offset < 0
+                    or frame.offset + self._packed_size > len(frame.payload)):
+                return None
+            for offset, field in self._packed_fields:
+                value = field.unpacker.unpack_from(frame.payload, frame.offset + offset)[0]
+                if field.bit_mask is not None:
+                    value = (int(value) >> field.bit_offset) & field.bit_mask
+                self._values[field.channel_index] = float(value)
+            return self._values
         seen = 0
         for region_index, region_data in frame.get("regions", ()):
             if not 0 <= region_index < len(self.region_fields):
@@ -259,7 +278,7 @@ def compile_frame_decoder(
                 bit_offset, (1 << bit_width) - 1 if bit_width is not None else None,
             ))
         region_fields.append(tuple(fields))
-    return CompiledFrameDecoder(channel_names, tuple(region_fields))
+    return CompiledFrameDecoder(channel_names, tuple(region_fields), tuple(block.size for block in blocks))
 
 
 def _read_block_via_bridge(bridge, address: int, size: int, *, timeout: float = 10.0) -> tuple[bytes, str]:

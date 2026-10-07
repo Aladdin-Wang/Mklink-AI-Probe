@@ -464,6 +464,21 @@ def test_bounded_drain_keeps_order_and_queue_accounting():
     assert transport.stats()['watch_dropped_bytes'] == 0
 
 
+def test_packed_watch_reuses_validated_payload_and_unwraps_clock():
+    from mklink.mux_watch import PackedWatchSample
+    transport, _ = peer()
+    transport.handshake()
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .000001)
+    payload = bytes([0, 9, 2, 4]) + struct.pack('<IIII', 0xfffffffe, 42, 3, 43)
+    transport.feed(packet(0x41, 17, 1, payload))
+    frames = watch.read_frames(packed=True)
+    assert all(isinstance(f, PackedWatchSample) for f in frames)
+    assert frames[0].payload is frames[1].payload
+    assert [f.timestamp_us for f in frames] == [0xfffffffe, (1 << 32) + 3]
+    assert [struct.unpack_from('<I', f.payload, f.offset)[0] for f in frames] == [42, 43]
+    assert watch.samples == 2 and watch.gaps == 0
+
+
 def test_watch_burst_budget_is_bounded_and_does_not_enlarge_rtt_queues():
     transport, _ = peer()
     transport.handshake()

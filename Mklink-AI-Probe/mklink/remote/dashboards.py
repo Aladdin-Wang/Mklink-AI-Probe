@@ -34,6 +34,7 @@ import uuid
 from typing import Any, Generator
 
 from mklink.remote.loop_delivery import LoopDelivery
+from mklink.mux_watch import PackedWatchSample
 from mklink.serial._frame import json_fields
 
 from mklink.remote.stream_protocol import (
@@ -2087,6 +2088,7 @@ class SuperWatchStreamManager:
                             bridge, region_pairs, self._interval,
                             write_ranges=self._live_write_ranges,
                         )
+                        session.packed_frames = True
                         completed_integrity = dict(self._stream_integrity)
                         try:
                             session.start()
@@ -2141,7 +2143,8 @@ class SuperWatchStreamManager:
                                     stop_event.wait(0.0005)
                                     continue
                                 if origin_us is None:
-                                    origin_us = int(frames[0]["timestamp_us"])
+                                    origin_us = (frames[0].timestamp_us if isinstance(frames[0], PackedWatchSample)
+                                                 else int(frames[0]["timestamp_us"]))
                                     with self._read_lock:
                                         self._origin_us = origin_us
                                 if not self._collecting.is_set():
@@ -2159,7 +2162,8 @@ class SuperWatchStreamManager:
                                         completed = 0
                                         for frame in frames[offset:offset+256]:
                                             row = decoder.decode(frame)
-                                            timestamp_us = int(frame["timestamp_us"])
+                                            timestamp_us = (frame.timestamp_us if isinstance(frame, PackedWatchSample)
+                                                            else int(frame["timestamp_us"]))
                                             sample_time_ms = (timestamp_us - origin_us) / 1000.0
                                             if row is None:
                                                 self._dropped_read_cycles += 1

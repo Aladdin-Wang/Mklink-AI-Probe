@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from mklink.superwatch import WatchItem, SuperWatchRuntime, build_read_blocks, compile_frame_decoder
+from mklink.mux_watch import PackedWatchSample
 
 
 RAM = 0x20000000
@@ -29,6 +30,9 @@ def test_word_padding_preserves_subword_and_cross_word_values(offset, code, kind
     assert block.size == ((offset + item.size + 3) & ~3)
     decoder = compile_frame_decoder([item], blocks)
     assert decoder.decode({'regions': [(0, bytes(raw[:block.size]))]}) == [value]
+    payload = b'header' + bytes(raw[:block.size])
+    assert decoder.decode(PackedWatchSample(123, payload, 6)) == [value]
+    assert decoder.decode(PackedWatchSample(123, payload[:-1], 6)) is None
     # A truncated second word cannot silently retain an earlier value.
     assert decoder.decode({'regions': [(0, bytes(raw[:offset + item.size - 1]))]}) is None
 
@@ -40,6 +44,17 @@ def test_overlapping_padded_values_share_one_word_without_changing_channel_order
     blocks = build_read_blocks(items, max_gap=0, ram_ranges=RANGES)
     assert [(b.address, b.size) for b in blocks] == [(RAM, 4)]
     assert compile_frame_decoder(items, blocks).decode({'regions': [(0, b'\x12\x34\x56\x78')]}) == [0x5634, 0x78, 0x12]
+
+
+def test_packed_regions_preserve_layout_bitfields_and_reject_missing_channels():
+    items = [WatchItem('half', RAM + 1, 'uint16_t', 2),
+             WatchItem('bits', RAM + 32, 'uint32_t', 4, scalar_kind='unsigned',
+                       metadata={'bit_offset': 4, 'bit_width': 3})]
+    blocks = build_read_blocks(items, max_gap=0, ram_ranges=RANGES)
+    decoder = compile_frame_decoder(items, blocks)
+    frame = PackedWatchSample(99, b'\x12\x34\x56\x78\x50\x00\x00\x00', 0)
+    assert decoder.decode(frame) == [0x5634, 5]
+    assert compile_frame_decoder(items, blocks[:1]).decode(frame) is None
 
 
 @pytest.mark.parametrize('address,size,source,ranges', [

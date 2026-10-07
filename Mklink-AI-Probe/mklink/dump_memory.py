@@ -1068,6 +1068,8 @@ class DumpMemoryStreamSession:
     coordinates bridge mode, command delivery, draining, and explicit stop.
     """
 
+    packed_frames = False
+
     def __init__(
         self,
         bridge,
@@ -1166,6 +1168,8 @@ class DumpMemoryStreamSession:
         if not self.started:
             raise RuntimeError("dump-memory stream is not started")
         if self._mux_watch is not None:
+            if self.packed_frames:
+                return self._mux_watch.read_frames(packed=True)
             return self._mux_watch.read_frames()
         raw = self.bridge.drain_stream_bytes(max_bytes=max_bytes)
         frames = self.parser.feed(raw) if raw else []
