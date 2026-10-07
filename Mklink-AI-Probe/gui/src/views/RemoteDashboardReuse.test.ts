@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { shallowMount } from '@vue/test-utils'
 import DashboardView from './DashboardView.vue'
 vi.mock('../lib/runtimeEndpoint', () => ({ API_BASE: '/_runtime/remote-windows/fixed', IS_REMOTE: true, IS_TAURI: false, REMOTE_WINDOW_ID: 'fixed' }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
 afterEach(() => vi.unstubAllGlobals())
 it('reuses existing memory and RTT panels while blocking host-only controls', async () => {
   const fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }))

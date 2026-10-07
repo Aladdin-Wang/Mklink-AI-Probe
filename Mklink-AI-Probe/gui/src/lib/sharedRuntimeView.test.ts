@@ -7,7 +7,7 @@ class Socket {
   readyState = 1
   send = vi.fn()
   onmessage: ((event: { data: string }) => Promise<void>) | null = null
-  onclose: (() => void) | null = null
+  onclose: ((event?: { code: number; reason: string }) => void) | null = null
   close = vi.fn(() => this.onclose?.())
   constructor(public url: string) { Socket.all.push(this) }
 }
@@ -61,6 +61,14 @@ describe('shared window transport presence', () => {
     Socket.all[0]!.onclose?.(); vi.advanceTimersByTime(1000)
     expect(Socket.all).toHaveLength(2)
     expect(Socket.all[1]!.url).toContain('/api/runtime/control/view/')
+  })
+  it('reloads device state when another desktop window changes the selected runtime', () => {
+    const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => {})
+    Socket.all[0]!.onclose?.({ code: 1012, reason: 'runtime changed' })
+    expect(reload).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(60000)
+    expect(Socket.all).toHaveLength(1)
+    reload.mockRestore()
   })
   it('keeps windows independent and stops permanently on normal pagehide', () => {
     const otherStop = startSharedRuntimeView()

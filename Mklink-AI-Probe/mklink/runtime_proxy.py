@@ -46,6 +46,7 @@ def create_proxy(info, *, port, instance_id, transport=None):
     view_lock = asyncio.Lock()
     view_registered = False
     closing = False
+    runtime_changed = asyncio.Event()
 
     async def release_view():
         nonlocal view_registered
@@ -136,6 +137,7 @@ def create_proxy(info, *, port, instance_id, transport=None):
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
     async def forward(request: Request, path: str):
+        nonlocal runtime_changed
         headers = {key: value for key, value in request.headers.items() if key.lower() not in HOP_HEADERS}
         headers["X-Auth-Token"] = info["token"]
         url = httpx.URL(f"http://127.0.0.1:{info['port']}/{path}").copy_with(query=request.url.query.encode())
@@ -159,6 +161,9 @@ def create_proxy(info, *, port, instance_id, transport=None):
                     await release_view()
                     info.clear()
                     info.update(selected)
+                    previous = runtime_changed
+                    runtime_changed = asyncio.Event()
+                    previous.set()
                 return {"same_runtime": False, "reload": True, "probe_id": selected["probe_id"]}
             return selection
         headers = {key: value for key, value in response.headers.items()
@@ -176,6 +181,7 @@ def create_proxy(info, *, port, instance_id, transport=None):
         # Legacy client also supports the declared websockets>=11 baseline and
         # never routes loopback IPC through environment-configured proxies.
         from websockets.legacy.client import connect
+        selected_generation = runtime_changed
         target = f"ws://127.0.0.1:{info['port']}/{path}"
         if websocket.url.query:
             target += "?" + websocket.url.query
@@ -198,13 +204,16 @@ def create_proxy(info, *, port, instance_id, transport=None):
                         else:
                             await websocket.send_text(message)
 
-                tasks = [asyncio.create_task(to_runtime()), asyncio.create_task(to_gui())]
+                changed = asyncio.create_task(selected_generation.wait())
+                tasks = [asyncio.create_task(to_runtime()), asyncio.create_task(to_gui()), changed]
                 try:
                     await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                 finally:
                     for task in tasks:
                         task.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
+                    if selected_generation.is_set():
+                        await websocket.close(code=1012, reason='runtime changed')
         except Exception:
             try:
                 await websocket.close(code=1011)

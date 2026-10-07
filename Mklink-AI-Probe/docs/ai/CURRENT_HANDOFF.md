@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T09:46:35.341493+08:00`
+- 更新时间：`2026-10-07T10:03:51.053781+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：GUI按需展示接口完成：源码3cccf80d，本地NSIS覆盖安装0、三文件哈希/39Web资产一致，Skill已更新。119后端/文档相关+27GUI测试通过，生产构建通过。真实本机Chrome经安装版代理，Skill MCP启动STM32单变量1ms采集并gui_present切换到SuperWatch，回执displayed，采样2006→27015且错误/丢弃0；已停止测试采集，保留浏览器波形。首次从agent shell启动后台子进程WinError5，正常桌面启动后首次连接通过，未宣称修复此启动环境问题。普通排故默认后台，不自动切页；多窗口定向，不控制OS前台或远程会话。持续目标仍暂停。见gui-presentation.md。
+- 当前任务：继续桌面/Web GUI及SuperWatch收益验收。发现桌面代理切探针后其他窗口旧WebSocket残留，现用代际事件关闭旧连接并让presence收到1012/runtime changed后刷新，防止设备状态混用；修复远程仪表盘测试mock缺router.replace。894 GUI、47相关后端测试通过。安装3cccf80d原生定向展示、1ms波形、暂停缩放/开始保持2s/div、RAM读/HardFault通过；安装后台单字全速复测约253–257kHz，偶发0.778–34.55ms长间隔仍待归因，不能称稳定<10us。准备新NSIS安装补验及全入口矩阵。旧持续目标暂停。
 - 状态：`in_progress`
 
 ## 里程碑

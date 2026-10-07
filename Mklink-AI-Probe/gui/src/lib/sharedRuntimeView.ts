@@ -26,9 +26,17 @@ export function startSharedRuntimeView(present?: (tab: string) => Promise<void>)
         current.send(JSON.stringify({ type: 'present_result', request_id: message.request_id, ok }))
       }
     }
-    current.onclose = () => {
+    current.onclose = event => {
       if (socket !== current) return
       socket = null
+      // Another window can select a probe through the same desktop proxy.
+      // Discard device-specific UI state instead of combining new HTTP data
+      // with sockets and symbols from the previous device.
+      if (!stopped && !suspended && !IS_REMOTE && event?.code === 1012 && event.reason === 'runtime changed') {
+        stop()
+        window.location.reload()
+        return
+      }
       // Only presence is retried. Remote sessions require explicit reconnection.
       if (!stopped && !suspended && !IS_REMOTE) retry = setTimeout(resume, 1000)
     }
