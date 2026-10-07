@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T09:00:17.148626+08:00`
+- 更新时间：`2026-10-07T09:16:01.517189+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V3 Watch免CRC帧及跨批SWD配置复用完成源码与真机验证，报告v3-watch-raw-frames.md。单变量跨批中位48→22us、P99 105→64/69us、速率239.6→258.7~260.1kHz；四变量仍65us，未达10us。主机MUX114通过，V3原生21套通过；OpenOCD+RTT8+Watch抢占下载校验恢复通过，Bootloader未变。用户明确要求不恢复固件、直接新版NSIS覆盖安装，撤销此前取消安装约束；正在打包安装验证。V4/SDK未改，持续目标未自动恢复。
+- 当前任务：V3免CRC与批间优化保留，主机c0cd0c4a本地NSIS覆盖安装返回0，负载哈希一致。安装桌面与本地Skill MCP共享同一后台，RTT8订阅读取及内存读取通过，AI退出不关闭设备；SuperWatch增项/启停/暂停恢复与RTT8并行通过，短测约224k/s且报告丢弃0。正在同步新版Skill共享后台说明及安装包Web资源。10us目标未达；V4未改、长期与持续目标仍暂停。见v3-watch-raw-frames.md。
 - 状态：`in_progress`
 
 ## 里程碑

@@ -98,21 +98,17 @@ Keil 工程默认先调用 `UV4.exe -b <project> -t <target>` 编译，再调用
 
 ### RTT 调试
 
-#### `python -m mklink rtt [--port COM6] [--duration 10]`
-一站式 RTT 捕获。自动从 `.mklink/rtt_config.json` 读取 RTT 地址。如果 MAP 文件比配置新，会自动更新 RTT 地址。
+#### `python -m mklink rtt --probe <设备ID或别名> --duration 10`
 
-```
-[*] 连接 COM6 ...
-[OK] 连接成功
-[OK] 从配置读取 RTT 地址: 0x20000e24
-[OK] RTT 已启动 (控制块: 0x20000e24)
-[*] 读取 RTT 输出 10.0 秒...
+通过共享后台捕获 RTT，GUI 已打开时仍可使用。已有采集仅订阅，省略 addr/channels
+等重配参数；CLI 结束不停止 GUI 的采集。未运行时才指定目标实际地址及通道，例如：
 
-[RTT] counter: 75 | adc: 2164 | sensor: 42
-[RTT] counter: 76 | adc: 2162 | sensor: 41
-...
-[OK] RTT 会话结束
+```powershell
+python -m mklink rtt --probe "电机板" --addr 0x20000e24 --channels 0 1 --duration 10
 ```
+
+地址是示例，应从当前工程符号或配置取得。AI 的 MCP 流程使用共享 `rtt_start()`、
+`rtt_read_channel`，不发送旧固件 RTTView 原始命令。详见[共享后台](shared-runtime.md)。
 
 **RTT 前提条件：**
 1. 固件已集成 SEGGER RTT（运行 `rtt-integrate` 可自动集成）

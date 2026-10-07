@@ -105,32 +105,17 @@ grep "_SEGGER_RTT\s+0x" build/keil/List/rt-thread.map
 # 本例 Keil 工程默认用 UV4.exe -f；IDE 不可用时才进入 pyOCD，最后才是脱机 API。
 # 完整规则见 firmware-download-priority.md。
 
-# 4. 重置设备并等待 RT-Thread init
-python -c "
-from mklink.bridge import MKLinkSerialBridge
-import time
-b = MKLinkSerialBridge('COM5')
-b.connect()
-b.send_command('cmd.reset_chip()', timeout=10.0)
-time.sleep(8)  # 关键：等 RT-Thread 完成 init
-print(b.send_command('RTTView.start(0x2001F000, 1024, 0)', timeout=10.0))
-"
-
-# 5. 预期响应
-# Find SEGGER RTT addr 0x2001f000
-# UpBuffer Channel 0 Size: 1024 Mode: 0
-
-# 6. 读心跳流
-python -c "
-from mklink.bridge import MKLinkSerialBridge
-b = MKLinkSerialBridge('COM5')
-b.connect()
-b.send_command('RTTView.start(0x2001F000, 1024, 0)', timeout=10.0)
-import time; time.sleep(8)
-print(b.read_stream(duration=3.0))
-"
-# 预期：[HB] tick=N seq=M 持续输出
 ```
+
+4. 等待目标实际完成 RTT 初始化；上面的 8 秒是该历史工程的观测值，不是通用延时。
+5. 使用共享 MCP `connect(probe=...)`。GUI 已采集时无参数 `rtt_start()` 订阅；
+   未采集时才调用 `rtt_start(addr="0x2001F000", channels=[0])`，地址仅适用于本例。
+6. `rtt_read_channel(channel=0, cursor=0)` 读取心跳，后续传回返回的 cursor/session。
+   预期 `[HB] tick=N seq=M` 持续增长；结束后 `disconnect`，不停止借用的 GUI 采集。
+
+固定控制块地址是目标工程的内存布局选择，不要求下载器进入独占串口映射。
+AI 不直接创建串口 Bridge 或发送旧固件 RTTView 命令。完整并存流程见
+[共享后台](shared-runtime.md#ai-与-gui-共存)。
 
 ## GEC6100D 实测结果（2026-06-09）
 

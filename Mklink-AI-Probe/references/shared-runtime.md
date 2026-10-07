@@ -41,6 +41,25 @@ python -m mklink runtime call device_status --probe "电机板"
 
 ## AI 与 GUI 共存
 
+AI 默认使用共享接口，无论用户是否已打开桌面或 Web GUI。不要先关闭上位机，
+也不要发送固件 `RTTView.start/stop` 或自行打开命令串口。外部串口助手的旧映射
+仅用于用户明确选择的独立使用场景，不是 AI/CLI/MCP/GUI 的 RTT 启动路径。
+共享 MCP 工具仍叫 `rtt_start`，这个名称不代表旧固件原始启动命令。
+
+推荐顺序：
+
+1. `ping` 核对共享能力，`discover_probes` 明确目标，`connect(probe=..., client_name=...)`
+   复用当前后台。GUI 已加载工程/AXF 时省略这些参数。
+2. `runtime_status`、`gui_call("rtt_status")`、`superwatch(action="status")` 查看现状。
+3. RTT 已运行：无参数 `rtt_start()` 订阅，使用 `rtt_read_channel` 的独立 cursor/session
+   读取每个通道；未运行才传已验证地址和实际活动的 channels 创建采集。
+4. 通过 `superwatch` 或 `gui_call` 操作已声明的共享能力。GUI 与 AI 看到同一采集配置；
+   读取状态/历史不重启采集。修改共享设置须符合用户意图，不能覆盖其他客户端的配置。
+5. 完成后 `disconnect` 只退出 AI 会话；借用 GUI 采集时不调用 stop，不退出后台。
+
+“控制上位机”指调用共享后台支持的设备、采集和视图能力，不等于任意操作窗口、
+鼠标或本地文件。`ping.capabilities` 是可调用清单；未声明的动作不能拼接原始命令。
+
 `python -m mklink mcp` 默认连接共享后台。先读取 `ping.capabilities`，调用
 `connect(probe=设备ID或别名)`；省略工程与 AXF 表示采用后台当前配置。显式冲突
 会返回错误，不替换 GUI 的工程、设备或符号。

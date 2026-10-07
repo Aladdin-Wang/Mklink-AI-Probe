@@ -81,3 +81,31 @@ Final repeated captures: one word 258731 samples/s, gap median/P99/max
 configurations passed again. The user explicitly authorized a new overwrite
 installation and requested leaving the candidate firmware in place. Packaging
 and actual installation qualification follow separately.
+
+
+## Installed host and shared Skill acceptance
+
+The authorized local NSIS overwrite returned exit code 0. Installed executable,
+sidecar and STCP hashes matched the installer payload; 39 bundled Web files
+matched the production build. This is a local unsigned development installation,
+not a published release. V3 keeps the candidate firmware; V4 remains unchanged.
+
+With the installed desktop connected, the local Skill MCP attached to the same
+backend instance and inherited its loaded symbols. Parameterless rtt_start
+returned subscribed/reused. All eight channels returned 16384 bytes each;
+a framed memory read succeeded during capture. MCP disconnect returned
+device_closed=false, leaving GUI and RTT running.
+
+A second MCP session added a uint8 variable and started, read, paused, resumed,
+and stopped SuperWatch while RTT8 continued. The short concurrent capture
+reported about 224k samples/s, 438531 samples at the status check, and zero
+reported parser drops, sample-drop flags, read errors or backend queue drops.
+This is a coexistence smoke test, not a new timing benchmark or proof of
+payload corruption detection. No physical reset or firmware restore was needed.
+
+Skill instructions now default to shared connection even when GUI is open,
+reuse existing capture without reconfiguration, keep per-channel cursors, and
+detach only the AI client. Old direct serial RTT startup recipes were removed.
+Supported GUI control means declared shared backend capabilities, not arbitrary
+window automation. Full GUI regression and long-duration qualification have
+not been rerun for this documentation/install step.

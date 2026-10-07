@@ -6,8 +6,8 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 # MKLink 用户入口
 
 本 Skill 只处理设备和用户工具。不要读取仓库交接、Git 状态、维护 Skill、构建或
-发布流程；修改用户的目标 MCU 工程仍属于设备使用。仅加载本次任务对应的一个或
-少数参考页，不预读全部文档。
+发布流程；修改用户的目标 MCU 工程仍属于设备使用。仅加载本次任务需要的
+参考页。
 
 ## 开始前
 
@@ -21,10 +21,10 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
   工程已配置的 IDE（Keil 等）编译下载，其次 pyOCD 在线下载，最后脱机下载。
   执行前读取[下载优先级](references/firmware-download-priority.md)。用户已确认
   Keil 能下载时，优先复用该工程配置，不继续盲试脱机 FLM。
-- 其他设备操作有 MKLink MCP tool 时优先使用。`ping.mode=shared-cdc` 时先读
-  [共享后台与多下载器](references/shared-runtime.md)，能力未覆盖不得自动打开独占 CDC。
-  GUI/MCP 与已迁移 CLI 已移除 `--direct`；其余独立工具须先显式释放对应后台。
-  参数以 tool schema/`--help` 为准，找不到入口再读[操作速查](references/tool-index.md)。
+- 优先使用共享 MCP；先读[共享后台](references/shared-runtime.md)，参数以 schema/`--help` 为准。
+  **GUI 已打开也可连接**：`connect(probe=...)` 复用工程和符号；`gui_call` 调用已声明的共享能力。
+  RTT 已运行时无参数 `rtt_start()` 订阅，用 `rtt_read_channel` 读取。
+  不发送旧 `RTTView.start/stop`，不另开串口；能力缺失不得退回独占方式。
 - 首次需要生成脚本、日志、采集或报告时，工作根目录固定为用户指定的非系统盘
   目录；用户未指定时使用目标项目 `.mklink/`。项目在系统盘或没有项目时先询问，
   不写 Skill 目录、AI 客户端目录、桌面或系统临时目录。按需读取

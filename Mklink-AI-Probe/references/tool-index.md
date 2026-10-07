@@ -23,7 +23,7 @@
 | 外设目录/采集（0.2.1 开发） | `peripheral_targets` · `select_peripherals` · `list_peripherals` · `capture_peripherals` | 与 CLI/Web 共用项目选择，采集 ≤30 秒、≤15 区域 |
 | 调试 | `halt` · `resume` · `step` · `set_breakpoint` · `clear_breakpoint` · `clear_all_breakpoints` · `read_core_registers` | FPB 硬件断点 |
 | 符号 | `load_symbols` · `symbols_status` · `memory_map` | DWARF 段表 |
-| RTT | `rtt_start`(mode=auto/dynamic/static) · `rtt_read` · `rtt_write` · `rtt_stop` · `capture_rtt` | mode 决策见 [rtt-static-mode.md](rtt-static-mode.md) |
+| RTT（共享） | `rtt_start` · `rtt_read_channel` · `rtt_history` · `rtt_write` · `rtt_write_hex` · `rtt_stop` | 已运行时无参数 start 订阅；未运行传 addr/channels；逐通道保留 cursor/session。不得使用旧 RTTView 原始命令，见 [共享后台](shared-runtime.md) |
 | **SystemView** | `systemview_integrate` · `systemview_start` · `systemview_read` · `systemview_stop` · `capture_systemview` · `systemview_decode` · `systemview_analyze` · `systemview_analyze_events` · `systemview_report` | RTOS 跟踪（任务切换/ISR/CPU%）；集成见 [systemview-rtthread.md](systemview-rtthread.md)；先 rtt-integrate |
 | HardFault | `check_hardfault` · `decode_hardfault` | decode 自动 CFSR 展开 + 内置 DWARF 源码回溯 |
 | Modbus | `modbus_open` · `modbus_close` · `modbus_read` · `modbus_write` · `modbus_scan` | 独立串口（非探针） |
