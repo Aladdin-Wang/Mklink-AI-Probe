@@ -34,7 +34,7 @@
       @media(max-height:480px) { #startup-splash { gap:8px; padding:16px; } .startup-visual { width:260px; } .startup-caption { display:none; } }
       @media(prefers-reduced-motion:reduce) { #startup-splash *, #startup-splash { animation:none!important; transition:none!important; } }
     </style>
-    <script type="module" crossorigin src="./assets/mime-v1/index-ZJxBGWEp.js"></script>
+    <script type="module" crossorigin src="./assets/mime-v1/index-C5A4V_ko.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/mime-v1/core-tyXAVNRQ.js">
     <link rel="stylesheet" crossorigin href="./assets/mime-v1/index-D-AiI9Sm.css">
   </head>
@@ -81,6 +81,7 @@
         const status = document.getElementById('startup-status')
         let value = 8
         let timer = 0
+
         const update = (nextValue, nextStatus) => {
           value = Math.max(value, Math.min(100, Math.round(nextValue)))
           fill.style.width = `${value}%`
@@ -88,9 +89,11 @@
           progress.setAttribute('aria-valuenow', String(value))
           if (nextStatus) status.textContent = nextStatus
         }
+
         timer = window.setInterval(() => {
           if (value < 18) update(value + 1)
         }, 320)
+
         window.__MKLINK_STARTUP__ = {
           update,
           finish() {
@@ -102,5 +105,6 @@
         }
       })()
     </script>
+
   </body>
 </html>

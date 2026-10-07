@@ -152,3 +152,16 @@ zero intervals over 1 ms, zero Watch queue drops and zero WebSocket drops. Final
 state was running, not a stalled graph. Updated frozen build verification remains
 separate. The first NSIS attempt returned Windows "operation cancelled by user";
 the installed desktop remains old until system authorization is completed.
+
+### Final packaged backend checkpoint
+
+The c9d2e502 NSIS payload was extracted without replacing the installation and
+its frozen backend tested for 95 seconds through the binary WebSocket path:
+25,303,765 received samples, 267,493 samples/s, maximum adjacent interval 94 us,
+zero intervals over 1 ms, zero Watch queue drops and zero WebSocket drops. Final
+state was running with no error; the test then stopped its own capture and the
+backend exited. This verifies the packaged backend, not multi-GUI rendering or
+an installed-desktop upgrade. Package validation matched all 39 GUI files and
+the built-in 7,059-target/2,224-blob algorithm manifest. Local Skill was replaced
+with c9d2e502 and its GUI files match the package build. Windows installation
+authorization is still pending; the installed desktop remains f5bba9b5.
