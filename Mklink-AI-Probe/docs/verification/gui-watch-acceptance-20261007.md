@@ -165,3 +165,30 @@ an installed-desktop upgrade. Package validation matched all 39 GUI files and
 the built-in 7,059-target/2,224-blob algorithm manifest. Local Skill was replaced
 with c9d2e502 and its GUI files match the package build. Windows installation
 authorization is still pending; the installed desktop remains f5bba9b5.
+
+### Installed desktop and Chrome acceptance
+
+The c9d2e502 NSIS update completed with exit code 0. All three installed native
+files match the extracted candidate by SHA-256. The actual desktop and Chrome
+Web GUI display v0.3.0/c9d2e502. All 2,520 files in the local Skill archive match
+the installed Skill. This supersedes the installation-pending checkpoint above.
+
+With two probes present, explicitly selecting V3 connected on the first attempt;
+Chrome joined the same installed backend. Both GUIs rendered the single uint8
+SuperWatch signal while a third shared client inspected the binary stream. The
+collector ran for 95 seconds including pre-start waiting: 16,799,475 samples span
+approximately 63 seconds of acquisition, 266,821 samples/s, maximum adjacent
+interval 91 us, zero intervals over 1 ms. Watch/parser, binary and WebSocket
+drop counts were zero; final acquisition state was running. The observing client
+then detached without stopping the GUI acquisition.
+
+On both real surfaces, pause -> time-axis zoom -> Start restored a full-width
+waveform with the narrowed time window. Desktop Stop retained the last waveform;
+further zoom -> Start again retained the narrower window and rendered across
+the plot. Closing the test Chrome tab left the desktop acquisition running.
+The desktop's 1,200-pixel default width still clips some toolbar badges; this
+known layout issue is not a sampling failure and is not fixed in this acceptance.
+
+These are bounded V3/STM32 installed-surface checks, not a full-product regression,
+V4 priority qualification or a long soak. Earlier OpenOCD and RTT8 coexistence
+evidence remains separate. No firmware or application source changed here.
