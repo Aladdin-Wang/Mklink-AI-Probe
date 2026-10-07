@@ -800,6 +800,7 @@ var IS_VOFA_MODE = CONFIG.mode === 'VOFA';
 var IS_SUPERWATCH_MODE = CONFIG.mode === 'SuperWatch';
 var IS_BINARY_WAVEFORM_MODE = IS_VOFA_MODE || IS_SUPERWATCH_MODE;
 var collectionState = 'stopped';
+var acquisitionState = 'stopped';
 var currentInterval = IS_SUPERWATCH_MODE ? 0.001 : 0;
 var intervalInput = document.getElementById('interval-input');
 var intervalDirty = false;
@@ -925,6 +926,10 @@ function syncDashboardStatus(d) {
     notifyVofaChannels();
   }
   var nextState = d.state;
+  if (!nextState && d.running !== undefined) nextState = d.running ? 'running' : 'stopped';
+  if (nextState) acquisitionState = nextState;
+  // A shared stop ends this display pause too; the next shared start must be visible.
+  if (nextState === 'stopped') renderPaused = false;
   if (IS_BINARY_WAVEFORM_MODE && renderPaused && nextState === 'running') {
     nextState = 'paused';
   }
@@ -1011,6 +1016,11 @@ if (typeof window !== 'undefined') {
 
 document.getElementById('btn-start').addEventListener('click', function() {
   if (typeof CONFIG !== 'undefined' && CONFIG.deviceConnected === false) return;
+  if (IS_BINARY_WAVEFORM_MODE && renderPaused && acquisitionState === 'running') {
+    renderPaused = false;
+    updateCollectionUI('running');
+    return;
+  }
   renderPaused = false;
   var opts = {method:'POST'};
   if (IS_VOFA_MODE && vofaChannels.length > 0) {
@@ -1031,6 +1041,7 @@ document.getElementById('btn-start').addEventListener('click', function() {
         vofaChannels = normalizeVofaChannels(d.channels);
         notifyVofaChannels();
       }
+      acquisitionState = 'running';
       updateCollectionUI('running');
       notifyVofaStreamState('running');
       // Reconnect SSE if needed
@@ -1062,6 +1073,7 @@ function stopCollection() {
     })
     .then(function(d){
       renderPaused = false;
+      acquisitionState = 'stopped';
       updateCollectionUI('stopped');
       notifyVofaStreamState('stopped');
     })

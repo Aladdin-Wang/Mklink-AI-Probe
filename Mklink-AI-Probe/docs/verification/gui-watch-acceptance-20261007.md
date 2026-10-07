@@ -210,3 +210,11 @@ backend observed shared status following and the formerly stopped window receivi
 a subsequent DAP target-change invalidation prevented a clean full live pass;
 this is not recorded as installed acceptance. A new local package and installed
 desktop/Web validation are pending.
+
+### a226562f installed cross-window acceptance
+
+- Local unsigned NSIS overwrite installation exited 0; all three executable/DLL payload hashes matched the extracted installer. Frozen sidecar contains the exact 39 GUI files and algorithm catalog with 7,059 targets / 2,224 blobs. Local Skill updated and 2,520 package files matched.
+- Actual installed desktop and local Chrome shared one V3/STM32 backend. Web Start -> desktop receives; desktop Stop -> Web stops; Web Start -> desktop receives again. The reverse Web Stop -> desktop Start -> Web receives also passed.
+- Desktop display Pause left Web running; Web Stop cleared the desktop pause state. Restart restored both displays. Web Pause followed by Start resumed local display without clearing history.
+- Repeated desktop Stop / Web Start with a 1 us requested interval and two float signals restored both waveforms. Transport/backend drops were zero at the final status observation. This is a short synchronization acceptance, not a new maximum-rate or long-duration benchmark.
+- Capture stopped at completion; desktop and Web left available for user inspection. Firmware unchanged. Existing narrow-window toolbar clipping remains outside this fix.

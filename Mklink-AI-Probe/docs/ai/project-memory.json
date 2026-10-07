@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-07T14:03:54.716394+08:00",
+  "updated_at": "2026-10-07T14:15:03.6422377+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "修复SuperWatch跨GUI启停：Stop原来关闭该窗口WS与轮询，导致另一端Start无法跟随；现保留订阅并刷新状态轮询，共享stopped清本地pause，暂停时Start只恢复本窗口。111波形测试及生产构建通过。临时双Chrome生产前端曾收到另一端启动后的50000点，但预览代理问题及DAP目标改变导致未完成纯净验收，不能称安装通过。正在生成新NSIS，安装版及本地Skill仍c9d2e502；V3b19c470保持，固件未改，长期目标暂停。"
+    "current_task": "SuperWatch跨GUI启停修复a226562f已推送、NSIS覆盖安装成功、三负载哈希匹配、39GUI文件及算法7059/2224验证、本地Skill2520文件匹配。111波形测试通过；安装态桌面+Chrome真机双向Stop/Start、桌面暂停不影响Web、另一端停止清本地暂停、高速重启以及暂停后Start恢复通过。测试末尾transport/backend丢包为0；非长稳/非性能基准。采集已停止，两窗口保留。固件未改，长期目标暂停。"
   },
   "milestones": [
     {
