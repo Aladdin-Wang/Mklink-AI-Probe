@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T09:31:03.772139+08:00`
+- 更新时间：`2026-10-07T09:46:35.341493+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：按用户要求新增按需GUI展示：gui_windows/gui_present复用现有presence WebSocket，定向窗口、白名单页、确认回执、超时不重放；不操作硬件或采集生命周期。64后端/MCP/presence、55Skill、27GUI通过，生产构建及真实浏览器配置→SuperWatch→手动RTT→再次展示通过。正准备安装版补验及本地Skill同步。持续目标保持暂停。见gui-presentation.md。
+- 当前任务：GUI按需展示接口完成：源码3cccf80d，本地NSIS覆盖安装0、三文件哈希/39Web资产一致，Skill已更新。119后端/文档相关+27GUI测试通过，生产构建通过。真实本机Chrome经安装版代理，Skill MCP启动STM32单变量1ms采集并gui_present切换到SuperWatch，回执displayed，采样2006→27015且错误/丢弃0；已停止测试采集，保留浏览器波形。首次从agent shell启动后台子进程WinError5，正常桌面启动后首次连接通过，未宣称修复此启动环境问题。普通排故默认后台，不自动切页；多窗口定向，不控制OS前台或远程会话。持续目标仍暂停。见gui-presentation.md。
 - 状态：`in_progress`
 
 ## 里程碑
