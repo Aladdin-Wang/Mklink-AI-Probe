@@ -1701,6 +1701,12 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"无法保存上传文件到工作区 {_state['project_root']}：{exc}。"
+                       "请检查目录权限和剩余空间；Web 快捷入口请更新后重新打开。",
+            ) from exc
         finally:
             await file.close()
 

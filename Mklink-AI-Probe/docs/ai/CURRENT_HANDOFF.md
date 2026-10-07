@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T15:55:47.642920+08:00`
+- 更新时间：`2026-10-07T19:44:54.9876458+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
-- 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V3/V4双STM32验证完成并按授权合并：V3 main b33038e，V4 main 15d9210。V4固件已升级，单字30秒约267k/270k点每秒，无>1ms；RTT8并行、14区域非对齐读取、OpenOCD应用下载校验/调试抢占恢复通过。V4首次开口有Windows枚举失败，明确重试及后续三次连接通过。GUI连接重放开机动画已修为切换提示并去重跳转；同后台不导航，Chrome实测连接通过。25 GUI/43 Python与生产构建通过。GUI修复尚未打新NSIS或更新本地Skill；长期目标暂停。
+- 工作树：Existing isolated host task worktree and PR30. V4 candidate codex/dap-stream-coexist 3bc7ef7; V3 hardware deferred. SDK and submodules preserved.
+- 当前任务：0.3.0发布准备：Web-only AXF工作区权限500已修，调速busy及符号重载提示已修。4471 Python通过/2跳过、902 GUI通过、生产构建通过。V4候选3bc7ef7已升级，Keil下载Verify OK及运行/暂停/单步/恢复/退出时RTT8+Watch自动恢复通过；OpenOCD低速并行也通过但采样率降低。无DAP单字30秒271576.69/s、最大73us、无>1ms。新版NSIS安装、实际Web上传与Skill仍待交付；V3和HPM/JTAG共存延后，长期目标暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -27,7 +27,7 @@
 - **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
 - **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
-- **实机与SuperWatch**：见superwatch-incremental-packing-20261006.md：固件cb88321/830ddd11，16配置每项两次短测；STM单变量批间94→57~63us、P99 169→125~142us；HPM34→24~26us、105→69~79us。STM全速吞吐下降2.4~4.1%；四变量STM98→85~88us/HPM71→54~56us，速率基本维持。10套原生测试、36布局最后共34083/34456字节精确样本、全速/1ms DAP抢占下载校验恢复通过；STM Bootloader保持。两目标1ms计数器698373/381072样本，各2999次+1无跳值；传输缺口/丢弃0。HPM某次100us四变量批内1879us未归因。新增分块CPU状态仅栈上，采集栈未触及1656/1488B；连接已关闭。此前报告保留；源码时间栅格未重打包，长期暂停。 docs/verification/systemview-timestamp-frequency.md：135项回归通过，V3核心时钟实机三次无溢出/解析丢包且时间比例约0.998；独立时钟为协议测试覆盖。未打包安装。 本地包补验见同报告：4406 Python通过/2跳过、889 GUI通过；本地Skill已更新，提取sidecar与Skill MCP/CLI通过。UAC取消，桌面覆盖未完成。
+- **实机与SuperWatch**：docs/verification/v030-release-prep-20261007.md：4471 Python通过/2跳过、902 GUI通过，生产构建通过。V4 3bc7ef7 SES与布局通过、37原生及USB恢复通过；Keil下载校验、RTT8+Watch运行/暂停/单步/恢复/退出通过，初始化后模式校验与传输丢弃为0。无DAP30秒271576.69/s、最大相邻73us、无>1ms。OpenOCD1MHz并行4区域1ms约225~236/s，下载校验与恢复通过，不保证设定频率。安装态和本地Skill待补验；保留其他功能矩阵的实体边界。
 
 ## 架构决策
 
@@ -39,20 +39,20 @@
 
 ## 真机环境
 
-- **state**：两台V4当前UF2 830ddd11（固件cb88321），临时a5cb9367/4892d729候选均已撤回。最终重编译哈希一致，双目标18布局与1ms DAP再验通过；STM/HPM计数器3秒各2999次+1无跳值、最大间隔259/141us（非保证上界）。堆used10680/12200B，采集栈尚未触及1656/1488B。连接已关闭，目标源码/SDK/子模块未改。
+- **state**：当前仅V4 STM32参与；候选3bc7ef7，UF2 SHA256 266815cdf3d42d563b7d4ded0007e309d3431ee43c3829fe921966a2a3ed2c31已升级。应用从0x08005000下载，Bootloader保持。Keil编辑器保留，仿真已退出；测试连接关闭。V3拔出，HPM/JTAG共存未验。子模块未改。
 - **installer**：当前安装及本地Skill为0.3.0 / 01d89c60，NSIS退出0、三负载哈希一致，双GUI暂停缩放恢复、Windows-only PATH MCP/Skill/CLI验证通过。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. GUI连接提示修复需要随下次NSIS交付；跨下载器仍为认证导航/页面重建而非SPA热切换。V4已有子模块本地修改未入库，干净依赖克隆构建未验。固件双机性能报告见各仓库。
+1. 按tauri-gui-builder生成本地unsigned NSIS，覆盖安装并实际验证Web-only AXF上传、双GUI共用后台、Skill和冻结MCP；记录退出清理。当前提交源码测试通过不等同安装验收。
 2. 网站交接已成功发送来财并触发新轮次；MicroBoot PR8/HANDOFF_DOT.md记录回执与资料。后续网站由云端处理，本地不声称其已改完或部署。
-3. 主机继续PR30；下一次修订改善采集中调速Conflict提示及另一窗口残留的符号重载停止提示。
+3. 继续主机PR30及V4共存候选PR；安装验收完成后整理0.3.0发布门槛。未授权主机合并、标签、签名或发布。V4完成后再按用户指示推进V3。
 4. 未验外设、跨物理主机、拔插、电压精度、保护、安装回滚及长稳保持原矩阵边界；长期与旧持续目标仍暂停。
 
 ## 已知限制
 
-- 增量打包/CRC已保留于cb88321/830ddd11；STM单变量批间停顿下降约33~39%，代价是全速吞吐下降2.4~4.1%，未稳定满足原先建议3%线。全速分散CPU工作会增加部分批内间隔；不能宣称零漏采/零抖动。HPM某次100us四变量采样出现1879us孤立间隔，复测未复现，需另行归因；短批次仍末尾重算CRC。DAP使旧采集失效须显式重启。安装/Skill仍01d89c60，长期及持续目标暂停。
+- V4新候选3bc7ef7支持已知且排空的SWD上下文插空采集、下载后自动恢复。未知/原始序列、RAM算法及JTAG仍保守占用；任意RAM批写编辑器未认证。无DAP30秒最大73us不代表保证上界；DAP活动有吞吐与时序代价，下载期间有合理间断。旧增量打包/CRC报告仅作历史，不可外推当前候选。V3和HPM/JTAG共存延后；安装/Skill尚未更新本轮源码，长期目标暂停。
 - 149是MUX帧基础，尚无多通道目标调度。后台约5秒触发退出，安装版完整清理约5.4至6.05秒；异常网络排空额外最多2秒。GUI靠在线连接保活，AI每秒续约/5秒过期；未打开的远程窗口仍有90秒回收上限。长期和跨物理主机未验证。 A5已收敛。A6活动MCP已扩展只读目录检查，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。
 - 0.3.0第七阶段：专用CLI、低层Device调用方未全部迁移，共享SDK不是完整Device替代。共享断点仅FPBv1，未制造真实HardFault；Bootloader重枚举升级、非Windows共享MSC受限。物理擦除/恢复、操作中拔插/休眠和断电未验收；长期测试按用户要求暂停。HPM FreeRTOS SystemView已短时真机验证，其他RTOS待验。MAP/C回退仅基本全局标量，新增声明须显式重载，不等于源码与固件匹配；稀疏类型待验。VOFA现有独立Vue路由复用WaveformViewer和二进制流，通道由CLI/AI配置；Chrome显示/暂停恢复及导出内容已验，系统保存对话框/原生保存待验；Float32不保留大整数低位，后端历史500点。UART开口前后身份校验、COM别名及启停事务已统一，读错误须显式重启；Modbus执行中结果未知不重放。现有UART/Modbus共享能力及专用CLI覆盖见详细报告，嵌套循环归属、逐请求断开取消、真实从站/拔插/OS阻塞仍待验。远程RTT/SystemView版本2及双探针本机LAN短时通过。旧111候选物理MSC三文件部署/哈希/双盘保持/清理通过，不等于触发烧录。114源码将offline.deploy接入RuntimeJobs，协议35/flash.offline版本2，GUI和SDK可按request_id查询；模拟取消/日志失败/换盘/去重及真实Chrome受控查询通过，115实包LAN查询/重复请求/正常重启保留已通过，116临时磁盘生产部署子进程中断通过；117已登记强杀恢复目录，仅供人工核查、可能已清理；物理MSC中断和完整GUI真实部署仍待验。最多64条记录，缺失不代表未执行，未知结果不得重放。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。

@@ -524,6 +524,20 @@ def test_browser_symbol_upload_rejects_an_unsupported_suffix(tmp_path):
     assert not (tmp_path / ".mklink" / "uploads" / "file-sources").exists()
 
 
+@pytest.mark.parametrize('failure', [PermissionError('workspace denied'), OSError('disk full')])
+def test_browser_symbol_upload_reports_storage_error(tmp_path, monkeypatch, failure):
+    from mklink.remote import api
+    def fail(*args):
+        raise failure
+    monkeypatch.setattr(api, '_store_uploaded_file_source', fail)
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post('/api/files/symbol', files={'file': ('firmware.axf', b'elf', 'application/octet-stream')})
+    assert response.status_code == 503
+    assert str(tmp_path) in response.json()['detail']
+    assert str(failure) in response.json()['detail']
+
+
 @pytest.mark.parametrize('owner', ['user:dashboard:rtt', 'ai:capture'])
 def test_shared_native_target_lease_does_not_preempt_existing_owner(tmp_path, owner):
     from mklink.remote.api import target_debug_lease

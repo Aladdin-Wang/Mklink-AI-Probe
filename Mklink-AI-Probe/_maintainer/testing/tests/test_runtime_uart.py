@@ -157,7 +157,7 @@ def test_modbus_open_and_status_do_not_block_runtime_heartbeat(client_factory, m
     entered, release = threading.Event(), threading.Event()
     def delayed_open(self):
         entered.set()
-        assert release.wait(2)
+        assert release.wait(10)
         return True
     monkeypatch.setattr(client_factory, 'open', delayed_open)
     app = create_app(project_root=str(tmp_path))
@@ -169,20 +169,17 @@ def test_modbus_open_and_status_do_not_block_runtime_heartbeat(client_factory, m
             starting = asyncio.create_task(http.post('/api/dash/modbus/start', json={'port': 'TEST', 'registers': []}))
             assert await asyncio.to_thread(entered.wait, 1)
             # Backstop makes a regressed synchronous status lock fail instead of hanging pytest.
-            timer = threading.Timer(1, release.set)
+            timer = threading.Timer(5, release.set)
             timer.start()
             pending_status = asyncio.create_task(http.get('/api/dash/modbus/status'))
-            start = time.monotonic()
             try:
                 await asyncio.sleep(.01)
-                heartbeat_started = time.monotonic()
                 assert (await http.get('/_runtime/status')).status_code == 200
-                elapsed = time.monotonic() - start
-                assert elapsed < .5, (
-                    f'elapsed={elapsed:.3f}s, scheduling={heartbeat_started-start:.3f}s, '
-                    f'heartbeat={time.monotonic()-heartbeat_started:.3f}s, '
-                    f'status_done={pending_status.done()}, released={release.is_set()}'
-                )
+                # Assert causal independence, not CI host scheduling speed:
+                # the heartbeat must finish while open still owns the lock.
+                # A synchronous status-lock regression only escapes when the
+                # backstop releases open, and therefore fails this assertion.
+                assert not release.is_set(), 'heartbeat waited for blocked Modbus open'
                 assert not pending_status.done()
             finally:
                 release.set()

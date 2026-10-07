@@ -8,7 +8,29 @@ import pytest
 from mklink import web_entry
 
 
-def test_default_web_entry_reuses_shared_backend_without_owning_process(monkeypatch):
+@pytest.fixture
+def isolated_entry_workspace(tmp_path, monkeypatch):
+    monkeypatch.setattr(web_entry, 'platform_data_dir', lambda **kwargs: tmp_path / 'web-entry')
+
+
+def test_protocol_entry_uses_persistent_workspace_not_shell_cwd(tmp_path, monkeypatch, isolated_entry_workspace):
+    shell_cwd = tmp_path / 'system32'
+    shell_cwd.mkdir()
+    monkeypatch.chdir(shell_cwd)
+    calls = []
+    def ensure(**kwargs):
+        calls.append(kwargs)
+        assert Path(kwargs['project_root']).is_dir()
+        return {'port': 8765, 'token': 'test-token'}
+    monkeypatch.setattr('mklink.runtime.ensure_runtime', ensure)
+    monkeypatch.setattr('mklink.runtime.handoff_gui', lambda info, prepare: (prepare(None), True)[1])
+    web_entry.start_web_entry(browser_open=lambda url: None)
+    assert calls == [{'project_root': str((tmp_path / 'web-entry/workspace').resolve()),
+                      'port': web_entry.DEFAULT_PORT, 'allow_lobby': True}]
+    assert not (shell_cwd / '.mklink').exists()
+
+
+def test_default_web_entry_reuses_shared_backend_without_owning_process(monkeypatch, isolated_entry_workspace):
     from mklink import web_entry
     opened = []
     info = {'port': 8765, 'token': 'test-token'}
@@ -21,7 +43,7 @@ def test_default_web_entry_reuses_shared_backend_without_owning_process(monkeypa
 
 
 @pytest.mark.parametrize('outcome', ['connected', 'timeout', 'browser_error'])
-def test_web_entry_holds_lease_before_open_and_releases_on_all_outcomes(monkeypatch, outcome):
+def test_web_entry_holds_lease_before_open_and_releases_on_all_outcomes(monkeypatch, outcome, isolated_entry_workspace):
     from mklink import runtime
     calls, clock = [], [0]
     class Client:

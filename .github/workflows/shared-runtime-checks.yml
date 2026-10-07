@@ -61,6 +61,7 @@ jobs:
           $tests += 'test_cli_systemview'
           $tests += 'test_systemview_streaming'
           $tests += 'test_runtime_uart'
+          $tests += 'test_web_entry'
           $tests += 'test_shared_modbus_scan'
           $tests += 'test_modbus_cli_defaults'
           $tests += 'test_shared_modbus_cli'

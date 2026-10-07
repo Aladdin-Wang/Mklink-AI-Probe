@@ -275,7 +275,7 @@ describe('SymbolVariablePanel', () => {
       await flushPromises()
       expect(mocks.refreshStatus).toHaveBeenCalledOnce()
       expect(mocks.ensureLoaded).toHaveBeenCalledTimes(2)
-      expect(wrapper.text()).toContain('符号已重载，采集已停止')
+    expect(wrapper.text()).toContain('符号已重载；请确认目标上的固件与当前符号文件一致')
       wrapper.unmount()
       await vi.advanceTimersByTimeAsync(4000)
       expect(mocks.refreshStatus).toHaveBeenCalledOnce()
