@@ -363,6 +363,22 @@ def test_watch_compact_batch_preserves_values_and_microsecond_wrap():
     assert watch.samples == 2
 
 
+@pytest.mark.parametrize('status', [1, 2, 3, 4, 5, 6, 8, 255])
+def test_watch_target_error_stops_instead_of_silently_discarding_forever(status):
+    transport, calls = peer()
+    transport.handshake()
+    transport.capabilities = 15
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .000001)
+    watch.start()
+    previous_commands = len(calls)
+    transport.feed(packet(0x41, 17, 1, struct.pack('<BBI', 0, status, 123)))
+    with pytest.raises(RuntimeError, match=f'target read failed \\(status {status}\\)'):
+        watch.read_frames()
+    assert watch.samples == 0
+    assert watch.gaps == 1
+    assert len(calls) == previous_commands  # No target replay or implicit reset.
+
+
 @pytest.mark.parametrize('payload', [bytes([0,9,0,4,0,0]), bytes([0,9,128,4,0,0]),
                                       bytes([0,9,1,1])+bytes(8), bytes([0,9,2,4])+bytes(8)])
 def test_watch_rejects_malformed_compact_batch(payload):

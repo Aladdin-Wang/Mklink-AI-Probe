@@ -83,3 +83,50 @@ state. Source and frozen CLI/remote entries use the same worker control contract
 port identity is still checked before and after open. Finite queues and explicit
 failure behavior remain. Thirty-nine worker/entry/identity tests pass; packaged
 execution and natural-load sampling acceptance are pending.
+
+## Windows queued reception and V3 priority follow-up
+
+The first frozen isolation build still failed a longer loaded run with a
+heartbeat response timeout. A separate run stopped receiving valid target
+samples while the GUI remained running and its parser error counter increased.
+Non-retryable Watch target status now stops acquisition with an explicit error
+instead of silently discarding every error event indefinitely. Neither failed
+run qualifies the full GUI acceptance gate.
+
+V3 firmware b19c470 orders DAP/USB/multiplex acquisition before background work.
+Modern eight-channel RTT remains inside the multiplex task. Firmware-only
+testing reduced the intra-batch maximum from 130 to 63 us, but retained one
+16.489 ms inter-batch stall in 30 seconds.
+
+The isolated worker previously posted only one small read at a time. Short
+descheduling leaves no large outstanding request, so CDC backpressure can stop
+sampling even though the application-level receive queue is not full. Controlled
+8-second runs with a 30 ms receive-thread pause approximately once per second:
+
+| Receive path | Intervals over 1 ms | Maximum interval |
+| --- | ---: | ---: |
+| Existing single read, 4 KiB driver buffer request | 7 | 22,368 us |
+| Single read, 1 MiB driver buffer request | 7 | 22,478 us |
+| Queued reads, production implementation | 0 | 111 us |
+
+Windows now keeps eight 16 KiB overlapped reads posted (128 KiB fixed storage).
+Each owns its event/buffer until completion or cancellation; results are consumed
+in submission order. A quiet reply has a short interval timeout. Reset cancels
+and reaps old reads before purging and starting a new generation; shutdown reaps
+before closing the port. The downstream worker queue remains bounded to 16 MiB.
+The implementation follows the ownership requirements in Microsoft's
+[ReadFile documentation](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile).
+
+Natural single-word sampling for 45 seconds then received 11,976,227 samples at
+267,106 samples/s: maximum adjacent interval 91 us, intra-batch maximum 64 us,
+zero intervals over 1 ms, zero event/queue loss. These are bounded measurements,
+not a guarantee under arbitrary host stalls or deliberate DAP ownership.
+
+130 protocol/worker/Windows request-ownership tests passed. Actual Windows
+virtual-port testing passed three paced 512 KiB byte-for-byte receive cycles,
+bidirectional commands, reset generation, reconnect and parent-stdin EOF cleanup;
+normal close released the port in approximately 5 ms. An initial unpaced 512 KiB
+virtual-port burst overflowed that test path; it is not counted as passing.
+V3 eight-channel RTT with Watch also passed 256-byte/channel target hashes, and
+OpenOCD halt/step/resume invalidated both streams and allowed explicit restart.
+Updated frozen installation acceptance remains pending at this checkpoint.

@@ -51,6 +51,10 @@ class MuxWatchSession:
             if status == 7:
                 self._pending = []
                 raise RuntimeError('DAP changed the target; SuperWatch capture was invalidated. Restart capture after debugging.')
+            if status and status != 9:
+                self._pending = []
+                self.gaps += 1
+                raise RuntimeError(f'SuperWatch target read failed (status {status}); capture stopped. Check the target connection and sampling debug speed before restarting.')
             if status == 9:
                 size = sum(n for _, _, n in self.parts)
                 stride = 4+size

@@ -16,6 +16,110 @@ if __package__ in (None, ''):
 import serial
 
 
+class _WindowsReadQueue:
+    """Keep CDC reads posted while Python is descheduled (128 KiB bounded).
+
+    Consume in submission order. Each request owns its buffer and event until
+    completion, including cancellation; USB never writes into recycled memory.
+    Only the receive thread calls read/close; reset is protected by read_lock.
+    """
+
+    def __init__(self, port):
+        import ctypes
+        from collections import deque
+        from serial import win32
+
+        self._ctypes, self._api, self._port = ctypes, win32, port
+        self._slots = deque()
+        self._closed = False
+        self._lock = threading.Lock()
+        timeout = win32.COMMTIMEOUTS()
+        if not win32.GetCommTimeouts(port._port_handle, ctypes.byref(timeout)):
+            raise serial.SerialException('Cannot read CDC timeouts')
+        # A quiet command reply completes promptly; continuous acquisition fills
+        # requests without depending on a new user-space ReadFile every 4 KiB.
+        timeout.ReadIntervalTimeout = 2
+        timeout.ReadTotalTimeoutMultiplier = 0
+        timeout.ReadTotalTimeoutConstant = 100
+        if not win32.SetCommTimeouts(port._port_handle, ctypes.byref(timeout)):
+            raise serial.SerialException('Cannot set CDC receive timeouts')
+        try:
+            for _ in range(8):
+                ov = win32.OVERLAPPED()
+                ov.hEvent = win32.CreateEvent(None, 1, 0, None)
+                if not ov.hEvent:
+                    raise serial.SerialException('Cannot create CDC receive event')
+                slot = [ov, ctypes.create_string_buffer(16384), False]
+                self._slots.append(slot)
+                self._post(slot)
+        except BaseException:
+            self.close()
+            raise
+
+    def _post(self, slot):
+        ov, buffer, _ = slot
+        api, ctypes = self._api, self._ctypes
+        api.ResetEvent(ov.hEvent)
+        count = api.DWORD()
+        ok = api.ReadFile(self._port._port_handle, buffer, len(buffer),
+                          ctypes.byref(count), ctypes.byref(ov))
+        if not ok and api.GetLastError() != api.ERROR_IO_PENDING:
+            raise serial.SerialException('Cannot queue CDC read')
+        slot[2] = True
+
+    def read(self):
+        if self._closed:
+            return b''
+        slot = self._slots[0]
+        ov, buffer, _ = slot
+        api, ctypes = self._api, self._ctypes
+        count = api.DWORD()
+        ok = api.GetOverlappedResult(self._port._port_handle, ctypes.byref(ov),
+                                     ctypes.byref(count), True)
+        slot[2] = False
+        if not ok:
+            if self._closed and api.GetLastError() == api.ERROR_OPERATION_ABORTED:
+                return b''
+            raise serial.SerialException('CDC queued read failed')
+        data = buffer.raw[:count.value]
+        with self._lock:
+            if not self._closed:
+                self._post(slot)
+                self._slots.rotate(-1)
+        return data
+
+    def cancel(self):
+        with self._lock:
+            self._closed = True
+            for ov, _, submitted in self._slots:
+                if submitted:
+                    self._api.CancelIoEx(self._port._port_handle, self._ctypes.byref(ov))
+
+    def _reap(self):
+        for slot in self._slots:
+            if slot[2]:
+                count = self._api.DWORD()
+                self._api.GetOverlappedResult(self._port._port_handle,
+                    self._ctypes.byref(slot[0]), self._ctypes.byref(count), True)
+                slot[2] = False
+
+    def reset(self):
+        self.cancel()
+        self._reap()
+        self._port.reset_input_buffer()
+        self._closed = False
+        for slot in self._slots:
+            self._post(slot)
+
+    def close(self):
+        self.cancel()
+        self._reap()
+        with self._lock:
+            for ov, _, _ in self._slots:
+                self._api.CloseHandle(ov.hEvent)
+            self._slots.clear()
+
+
 def main(arguments=None):
     def reply(value):
         sys.stderr.write(json.dumps(value) + '\n')
@@ -31,15 +135,23 @@ def main(arguments=None):
         return 1
     stopped = threading.Event()
     read_lock = threading.Lock()
-    pending = queue.Queue(maxsize=4096)  # at most 16 MiB, then explicit backpressure
+    pending = queue.Queue(maxsize=1024)  # at most 16 MiB, then explicit backpressure
     epoch = 0
+    reader = None
+    try:
+        if sys.platform == 'win32' and hasattr(port, '_port_handle'):
+            reader = _WindowsReadQueue(port)
+    except Exception as exc:
+        port.close()
+        reply({'error': str(exc)})
+        return 1
 
     def receive():
         try:
             while not stopped.is_set():
                 with read_lock:
                     generation = epoch
-                    data = port.read(min(4096, port.in_waiting) or 1)
+                    data = reader.read() if reader else port.read(min(4096, port.in_waiting) or 1)
                 if data:
                     while not stopped.is_set():
                         try:
@@ -50,6 +162,9 @@ def main(arguments=None):
         except Exception as exc:
             if not stopped.is_set():
                 pending.put((b'E', epoch, str(exc).encode('utf-8')))
+        finally:
+            if reader:
+                reader.close()
 
     def transmit():
         try:
@@ -82,16 +197,18 @@ def main(arguments=None):
                 elif op == 'reset_input_buffer':
                     with read_lock:
                         epoch += 1
-                        port.reset_input_buffer()
+                        if reader:
+                            reader.reset()
+                        else:
+                            port.reset_input_buffer()
                     reply({'epoch': epoch})
                 elif op == 'reset_output_buffer':
                     port.reset_output_buffer()
                     reply({'result': None})
                 elif op == 'close':
                     stopped.set()
-                    port.cancel_read()
+                    reader.cancel() if reader else port.cancel_read()
                     rx.join(timeout=1)
-                    port.close()
                     reply({'result': None})
                     break
                 else:
@@ -100,6 +217,8 @@ def main(arguments=None):
                 reply({'error': str(exc)})
     finally:
         stopped.set()
+        reader.cancel() if reader else port.cancel_read()
+        rx.join(timeout=1)
         port.close()
     return 0
 
