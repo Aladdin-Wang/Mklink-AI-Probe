@@ -57,8 +57,22 @@ AI 默认使用共享接口，无论用户是否已打开桌面或 Web GUI。不
    读取状态/历史不重启采集。修改共享设置须符合用户意图，不能覆盖其他客户端的配置。
 5. 完成后 `disconnect` 只退出 AI 会话；借用 GUI 采集时不调用 stop，不退出后台。
 
-“控制上位机”指调用共享后台支持的设备、采集和视图能力，不等于任意操作窗口、
-鼠标或本地文件。`ping.capabilities` 是可调用清单；未声明的动作不能拼接原始命令。
+### 按需向用户展示
+
+普通排故、状态读取和采集默认在后台完成，不切换 GUI、不打开新窗口。
+当用户要求展示，或需要用户检查波形、调参效果时，才调用：
+
+1. `gui_call("gui_windows")` 获取当前下载器后台中支持展示的窗口。
+2. 唯一窗口可省略 ID；多个窗口须明确选择 `window_id`，不能默认取第一个。
+3. `gui_call("gui_present", {"window_id": "...", "tab": "superwatch"})` 切换页面。
+   也支持 rtt/memory/symbols/hardfault/systemview；不接受任意 URL、脚本或鼠标操作。
+4. 只有返回 `status="displayed"` 才表示 GUI 已确认切换。unconfirmed/disconnected
+   不算成功，不自动重放；无窗口或旧 GUI 不支持时说明需要打开/更新 GUI。
+
+展示不启动、停止或重配采集，不改变目标板变量；GUI 与 AI 继续共享原有采集。
+可用已有 SuperWatch 接口配置观测，再按用户授权修改已知设定值展示阶跃响应。
+GUI 页面切换不保证浏览器/桌面窗口被操作系统置于前台，也不强制覆盖用户窗口焦点。
+远程会话窗口暂不接收此类展示请求。`ping.capabilities` 是可调用清单。
 
 `python -m mklink mcp` 默认连接共享后台。先读取 `ping.capabilities`，调用
 `connect(probe=设备ID或别名)`；省略工程与 AXF 表示采用后台当前配置。显式冲突

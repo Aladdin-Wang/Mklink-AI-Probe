@@ -376,6 +376,9 @@ def build_server():
     def gui_call(capability: str, arguments: dict | None = None) -> dict | list[dict]:
         """Invoke an advertised GUI capability on the shared backend.
 
+        gui_windows lists presentation-capable windows; gui_present({window_id, tab})
+        switches an existing window only when showing results is useful. Routine collection
+        stays in the background. Only displayed confirms navigation; never auto-replay.
         ping lists names. rtt_history/status and superwatch_snapshot/status reuse GUI acquisition.
         Acquisition start with {} subscribes if already running; new settings require an idle manager.
         Stop requires ownership and no other subscriber. A sole subscriber may recover

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import json
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from starlette.routing import Mount
 from mklink.runtime_capabilities import STREAMS, LIFECYCLE_CAPABILITIES, CAPABILITIES
@@ -55,22 +56,45 @@ def install_management(app, control):
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
 
+    @api.get('/windows')
+    async def windows():
+        from mklink.runtime_presentation import windows
+        return windows(control)
+
+    @api.post('/present')
+    async def present(body: dict):
+        from mklink.runtime_presentation import present
+        return await present(control, body)
+
     @api.websocket('/view/{key}')
     async def live_view(socket: WebSocket, key: str):
         if not 1 <= len(key) <= 128 or key in control.views or len(control.views) >= 128:
             await socket.close(code=1008)
             return
         record = {'joined': time.monotonic(), 'expires': float('inf'), 'name': 'GUI window', 'live': True}
+        record.update(socket=socket, presentation=socket.query_params.get('presentation') == '1')
         control.views[key] = record
         try:
             await socket.accept()
             await socket.send_json({'registered': True})
             while True:
-                if (await socket.receive())['type'] == 'websocket.disconnect':
+                message = await socket.receive()
+                if message['type'] == 'websocket.disconnect':
                     break
+                raw = message.get('text', '')
+                if len(raw) <= 1024:
+                    try:
+                        payload = json.loads(raw)
+                        if isinstance(payload, dict):
+                            from mklink.runtime_presentation import acknowledge
+                            acknowledge(record, payload)
+                    except ValueError:
+                        pass
         except WebSocketDisconnect:
             pass
         finally:
+            if record.get('pending') and not record['pending'][1].done():
+                record['pending'][1].set_result('disconnected')
             if control.views.get(key) is record:
                 control.views.pop(key, None)
 

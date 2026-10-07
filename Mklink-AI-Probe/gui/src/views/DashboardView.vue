@@ -92,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { LoaderCircle, RefreshCw, RotateCcw, Unplug, Usb, X } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMklinkApi } from '../composables/useMklinkApi'
@@ -126,6 +126,12 @@ const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
 const dashboardTabs = new Set(['rtt', 'superwatch', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
 const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) && (!IS_REMOTE || !['serial', 'modbus'].includes(routeTab)) ? routeTab : 'rtt')
+watch(() => route.query.tab, value => {
+  if (typeof value === 'string' && dashboardTabs.has(value) && (!IS_REMOTE || !['serial', 'modbus'].includes(value))) tab.value = value
+})
+watch(tab, value => {
+  if (route.query.tab !== value) void router.replace({ query: { ...route.query, tab: value } })
+})
 const resetting = ref(false)
 const rebootingProbe = ref(false)
 

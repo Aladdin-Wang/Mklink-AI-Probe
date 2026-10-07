@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T09:16:01.517189+08:00`
+- 更新时间：`2026-10-07T09:31:03.772139+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V3免CRC与批间优化保留，主机c0cd0c4a本地NSIS覆盖安装返回0，负载哈希一致。安装桌面与本地Skill MCP共享同一后台，RTT8订阅读取及内存读取通过，AI退出不关闭设备；SuperWatch增项/启停/暂停恢复与RTT8并行通过，短测约224k/s且报告丢弃0。正在同步新版Skill共享后台说明及安装包Web资源。10us目标未达；V4未改、长期与持续目标仍暂停。见v3-watch-raw-frames.md。
+- 当前任务：按用户要求新增按需GUI展示：gui_windows/gui_present复用现有presence WebSocket，定向窗口、白名单页、确认回执、超时不重放；不操作硬件或采集生命周期。64后端/MCP/presence、55Skill、27GUI通过，生产构建及真实浏览器配置→SuperWatch→手动RTT→再次展示通过。正准备安装版补验及本地Skill同步。持续目标保持暂停。见gui-presentation.md。
 - 状态：`in_progress`
 
 ## 里程碑

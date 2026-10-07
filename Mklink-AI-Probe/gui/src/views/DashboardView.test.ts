@@ -32,7 +32,7 @@ const toastMock = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   useRoute: () => ({ query: routerMock.query }),
 }))
 

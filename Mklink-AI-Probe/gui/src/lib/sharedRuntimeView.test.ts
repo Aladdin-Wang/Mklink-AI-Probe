@@ -3,6 +3,10 @@ import { startSharedRuntimeView } from './sharedRuntimeView'
 
 class Socket {
   static all: Socket[] = []
+  static OPEN = 1
+  readyState = 1
+  send = vi.fn()
+  onmessage: ((event: { data: string }) => Promise<void>) | null = null
   onclose: (() => void) | null = null
   close = vi.fn(() => this.onclose?.())
   constructor(public url: string) { Socket.all.push(this) }
@@ -19,6 +23,24 @@ describe('shared window transport presence', () => {
     stop = startSharedRuntimeView()
   })
   afterEach(() => { stop(); vi.useRealTimers(); vi.unstubAllGlobals() })
+  it('presents only valid unexpired requests and acknowledges completion', async () => {
+    stop()
+    const present = vi.fn().mockResolvedValue(undefined)
+    stop = startSharedRuntimeView(present)
+    const socket = Socket.all.at(-1)!
+    expect(socket.url).toContain('presentation=1')
+    const message = { type: 'present', request_id: 'one', tab: 'superwatch', expires_at: Date.now() / 1000 + 3 }
+    await socket.onmessage!({ data: JSON.stringify(message) })
+    expect(present).toHaveBeenCalledWith('superwatch')
+    expect(JSON.parse(socket.send.mock.calls[0]![0])).toEqual({ type: 'present_result', request_id: 'one', ok: true })
+    for (const invalid of [null, { ...message, tab: 'https://bad' }, { ...message, expires_at: 0 }]) {
+      await socket.onmessage!({ data: JSON.stringify(invalid) })
+    }
+    expect(present).toHaveBeenCalledTimes(1)
+    stop()
+    await socket.onmessage!({ data: JSON.stringify(message) })
+    expect(present).toHaveBeenCalledTimes(1)
+  })
   it('keeps a background window alive without a JavaScript heartbeat', () => {
     vi.advanceTimersByTime(120000)
     expect(Socket.all).toHaveLength(1)

@@ -110,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Languages } from '@lucide/vue'
 import { IS_REMOTE } from './lib/runtimeEndpoint'
@@ -158,7 +158,11 @@ watch(() => backendState.value === 'alive' ? sharedRuntime?.value === true : und
   if (shared === undefined || shared === windowLeaseMode) return
   stopWindowLease()
   windowLeaseMode = shared
-  stopWindowLease = shared || IS_REMOTE ? startSharedRuntimeView() : startBrowserSessionLease(!isTauri)
+  stopWindowLease = shared || IS_REMOTE ? startSharedRuntimeView(async tab => {
+    await router.push({ name: 'dashboard', query: { tab } })
+    await nextTick()
+    if (router.currentRoute.value.name !== 'dashboard' || router.currentRoute.value.query.tab !== tab) throw new Error('Navigation was not applied')
+  }) : startBrowserSessionLease(!isTauri)
 }, { immediate: true })
 const appVersion = __APP_VERSION__
 const buildCommit = __APP_BUILD_COMMIT__
