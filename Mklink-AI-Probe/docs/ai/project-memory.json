@@ -35,6 +35,10 @@
   ],
   "verification": [
     {
+      "area": "0.3.0正式发布回归",
+      "result": "2026-10-08：4471 Python通过、2跳过；902 GUI通过（87文件）；生产构建通过。V3 PR2 / bdd18d7和V4 PR4 / ed73ae9已通过CI并合并main。签名包与最终安装/发布仍待完成，不将源码测试当成发布成功。"
+    },
+    {
       "area": "CDC多路复用主机接入",
       "result": "full-function-audit-030.md末尾：最终安装/Skill与算法资产验证、安装MCP/CLI/Web双GUI、双探针独立退出、同机WLAN认证及隔离通过；冻结MCP打包缺陷已修。最终代码90cee876，后续仅生成资源和文档。完整自动化不等于全部实体边界通过，长期及旧持续目标保持暂停。 历史：docs/verification/cdc-multiplex-host.md：1362后端通过/2跳过，最终Bridge补测69通过；GUI整套851通过、最终相关52通过，生产构建及真实Edge/stdio MCP短测通过。双RTT+Watch+内存读写校验恢复、CLI多通道采集、会话恢复通过。全仓离线安全算法资源及联网wheel测试未通过/未完成。 Skill旧通道上限断言已修正，反馈契约66项通过。 MUX及RTT GUI回归已加入现有CI测试清单。 见cdc-multiplex-host.md安装补验：f17e4047三项CI通过，本地NSIS安装退出0，三负载哈希匹配；sidecar与Skill算法7059/2224验证。安装版Web双RTT+Watch+本地Skill stdio MCP通过，正常关闭6.16秒释放COM；原生桌面及CLI双通道共存、正常退出通过。 RTT多面板与0.3.0记录：54项相关GUI通过，真实浏览器收起保留及双通道+Watch+MCP通过。 b21d071c多面板安装/Skill覆盖、原生版本弹窗与安装态共存补验通过，5.75秒退出。 各通道平等版474ef405：188后端/65GUI、三项CI通过，安装与本地Skill覆盖、真实Web双通道/Watch/MCP/CLI、6.03秒退出释放COM及原生版本说明通过。 V3迁移补验：offline_download/device_configuration两套111通过；首次未绑定本地算法资产时21失败，绑定既有MKLINK_BUILTIN_FLM_ROOT后通过。V3真实配置读取及错误容量拒绝通过，无保护/电压写入。"
     },
@@ -45,10 +49,6 @@
     {
       "area": "统一远程GUI",
       "result": "148：应用06494629安装及Skill同步，三项包内负载哈希一致；109后端、247GUI通过，测试修正ff0c5b4c三项CI通过。源码RTT及安装版Memory/符号/SuperWatch、断线禁用并保留快照、桌面代理读取与管理拒绝通过；仅同机LAN短测。"
-    },
-    {
-      "area": "远程GUI第一阶段",
-      "result": "147源码cd32f7e6：99后端+20GUI测试、生产构建、三个CI通过；同主机LAN真实F103内存读取/暂停运行/寄存器/RTT、双远程会话/AI共存及断线禁用通过。跨物理主机、内存写入、RTT发送、单步和新版安装仍待验收。 用户重新授权后安装及代理/包内Web短测已补验通过，详见147安装补验。"
     },
     {
       "area": "共享后台、多探针与AI共存",
@@ -65,10 +65,6 @@
     {
       "area": "实机与SuperWatch",
       "result": "docs/verification/v030-release-prep-20261007.md：4471 Python通过/2跳过、902 GUI通过，生产构建通过。V4 3bc7ef7 SES与布局通过、37原生及USB恢复通过；Keil下载校验、RTT8+Watch运行/暂停/单步/恢复/退出通过，初始化后模式校验与传输丢弃为0。无DAP30秒271576.69/s、最大相邻73us、无>1ms。OpenOCD1MHz并行4区域1ms约225~236/s，下载校验与恢复通过，不保证设定频率。安装态和本地Skill待补验；保留其他功能矩阵的实体边界。"
-    },
-    {
-      "area": "0.3.0正式发布回归",
-      "result": "2026-10-08：4471 Python通过、2跳过；902 GUI通过（87文件）；生产构建通过。V3 PR2 / bdd18d7和V4 PR4 / ed73ae9已通过CI并合并main。签名包与最终安装/发布仍待完成，不将源码测试当成发布成功。"
     }
   ],
   "decisions": [

@@ -4,26 +4,26 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T19:44:54.9876458+08:00`
+- 更新时间：`2026-10-08T08:49:06.5945343+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
-- 工作树：Existing isolated host task worktree and PR30. V4 candidate codex/dap-stream-coexist 3bc7ef7; V3 hardware deferred. SDK and submodules preserved.
-- 当前任务：0.3.0发布准备：Web-only AXF工作区权限500已修，调速busy及符号重载提示已修。4471 Python通过/2跳过、902 GUI通过、生产构建通过。V4候选3bc7ef7已升级，Keil下载Verify OK及运行/暂停/单步/恢复/退出时RTT8+Watch自动恢复通过；OpenOCD低速并行也通过但采样率降低。无DAP单字30秒271576.69/s、最大73us、无>1ms。新版NSIS安装、实际Web上传与Skill仍待交付；V3和HPM/JTAG共存延后，长期目标暂停。
+- 工作树：Host PR30 publication preparation; V3 main bdd18d7 and V4 main ed73ae9 merged with CI success. SDK/submodules preserved.
+- 当前任务：用户已明确授权正式发布0.3.0和V3/V4主分支整合。固件两个PR已合并并本地切换main。发布说明精简为四项；主机全量回归、签名构建、安装验收及三端发布进行中。HPM/SES遗留占用按已知限制披露，未声称完全修复。详见docs/verification/v030-release-handoff.md。
 - 状态：`in_progress`
 
 ## 里程碑
 
-- **0.3.0 专用CLI共享迁移** — `development`。每探针共享后台、GUI在线持久提交与双V4真实终态恢复已短测；旧MCP启动入口删除，注册器/测试迁移仍待收敛。按用户要求进入最后收尾，之后暂停；长期验证继续暂停。
+- **0.3.0 专用CLI共享迁移** — `release_preparation`。共享后台与多通道RTT已完成多轮源码/安装态短测；完整矩阵的未验证边界见最新交接，发布授权已获得。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
+- **0.3.0正式发布回归**：2026-10-08：4471 Python通过、2跳过；902 GUI通过（87文件）；生产构建通过。V3 PR2 / bdd18d7和V4 PR4 / ed73ae9已通过CI并合并main。签名包与最终安装/发布仍待完成，不将源码测试当成发布成功。
 - **CDC多路复用主机接入**：full-function-audit-030.md末尾：最终安装/Skill与算法资产验证、安装MCP/CLI/Web双GUI、双探针独立退出、同机WLAN认证及隔离通过；冻结MCP打包缺陷已修。最终代码90cee876，后续仅生成资源和文档。完整自动化不等于全部实体边界通过，长期及旧持续目标保持暂停。 历史：docs/verification/cdc-multiplex-host.md：1362后端通过/2跳过，最终Bridge补测69通过；GUI整套851通过、最终相关52通过，生产构建及真实Edge/stdio MCP短测通过。双RTT+Watch+内存读写校验恢复、CLI多通道采集、会话恢复通过。全仓离线安全算法资源及联网wheel测试未通过/未完成。 Skill旧通道上限断言已修正，反馈契约66项通过。 MUX及RTT GUI回归已加入现有CI测试清单。 见cdc-multiplex-host.md安装补验：f17e4047三项CI通过，本地NSIS安装退出0，三负载哈希匹配；sidecar与Skill算法7059/2224验证。安装版Web双RTT+Watch+本地Skill stdio MCP通过，正常关闭6.16秒释放COM；原生桌面及CLI双通道共存、正常退出通过。 RTT多面板与0.3.0记录：54项相关GUI通过，真实浏览器收起保留及双通道+Watch+MCP通过。 b21d071c多面板安装/Skill覆盖、原生版本弹窗与安装态共存补验通过，5.75秒退出。 各通道平等版474ef405：188后端/65GUI、三项CI通过，安装与本地Skill覆盖、真实Web双通道/Watch/MCP/CLI、6.03秒退出释放COM及原生版本说明通过。 V3迁移补验：offline_download/device_configuration两套111通过；首次未绑定本地算法资产时21失败，绑定既有MKLINK_BUILTIN_FLM_ROOT后通过。V3真实配置读取及错误容量拒绝通过，无保护/电压写入。
 - **149固件与后台空闲退出**：docs/verification/runtime-idle-mux-149.md：最终安装版GUI退出6.05秒、AI强杀5.40秒释放COM；真实双网页退出通过，网络排空上限回归4项通过，5508bd06三项CI及固件4ab77c2两项CI通过。 新补验：runtime-idle-deadline.md：保留5秒租约和所有忙碌保护，仅消除最长约1秒的轮询量化；44测试通过，源码真机多客户端和RTT8通过，端口5.232秒释放，后台5.420秒退出。不承诺硬实时5秒；打包安装待后续。 打包补验：3e65f1ad本地NSIS已生成、本地Skill更新；冻结MCP+Skill MCP精简PATH通过，提取包多客户端RTT8/CLI真机端口5.241秒释放，进程5.427秒退出，无Python子进程。包内Web39文件一致；非覆盖安装。
 - **统一远程GUI**：148：应用06494629安装及Skill同步，三项包内负载哈希一致；109后端、247GUI通过，测试修正ff0c5b4c三项CI通过。源码RTT及安装版Memory/符号/SuperWatch、断线禁用并保留快照、桌面代理读取与管理拒绝通过；仅同机LAN短测。
-- **远程GUI第一阶段**：147源码cd32f7e6：99后端+20GUI测试、生产构建、三个CI通过；同主机LAN真实F103内存读取/暂停运行/寄存器/RTT、双远程会话/AI共存及断线禁用通过。跨物理主机、内存写入、RTT发送、单步和新版安装仍待验收。 用户重新授权后安装及代理/包内Web短测已补验通过，详见147安装补验。
 - **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
 - **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
@@ -34,32 +34,32 @@
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
 - 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议49，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
-- V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
+- V3 main bdd18d7、V4 main ed73ae9已通过CI并合并推送；本地已切main。Arm-2D/MicroBoot等子模块保持原状。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
+- 2026-10-08用户明确授权正式0.3.0发布、版本说明精简及V3/V4推送main；固件已经CI/PR整合，主机仍须精确提交发布门槛。
 
 ## 真机环境
 
-- **state**：当前仅V4 STM32参与；候选3bc7ef7，UF2 SHA256 266815cdf3d42d563b7d4ded0007e309d3431ee43c3829fe921966a2a3ed2c31已升级。应用从0x08005000下载，Bootloader保持。Keil编辑器保留，仿真已退出；测试连接关闭。V3拔出，HPM/JTAG共存未验。子模块未改。
-- **installer**：当前安装及本地Skill为0.3.0 / 01d89c60，NSIS退出0、三负载哈希一致，双GUI暂停缩放恢复、Windows-only PATH MCP/Skill/CLI验证通过。
+- **state**：V4/HPM5301共存与无DAP性能已短测；V3/STM32完成stage95短测后拔出。V4最终固件136525 samples/s、最大84us、无毫秒间隔；V3 269477 samples/s、最大79us。不能外推所有组合或长期。
+- **installer**：当前本地安装及Skill为04c9241d开发包；正式0.3.0待合并后重新签名构建并覆盖验证。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 按tauri-gui-builder生成本地unsigned NSIS，覆盖安装并实际验证Web-only AXF上传、双GUI共用后台、Skill和冻结MCP；记录退出清理。当前提交源码测试通过不等同安装验收。
-2. 网站交接已成功发送来财并触发新轮次；MicroBoot PR8/HANDOFF_DOT.md记录回执与资料。后续网站由云端处理，本地不声称其已改完或部署。
-3. 继续主机PR30及V4共存候选PR；安装验收完成后整理0.3.0发布门槛。未授权主机合并、标签、签名或发布。V4完成后再按用户指示推进V3。
-4. 未验外设、跨物理主机、拔插、电压精度、保护、安装回滚及长稳保持原矩阵边界；长期与旧持续目标仍暂停。
+1. 完成主机完整回归、生产构建和PR30 CI，按明确授权合并main；只从干净且与远程一致的main重新构建正式签名NSIS。
+2. 验收安装态Web/桌面、冻结MCP及本地Skill，准备七项发布文件，三端上传下载哈希验证后最后更新索引。
+3. 保持SES已知限制、跨物理主机及全芯片组合未验证边界；不得将发布授权写成所有验收通过。网站来财交接沿用现有任务，长期目标暂停。
 
 ## 已知限制
 
-- V4新候选3bc7ef7支持已知且排空的SWD上下文插空采集、下载后自动恢复。未知/原始序列、RAM算法及JTAG仍保守占用；任意RAM批写编辑器未认证。无DAP30秒最大73us不代表保证上界；DAP活动有吞吐与时序代价，下载期间有合理间断。旧增量打包/CRC报告仅作历史，不可外推当前候选。V3和HPM/JTAG共存延后；安装/Skill尚未更新本轮源码，长期目标暂停。
-- 149是MUX帧基础，尚无多通道目标调度。后台约5秒触发退出，安装版完整清理约5.4至6.05秒；异常网络排空额外最多2秒。GUI靠在线连接保活，AI每秒续约/5秒过期；未打开的远程窗口仍有90秒回收上限。长期和跨物理主机未验证。 A5已收敛。A6活动MCP已扩展只读目录检查，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。
-- 0.3.0第七阶段：专用CLI、低层Device调用方未全部迁移，共享SDK不是完整Device替代。共享断点仅FPBv1，未制造真实HardFault；Bootloader重枚举升级、非Windows共享MSC受限。物理擦除/恢复、操作中拔插/休眠和断电未验收；长期测试按用户要求暂停。HPM FreeRTOS SystemView已短时真机验证，其他RTOS待验。MAP/C回退仅基本全局标量，新增声明须显式重载，不等于源码与固件匹配；稀疏类型待验。VOFA现有独立Vue路由复用WaveformViewer和二进制流，通道由CLI/AI配置；Chrome显示/暂停恢复及导出内容已验，系统保存对话框/原生保存待验；Float32不保留大整数低位，后端历史500点。UART开口前后身份校验、COM别名及启停事务已统一，读错误须显式重启；Modbus执行中结果未知不重放。现有UART/Modbus共享能力及专用CLI覆盖见详细报告，嵌套循环归属、逐请求断开取消、真实从站/拔插/OS阻塞仍待验。远程RTT/SystemView版本2及双探针本机LAN短时通过。旧111候选物理MSC三文件部署/哈希/双盘保持/清理通过，不等于触发烧录。114源码将offline.deploy接入RuntimeJobs，协议35/flash.offline版本2，GUI和SDK可按request_id查询；模拟取消/日志失败/换盘/去重及真实Chrome受控查询通过，115实包LAN查询/重复请求/正常重启保留已通过，116临时磁盘生产部署子进程中断通过；117已登记强杀恢复目录，仅供人工核查、可能已清理；物理MSC中断和完整GUI真实部署仍待验。最多64条记录，缺失不代表未执行，未知结果不得重放。
-- nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
-- 分发/订阅缓冲有界但不是无损通道；105批发现RTT按行解析未换行尾部缓存无上限；106批源码加上限且CI通过，固定包长稳不含修复且消息带换行不能覆盖：SSE及二进制流共用合并唤醒的有界投递，每次待投递批次和正在排空批次各不超过配置条数，客户端队列另有独立上限；这是记录数边界，不是任意载荷的总字节承诺。溢出保留最新数据，二进制丢弃计数包含进入客户端前的损失；SSE停止与初始元数据有专门边界。断线/长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照，packed奇地址写不保证原子性。
-- HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。
-- STM32F767等重叠算法需匹配Bank模式；26个无可靠扇区表的FLM继续禁用扇区操作。
-- Mac/Linux、跨主机Agent、物理Modbus及所有芯片组合未完整认证；新固件仅格式/CRC/发布校验，不等同于重新完成实机认证。
+- HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。最终无诊断固件完整SES矩阵、已在仿真时新开采集、RTT下行及负载下烧录回读仍需后续验证。详见release handoff；长期目标暂停。
+- 性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。
+- V3无屏幕、不支持HPM；V3原生Keil暂停/单步尚未完成，OpenOCD对应流程通过。V4最终无诊断固件完整SES矩阵未完成。
+- 后台最后会话释放约5秒租约，加排空和退出开销；实测约5.2~6.1秒，不保证硬实时5秒。界面端口可以不同，物理探针仍由同一后台唯一拥有。
+- 长期验证按用户要求暂停；跨物理主机Agent、Mac/Linux、真实Modbus从站及全部芯片组合未完整认证。模拟测试不得替代实体边界。
+- nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。
+- 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。
+- Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。
 
 ## 延续协议
 
