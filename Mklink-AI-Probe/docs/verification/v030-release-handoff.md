@@ -26,3 +26,5 @@ These rates are individual measurements with RTT off and one four-byte signal. T
 Host full Python/GUI regression, production assets, exact merged source commit, signed NSIS and installed/frozen MCP verification are recorded in the release operation's local `release030-*` reports. The public release manifest records source commit, sizes and hashes; it is the source of truth for the distributed bytes. Never move an already published version tag to incorporate later documentation or fixes.
 
 Release UI build identity: production assets use `VITE_APP_BUILD_COMMIT=v0.3.0` for this release, so the displayed release identity is stable across PR and merge commits. The immutable release manifest retains the exact 40-character merged source commit. Use the same value when rebuilding the signed installer from main; verify tracked production assets remain byte-identical.
+
+The maintainer explicitly deferred upgraded firmware publication. V3/V4 source main integration is complete, but do not upload new UF2 assets or update firmware channel indexes as part of 0.3.0. Firmware-dependent features require a separately supplied matching firmware.
