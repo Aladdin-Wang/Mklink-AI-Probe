@@ -263,7 +263,7 @@ def test_browser_cookie_bootstrap(runtime):
 def test_multiple_probes_cannot_run_unbound_disk_writes(runtime, monkeypatch):
     client, _, calls, _, _ = runtime
     monkeypatch.setattr('mklink.probes.inventory', lambda: [{'probe_id': 'one'}, {'probe_id': 'two'}])
-    for path in ('/api/probe/firmware-upgrade', '/api/offline-download/deploy', '/api/offline-download/trigger'):
+    for path in ('/api/offline-download/deploy', '/api/offline-download/trigger'):
         assert client.post(path, json={}).status_code == 409
     assert calls == []
 

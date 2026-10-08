@@ -43,6 +43,64 @@ def probe(monkeypatch, tmp_path):
         state['device'] = None  # fake devices have no shutdown workers
 
 
+@pytest.mark.parametrize('supported', [True, False])
+def test_shared_firmware_upgrade_routes_bound_volumes_and_manual_fallback(probe, monkeypatch, tmp_path, supported):
+    from mklink import firmware_check as fc
+    client, control, state, bridge, calls, _, selected = probe
+    selected.update(identity_stable=True, vid=0xd28, pid=0x202, serial_number='0123456789abcdef')
+    class Volumes:
+        def __init__(self, probe): assert probe is selected
+        def find(self, *, bootloader=False): return 'boot' if bootloader else 'application'
+    monkeypatch.setattr('mklink.probe_volumes.FirmwareVolumes', Volumes)
+    def enter():
+        calls.append('enter')
+        if not supported: raise RuntimeError('Old firmware has no command')
+    bridge.enter_bootloader = enter
+    def upgrade(device, root, *, confirm, disk_reader, bootloader_finder):
+        assert confirm is True and disk_reader() == 'application' and bootloader_finder() == 'boot'
+        try: device.enter_bootloader()
+        except RuntimeError: return {'status': 'manual_required'}
+        return {'status': 'updated'}
+    monkeypatch.setattr(fc, 'upgrade_probe_firmware', upgrade)
+    result = client.post('/api/probe/firmware-upgrade', json=True)
+    assert result.status_code == 200, result.text
+    assert result.json()['status'] == ('updated' if supported else 'manual_required')
+    assert calls == [('open', 'COM9'), ('connect', {'recover_stream': False}), 'enter']
+    assert bridge.closed and not control.sessions and not state['resource_manager'].get_status()
+
+
+def test_lobby_upgrade_offers_manual_download_without_opening_a_probe(probe):
+    client, _, state, _, calls, _, _ = probe
+    state['shared_probe_id'] = 'lobby'
+    result = client.post('/api/probe/firmware-upgrade', json=True)
+    assert result.status_code == 200 and result.json()['status'] == 'manual_required'
+    assert not calls
+
+
+@pytest.mark.parametrize('busy', ['capture', 'client', 'job', 'uart_capture', 'uart_client'])
+def test_probe_update_still_protects_active_users_and_jobs(probe, monkeypatch, busy):
+    client, control, _, _, calls, managers, _ = probe
+    monkeypatch.setattr('mklink.runtime_probe.upgrade_firmware', lambda *a: pytest.fail('Unsafe update reached worker'))
+    if busy == 'capture': managers['rtt'].running = True
+    elif busy == 'uart_capture': managers['serial'] = SimpleNamespace(running=True)
+    elif busy == 'job': monkeypatch.setattr(control, 'job_busy', lambda: True)
+    else:
+        from mklink.runtime_api import Session
+        control.sessions['ai'] = Session('.', None, scope='uart' if busy == 'uart_client' else 'target')
+    assert client.post('/api/probe/firmware-upgrade', json=True).status_code == 409
+    assert not calls
+
+
+def test_uart_operations_cannot_start_during_probe_upgrade(probe):
+    client, control, _, _, calls, _, _ = probe
+    control.current_operation = {'path': '/api/probe/firmware-upgrade'}
+    try:
+        response = client.post('/api/dash/serial/start', json={'ports': []})
+        assert response.status_code == 409 and not calls
+    finally:
+        control.current_operation = None
+
+
 @pytest.mark.parametrize('existing', [False, True])
 @pytest.mark.parametrize('disk_version', [False, True])
 def test_firmware_recheck_reuses_probe_query_only_when_disk_version_is_unavailable(probe, monkeypatch, tmp_path, existing, disk_version):

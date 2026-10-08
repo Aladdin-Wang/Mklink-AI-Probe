@@ -1957,6 +1957,10 @@ def create_app(
         device = None
         try:
             root = _fc._resolve_firmware_root()
+            if _state.get('shared_runtime'):
+                from mklink.runtime_probe import upgrade_firmware
+                device = _state.get('device')
+                return await run_in_threadpool(upgrade_firmware, _state, root)
             if _state.get("device") and _state["device"].connected:
                 async with _exclusive_probe_control("firmware-upgrade") as (device, stopped):
                     result = await run_in_threadpool(

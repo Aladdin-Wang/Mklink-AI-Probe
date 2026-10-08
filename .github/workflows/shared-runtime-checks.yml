@@ -47,6 +47,7 @@ jobs:
           $tests += 'test_runtime_spawn'
           $tests += 'test_runtime_reconnect'
           $tests += 'test_download_acquisition'
+          $tests += 'test_firmware_upgrade'
           $tests += 'test_rtt_legacy_preflight'
           $tests += 'test_internal_process_entry'
           $tests += 'test_remote_service'

@@ -18,6 +18,7 @@ from mklink.runtime import PROTOCOL, VERSION
 from mklink.runtime_capabilities import CAPABILITIES, STREAMS, LIFECYCLE_CAPABILITIES, UART_CAPABILITIES, is_uart_path, validate_arguments
 
 RESOURCE_RELEASE_PATHS = frozenset({'/api/resources/release-all', '/api/resources/release'})
+UART_EXCLUSIVE_PATHS = RESOURCE_RELEASE_PATHS | {'/api/probe/firmware-upgrade'}
 active_operation = ContextVar('mklink_runtime_operation', default=None)
 
 
@@ -249,7 +250,7 @@ class RuntimeControl:
             finally:
                 active_operation.reset(token)
         if is_uart_path(name):
-            if self.current_operation and self.current_operation['path'] in RESOURCE_RELEASE_PATHS:
+            if self.current_operation and self.current_operation['path'] in UART_EXCLUSIVE_PATHS:
                 raise HTTPException(409, 'Resource release is in progress; wait before using UART')
             if session_id:
                 self.validate_session(session_id, target=False)
@@ -387,13 +388,11 @@ class RuntimeGate:
             return await reject(409, 'An exclusive job is active; inspect its result before further hardware operations')
         from mklink.probes import select_probe
         from mklink.runtime import RuntimeErrorResponse
-        if (path.startswith(('/api/device/', '/api/dash/', '/api/probe/')) or path == '/api/mcu-detect') and not path.endswith(('/stop', '/disconnect')):
+        if (path.startswith(('/api/device/', '/api/dash/', '/api/probe/')) or path == '/api/mcu-detect') and not path.endswith(('/stop', '/disconnect')) and path != '/api/probe/firmware-upgrade':
             try:
                 c.require_identity(reconnect=path == '/api/device/connect')
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail)
-        if path == '/api/probe/firmware-upgrade':
-            return await reject(409, 'Bootloader re-enumeration is not identity-bound yet; use an explicit maintenance session')
         if path in {'/api/offline-download/deploy', '/api/offline-download/trigger', '/api/offline-download/algorithm'}:
             try:
                 c.require_identity()
@@ -453,8 +452,13 @@ class RuntimeGate:
                 'message': 'Other runtime clients are attached; open Backend Management to end their sessions before releasing the shared device',
                 'clients': [{'id': s.public_id, 'name': s.name, 'kind': s.kind} for s in c.target_sessions.values()],
             })
-        if path in RESOURCE_RELEASE_PATHS and (c.sessions or c.attach_lock.locked() or c.uart_operations):
+        if path in UART_EXCLUSIVE_PATHS and (c.sessions or c.attach_lock.locked() or c.uart_operations):
             return await reject(409, 'Detach clients and finish independent UART operations before releasing resources')
+        if path == '/api/probe/firmware-upgrade':
+            from mklink.remote.dashboards import get_managers
+            from mklink.remote.api import _dashboard_worker_alive
+            if any(_dashboard_worker_alive(manager) for manager in get_managers().values()):
+                return await reject(409, 'Stop active captures before updating the probe firmware')
         for stream in STREAMS:
             if path == f"/api/dash/{stream}/pause" or (stream == "vofa" and path == "/api/dash/vofa/interval"):
                 others = [key for key, s in c.sessions.items() if stream in s.streams and key != session_id]
