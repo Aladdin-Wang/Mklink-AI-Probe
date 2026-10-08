@@ -103,7 +103,8 @@ def create_proxy(info, *, port, instance_id, transport=None):
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.shutdown = None
     origins = DESKTOP_ORIGINS | {f"http://127.0.0.1:{port}"}
-    app.add_middleware(CORSMiddleware, allow_origins=sorted(origins), allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=sorted(origins), allow_methods=["*"],
+                       allow_headers=["*"], expose_headers=['X-MKLink-Submission'])
 
     @app.middleware("http")
     async def local_only(request, call_next):

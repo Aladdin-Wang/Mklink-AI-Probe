@@ -5,7 +5,7 @@ import DeviceConfigurationPanel from '../components/DeviceConfigurationPanel.vue
 import HpmOfflineOtpPanel from '../components/HpmOfflineOtpPanel.vue'
 import type { HpmOfflineOtp } from '../types/offlineFlash'
 import { provideConfirmation } from '../composables/useConfirmation'
-import { useOfflineFlashApi } from '../composables/useOfflineFlashApi'
+import { OfflineFlashApiError, useOfflineFlashApi } from '../composables/useOfflineFlashApi'
 import { useOnlineFlashApi } from '../composables/useOnlineFlashApi'
 import { tr } from '../composables/useLanguage'
 import { listenForFirmwarePathDrops, pickFirmwareFiles, pickFlmFile } from '../lib/filePicker'
@@ -742,8 +742,12 @@ async function deploy(): Promise<void> {
     deployedScriptName.value = result.script_name
     deployedModel.value = result.model
     notice.value = tr(`已部署 ${result.file_count ?? result.files.length} 个文件，脚本 ${result.script_name}`, `Deployed ${result.file_count ?? result.files.length} files with script ${result.script_name}`)
+    if (result.acquisition?.errors.length) setError(tr(`采集恢复失败：${result.acquisition.errors.join('; ')}`, `Capture restore failed: ${result.acquisition.errors.join('; ')}`))
     await refreshDisk()
-  } catch (value) { setError(value) }
+  } catch (value) {
+    if (value instanceof OfflineFlashApiError && value.notStarted) deploymentUncertain.value = false
+    setError(value)
+  }
   finally { operationBusy.value = false }
 }
 
@@ -785,6 +789,7 @@ async function triggerOffline(): Promise<void> {
     )
     triggerLines.value = result.lines
     notice.value = result.status === 'completed' ? tr('脱机下载执行完成', 'Offline flashing completed') : tr('脱机下载执行失败', 'Offline flashing failed')
+    if (result.acquisition?.errors.length) setError(tr(`采集恢复失败：${result.acquisition.errors.join('; ')}`, `Capture restore failed: ${result.acquisition.errors.join('; ')}`))
   } catch (value) { setError(value) }
   finally { operationBusy.value = false }
 }

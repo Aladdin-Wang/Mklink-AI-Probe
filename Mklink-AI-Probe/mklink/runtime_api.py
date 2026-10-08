@@ -167,6 +167,7 @@ class RuntimeControl:
                 'uptime_seconds': now-self.started, 'clients': clients, 'busy': self.operation_lock.locked() or self.job_busy(),
                 'jobs': list(reversed(list(self.jobs.jobs.values())))[:8] if self.jobs else [], 'online_job': self.online_job(),
                 'operation': self.current_operation, 'last_operation': self.last_operation,
+                'acquisition_transition': self.app.state.mklink_state.get('acquisition_transition'),
                 'uart_operations': list(self.uart_operations.values()),
                 'connected': bool(device and device.connected),
                 'streams': [{'name': name, 'running': manager.running,
@@ -302,11 +303,21 @@ class RuntimeGate:
         origin = headers.get(b"origin", b"").decode()
         valid_origin = not origin or origin == f"http://{expected}"
 
+        def submission_headers():
+            if scope.get('path') not in {'/api/online-flash/jobs', '/api/offline-download/deploy'} or scope.get('method') != 'POST':
+                return {}
+            request_id = headers.get(b'x-mklink-request-id', b'').decode()
+            if not request_id:
+                return {}
+            accepted = c.jobs and any(j['request_id'] == request_id for j in c.jobs.jobs.values())
+            return {'X-MKLink-Submission': 'accepted' if accepted else 'not-started'}
+
         async def reject(code, detail):
             if scope["type"] == "websocket":
                 await send({"type": "websocket.close", "code": 1008})
             else:
-                await JSONResponse({"detail": detail}, status_code=code)(scope, receive, send)
+                await JSONResponse({"detail": detail}, status_code=code,
+                                   headers=submission_headers())(scope, receive, send)
 
         if host != expected or not valid_origin:
             return await reject(403, "Shared runtime requires a local, same-origin client")
@@ -433,11 +444,9 @@ class RuntimeGate:
                 others = [key for key, s in c.sessions.items() if stream in s.streams and key != session_id]
                 if others:
                     return await reject(409, "Other clients subscribe to this acquisition; detach them before stopping it")
-        # Do not let a one-shot operation preempt the GUI's continuous capture.
+        # Download operations temporarily yield captures inside shared admission.
         from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES, active_bridge_dashboards
         active = active_bridge_dashboards()
-        if active and (path.startswith('/api/offline-download/') or online_flash):
-            return await reject(409, 'Stop acquisition explicitly before offline/online target operations')
         from mklink.runtime_capabilities import multiplex_enabled, MUX_MEMORY_PATHS
         mux_active = multiplex_enabled(c.app.state.mklink_state) and set(active) <= {'rtt', 'superwatch'}
         if path in {f"/api/dash/{name}/start" for name in BRIDGE_DASHBOARD_TYPES}:
@@ -449,9 +458,18 @@ class RuntimeGate:
         async def observe(message):
             if message['type'] == 'http.response.start':
                 c.current_operation['http_status'] = message['status']
+                message.setdefault('headers', []).extend(
+                    (key.lower().encode(), value.encode()) for key, value in submission_headers().items())
             await send(message)
+        async def operation():
+            if path in {'/api/offline-download/deploy', '/api/offline-download/trigger',
+                        '/api/offline-download/algorithm', '/api/online-flash/memory/read',
+                        '/api/online-flash/memory/read-stream'}:
+                from mklink.remote.acquisition import download_response
+                return await download_response(self.app, scope, receive, observe, c.app.state.mklink_state, c)
+            return await self.app(scope, receive, observe)
         try:
-            await c.run_operation(path, lambda: self.app(scope, receive, observe), session_id=session_id,
+            await c.run_operation(path, operation, session_id=session_id,
                                   configuration=path in {'/api/device/parse-axf', '/api/symbols/reparse', '/api/symbols/c-layout'},
                                   online_stop=online_stop)
         except HTTPException as exc:

@@ -18,7 +18,7 @@ describe('useOfflineFlashApi', () => {
     const error = await useOfflineFlashApi().preview({} as never).catch(value => value)
 
     expect(error).toBeInstanceOf(Error)
-    expect(error.message).toBe('探针正被 SuperWatch 占用，请先停止该功能后重试。')
+    expect(error.message).toBe('探针正在执行 SuperWatch 的操作，请等待操作完成。')
   })
 
   it('keeps the recovery location visible without replaying deployment', async () => {
@@ -28,6 +28,17 @@ describe('useOfflineFlashApi', () => {
     }), { status: 500 })))
     await expect(useOfflineFlashApi().deploy({} as never, [], [])).rejects.toThrow(message)
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves definite rejection metadata and sends the matching receipt header', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: 'invalid inputs' }), {
+      status: 422, headers: { 'X-MKLink-Submission': 'not-started' },
+    })))
+    const error = await useOfflineFlashApi().deploy({} as never, [], [], 'receipt').catch(value => value)
+    expect(error.notStarted).toBe(true)
+    expect(error.message).toContain('request_id=receipt')
+    const options = vi.mocked(fetch).mock.calls[0][1]!
+    expect(new Headers(options.headers).get('X-MKLink-Request-Id')).toBe('receipt')
   })
 
   it('delivers offline trigger lines before resolving the final result', async () => {

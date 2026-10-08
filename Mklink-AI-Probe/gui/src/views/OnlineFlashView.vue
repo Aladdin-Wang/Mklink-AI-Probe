@@ -134,6 +134,7 @@ function loadPending(): void {
     recoveryMessage.value = tr('无法读取任务凭据，已禁止新提交。请恢复浏览器存储后刷新。', 'Cannot read task receipts. Restore browser storage and reload before submitting.')
   }
 }
+let recoveryTimer: ReturnType<typeof setTimeout> | undefined
 async function recoverJob(): Promise<void> {
   if (!pendingRequest.value || recoveryBusy.value) return
   const requestId = pendingRequest.value
@@ -162,6 +163,7 @@ async function recoverJob(): Promise<void> {
       }
       subscription?.close(); subscription = null
       appendLog(`[JOB] ${requestId}: ${retained.state}${retained.error ? ` · ${retained.error}` : ''}`)
+      for (const error of retained.result?.acquisition?.errors ?? []) appendLog(tr(`[采集恢复失败] ${error}`, `[Capture restore failed] ${error}`))
       localStorage.removeItem(pendingPrefix(probe) + requestId)
       recoveryMessage.value = ''
       loadPending()
@@ -169,14 +171,19 @@ async function recoverJob(): Promise<void> {
       const snapshot = await api.getJob(retained.online_job_id)
       if (!current()) return
       const changed = jobId.value !== snapshot.job_id
-      jobId.value = snapshot.job_id; jobState.value = snapshot.state
-      totalProgress.value = snapshot.total_progress
+      const alreadyFinished = !changed && jobState.value !== null && TERMINAL.has(jobState.value)
+      jobId.value = snapshot.job_id
+      if (!alreadyFinished) { jobState.value = snapshot.state; totalProgress.value = snapshot.total_progress }
       if (changed) lastSequence.value = 0
-      if (!TERMINAL.has(snapshot.state)) subscribe(lastSequence.value)
+      if (!alreadyFinished && !TERMINAL.has(snapshot.state) && (changed || !subscription)) subscribe(lastSequence.value)
       recoveryMessage.value = tr('已关联原任务；完成后查询持久结果。', 'Original job attached; query its retained result after completion.')
     } else {
       canEndTracking.value = retained.state === 'unknown'
       recoveryMessage.value = tr('任务结果尚未确认，请查询原任务并检查目标；不会自动重新提交。', 'Outcome is unconfirmed. Query the original job and inspect the target; no automatic resubmission.')
+    }
+    if (retained.state === 'running') {
+      clearTimeout(recoveryTimer)
+      recoveryTimer = setTimeout(() => { if (current()) void recoverJob() }, 750)
     }
   } catch (error) {
     if (current()) recoveryMessage.value = message(error)
@@ -997,6 +1004,7 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
   const selectedProbe = probeId.value
   const current = () => !disposed && generation === recoveryGeneration && selectedProbe === probeId.value
   creatingJob.value = true
+  let receiptKey = ''
   try {
     if (selectedResetVoltage !== null && !await confirmRisk(tr(
       `即将关闭下载器 VCC 输出，等待 3 秒后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
@@ -1007,7 +1015,8 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
     if (recoveryBlocked.value) return
     const requestId = crypto.randomUUID()
     // Each request owns a separate receipt; concurrent windows cannot overwrite it.
-    localStorage.setItem(pendingPrefix() + requestId, requestId)
+    receiptKey = pendingPrefix() + requestId
+    localStorage.setItem(receiptKey, requestId)
     pendingRequest.value = requestId
     progressOwner.value = 'flash'
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0
@@ -1015,7 +1024,16 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
     if (!current() || pendingRequest.value !== requestId) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(tr(`[JOB] 已创建 ${result.job_id}`, `[JOB] Created ${result.job_id}`)); subscribe(0)
-  } catch (error) { if (current()) appendLog(`[ERROR] ${message(error)}`) }
+  } catch (error) {
+    if (error instanceof OnlineFlashApiError && error.notStarted && receiptKey) {
+      localStorage.removeItem(receiptKey)
+      if (current()) { recoveryMessage.value = ''; loadPending() }
+    }
+    if (current()) {
+      appendLog(`[ERROR] ${message(error)}`)
+      if (error instanceof OnlineFlashApiError && !error.notStarted) void recoverJob()
+    }
+  }
   finally { creatingJob.value = false }
 }
 async function stopJob(): Promise<void> {
@@ -1063,6 +1081,7 @@ onDeactivated(() => {
   stopNativeDrops()
 })
 onBeforeUnmount(() => {
+  clearTimeout(recoveryTimer)
   disposed = true
   recoveryGeneration += 1
   window.removeEventListener('storage', receiptChanged)
@@ -1089,7 +1108,7 @@ onBeforeUnmount(() => {
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <MemoryReadPanel ref="memoryReadRef" embedded :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :board="hpmBoard || undefined" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :memory-regions="targetMemoryRegions" :memory-map-busy="targetMemoryMapBusy" :disabled="memoryReadDisabled" @progress="onMemoryReadProgress" @log="onMemoryReadLog" @data="onMemoryReadData" />
       <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" :memory-data="memoryReadData" :memory-address="memoryReadAddress" :read-disabled="memoryReadDisabled" :read-busy="memoryReadBusy" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" @read="openMemoryReadDialog" @save="saveMemoryFile" @clear-data="clearDataWindow" />
-      <section v-if="recoveryBlocked" role="status" data-testid="online-recovery">
+      <section v-if="recoveryBlocked && !active && !creatingJob" role="status" data-testid="online-recovery">
         <p>{{ tr('已有待确认的在线请求，暂不允许新任务。', 'An online request awaits confirmation; new jobs are disabled.') }}</p>
         <code>{{ pendingRequest }}</code>
         <p>{{ recoveryMessage }}</p>

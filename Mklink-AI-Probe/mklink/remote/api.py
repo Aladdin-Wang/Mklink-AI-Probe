@@ -663,6 +663,7 @@ async def _start_dashboard_manager_transaction(
     if not start_ok:
         await rollback_start_effects()
         raise start_result
+    manager._restart_after_operation = start_call
     return "started", stopped
 
 
@@ -852,6 +853,7 @@ def create_app(
             "X-MKLink-Firmware-Name",
             "X-MKLink-Firmware-Version",
             "X-MKLink-Firmware-Source",
+            "X-MKLink-Submission",
         ],
     )
 

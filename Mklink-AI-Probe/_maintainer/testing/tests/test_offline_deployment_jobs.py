@@ -59,6 +59,16 @@ def test_accept_save_failure_never_modifies_disk(deployment, monkeypatch):
     assert not list(disk.rglob('*')) and not control.jobs.jobs
 
 
+def test_deployment_receipt_cannot_misclassify_a_different_body(deployment):
+    client, control, disk, config, _ = deployment
+    response = client.post('/api/offline-download/deploy',
+        headers={'X-MKLink-Request-Id': 'header-id'},
+        data={'request_id': 'different-body-id', 'config_json': json.dumps(config)})
+    assert response.status_code == 422
+    assert response.headers['X-MKLink-Submission'] == 'not-started'
+    assert not list(disk.rglob('*')) and not control.jobs.jobs
+
+
 def test_recovery_registration_failure_never_modifies_disk(deployment, monkeypatch):
     import threading
     _, control, disk, _, submit = deployment
@@ -396,12 +406,10 @@ def test_algorithm_frozen_input_and_changed_volume_rejection(algorithm_copy, mon
     assert not list(other.rglob('*'))
     assert (disk / 'FLM/Device.FLM').read_bytes() == b'algorithm'
 
-@pytest.mark.parametrize('conflict', ['capture', 'identity', 'job'])
+@pytest.mark.parametrize('conflict', ['identity', 'job'])
 def test_algorithm_copy_obeys_shared_admission(algorithm_copy, monkeypatch, conflict):
     _, control, disk, _, submit = algorithm_copy
-    if conflict == 'capture':
-        monkeypatch.setattr('mklink.remote.dashboards.active_bridge_dashboards', lambda: ['rtt'])
-    elif conflict == 'identity':
+    if conflict == 'identity':
         def missing(): raise HTTPException(409, 'probe missing')
         monkeypatch.setattr(control, 'require_identity', missing)
     else:

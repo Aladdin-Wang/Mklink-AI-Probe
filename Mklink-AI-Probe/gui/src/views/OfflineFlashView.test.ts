@@ -26,7 +26,8 @@ vi.mock('../lib/filePicker', async importOriginal => ({
   pickFlmFile: pickerMocks.pickFlmFile,
 }))
 
-vi.mock('../composables/useOfflineFlashApi', () => ({
+vi.mock('../composables/useOfflineFlashApi', async importOriginal => ({
+  ...await importOriginal<typeof import('../composables/useOfflineFlashApi')>(),
   useOfflineFlashApi: () => offlineMocks,
 }))
 

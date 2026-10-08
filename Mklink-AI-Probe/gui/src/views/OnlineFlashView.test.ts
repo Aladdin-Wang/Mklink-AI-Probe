@@ -1080,15 +1080,40 @@ describe('online flash task workspace behavior', () => {
     first.unmount()
     const restored = mount(await onlineFlashView())
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(2))
-    expect(restored.text()).toContain(requestId)
+    expect(restored.find('[data-testid="online-recovery"]').exists()).toBe(false)
     expect(restored.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
     expect(vi.mocked(fetch).mock.calls.filter(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toHaveLength(1)
     finished = true
-    await restored.get('[data-testid="query-online-request"]').trigger('click')
-    await vi.waitFor(() => expect(restored.find('[data-testid="online-recovery"]').exists()).toBe(false))
+    await vi.waitFor(() => expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBeNull(), { timeout: 2000 })
     expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBeNull()
     expect(restored.get('[data-testid="job-state"]').text()).toContain('烧录完成')
     restored.unmount()
+  })
+
+  it('clears a definite rejection without manual acknowledgement or resubmission', async () => {
+    const fallback = viewFetch()
+    let requestId = ''
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs') && options?.method === 'POST') {
+        requestId = new Headers(options.headers).get('X-MKLink-Request-Id')!
+        return new Response(JSON.stringify({ detail: 'Invalid target configuration' }), {
+          status: 422, headers: { 'X-MKLink-Submission': 'not-started' },
+        })
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    if (wrapper.find('[data-testid="confirmation-accept"]').exists()) await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
+    await vi.waitFor(() => expect(requestId).not.toBe(''))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Invalid target configuration')
+    expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBeNull()
+    expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined()
+    expect(vi.mocked(fetch).mock.calls.filter(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toHaveLength(1)
+    wrapper.unmount()
   })
 
   it.each(['missing', 'unknown', 'unreachable'])('keeps %s outcomes blocked without replay', async mode => {
