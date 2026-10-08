@@ -27,4 +27,5 @@ Host full Python/GUI regression, production assets, exact merged source commit, 
 
 Release UI build identity: production assets use `VITE_APP_BUILD_COMMIT=v0.3.0` for this release, so the displayed release identity is stable across PR and merge commits. The immutable release manifest retains the exact 40-character merged source commit. Use the same value when rebuilding the signed installer from main; verify tracked production assets remain byte-identical.
 
-The maintainer explicitly deferred upgraded firmware publication. V3/V4 source main integration is complete, but do not upload new UF2 assets or update firmware channel indexes as part of 0.3.0. Firmware-dependent features require a separately supplied matching firmware.
+The maintainer initially deferred firmware publication, then supplied final V3.6.0/V4.6.0/HPMLink V4.6.0 UF2 files and explicitly authorized joint publication. Publish those supplied files after format/hash/rollback validation, independently from application assets. Their hashes differ from the earlier HIL candidates: prior measurements describe tested candidates, not a new physical qualification of these supplied binaries. V2.8.1 is unchanged.
+
