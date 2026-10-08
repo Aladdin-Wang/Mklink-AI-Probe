@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-08T21:18:45+08:00`
+- 更新时间：`2026-10-08T22:08:48+08:00`
 - 分支：`codex/0.3.1-fixes`
-- HEAD：`Connection source b0400e71 + lease cleanup ed67c134; production Web assets e9350261; later commits update handoff only.`
-- 远端 HEAD：`microkeen/codex/0.3.1-fixes pushed through ed67c134; PR #33 draft (verify Git for later handoff commits).`
+- HEAD：`Download source 7b9c87a8 and production assets b91acb92; earlier connection source ed67c134 retained. Later commits update handoff only.`
+- 远端 HEAD：`microkeen/codex/0.3.1-fixes / PR #33; verify Git for latest documentation tip.`
 - 工作树：Isolated 0.3.1 host repair worktree. Original main firmware edits and installed official 0.3.0 preserved.
-- 当前任务：上位机会话 01a11b53-dbcf-7830-aac0-2d4a6ad5bf77：启动与连接修复已推送 PR #33；固件独占会话 01a11b6a-0a88-73a0-b6f7-919ab7454c92，负责 IAR/Keil 退出调试及共存实机验证。本会话不操作其测试板。未合并/发布，长期目标继续暂停。
-- 状态：`awaiting_review`
+- 当前任务：上位机会话01a11b53-dbcf-7830-aac0-2d4a6ad5bf77：启动、连接及下载自动暂停恢复代码已提交，继续处理客户DeepSeek与GUI控制权冲突及Skill指引。RTT首签名误命中待修。固件和实机归会话01a11b6a-0a88-73a0-b6f7-919ab7454c92；本会话未操作硬件，未合并发布，长期目标暂停。
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -20,13 +20,13 @@
 
 ## 验证证据
 
+- **0.3.1下载暂停恢复**：源码7b9c87a8、生产资源b91acb92：Python扩大818通过，最终相关75通过；GUI首轮907/908，修正新增错误类型mock后最终相关150通过，TypeScript及生产构建通过。真实浏览器模拟API验证明确拒绝自动清凭据、运行不出现核查面板、完成自动解锁；并非实机烧录/采集验收。报告v031-download-acquisition.md。本批未重建NSIS，旧connection-fix包不含此次改动。
 - **0.3.1启动及连接修复**：首批启动：1013 Python、905 GUI、21 Rust通过；本地提取包冷启动12.159秒、Web/MCP/CLI通过，实际覆盖安装受WinError740阻挡。连接批次：1175 Python扩大回归通过；最终ed67c134回归404通过；GUI 907通过，生产页面占用提示/管理入口浏览器验证通过（模拟API）。协议50，明确连接重新发现同一USB身份、撤销失效目标会话并保留UART/在途任务；已知MI_04恢复不做多余身份打印；target busy不毒化MUX、不重放写。实体拔插/旧固件/客户电脑待回归。报告v031-startup-audit.md、v031-connections.md；最终本地构建状态见连接报告。
 - **0.3.0正式发布回归**：4471 Python通过/2跳过；902 GUI通过（干净npm ci后再次通过）；签名NSIS安装退出0，三负载哈希匹配。本地Skill更新，7059目标/2224算法；冻结版和Skill MCP/CLI通过。桌面配置/枚举通过；Web由用户手动确认连接STM32与v0.3.0。关闭后无MKLink进程、8765/8766无监听。详见v030-release-handoff.md，不能等同所有实体矩阵重新通过。
 - **CDC多路复用主机接入**：full-function-audit-030.md末尾：最终安装/Skill与算法资产验证、安装MCP/CLI/Web双GUI、双探针独立退出、同机WLAN认证及隔离通过；冻结MCP打包缺陷已修。最终代码90cee876，后续仅生成资源和文档。完整自动化不等于全部实体边界通过，长期及旧持续目标保持暂停。 历史：docs/verification/cdc-multiplex-host.md：1362后端通过/2跳过，最终Bridge补测69通过；GUI整套851通过、最终相关52通过，生产构建及真实Edge/stdio MCP短测通过。双RTT+Watch+内存读写校验恢复、CLI多通道采集、会话恢复通过。全仓离线安全算法资源及联网wheel测试未通过/未完成。 Skill旧通道上限断言已修正，反馈契约66项通过。 MUX及RTT GUI回归已加入现有CI测试清单。 见cdc-multiplex-host.md安装补验：f17e4047三项CI通过，本地NSIS安装退出0，三负载哈希匹配；sidecar与Skill算法7059/2224验证。安装版Web双RTT+Watch+本地Skill stdio MCP通过，正常关闭6.16秒释放COM；原生桌面及CLI双通道共存、正常退出通过。 RTT多面板与0.3.0记录：54项相关GUI通过，真实浏览器收起保留及双通道+Watch+MCP通过。 b21d071c多面板安装/Skill覆盖、原生版本弹窗与安装态共存补验通过，5.75秒退出。 各通道平等版474ef405：188后端/65GUI、三项CI通过，安装与本地Skill覆盖、真实Web双通道/Watch/MCP/CLI、6.03秒退出释放COM及原生版本说明通过。 V3迁移补验：offline_download/device_configuration两套111通过；首次未绑定本地算法资产时21失败，绑定既有MKLINK_BUILTIN_FLM_ROOT后通过。V3真实配置读取及错误容量拒绝通过，无保护/电压写入。
 - **149固件与后台空闲退出**：docs/verification/runtime-idle-mux-149.md：最终安装版GUI退出6.05秒、AI强杀5.40秒释放COM；真实双网页退出通过，网络排空上限回归4项通过，5508bd06三项CI及固件4ab77c2两项CI通过。 新补验：runtime-idle-deadline.md：保留5秒租约和所有忙碌保护，仅消除最长约1秒的轮询量化；44测试通过，源码真机多客户端和RTT8通过，端口5.232秒释放，后台5.420秒退出。不承诺硬实时5秒；打包安装待后续。 打包补验：3e65f1ad本地NSIS已生成、本地Skill更新；冻结MCP+Skill MCP精简PATH通过，提取包多客户端RTT8/CLI真机端口5.241秒释放，进程5.427秒退出，无Python子进程。包内Web39文件一致；非覆盖安装。
 - **统一远程GUI**：148：应用06494629安装及Skill同步，三项包内负载哈希一致；109后端、247GUI通过，测试修正ff0c5b4c三项CI通过。源码RTT及安装版Memory/符号/SuperWatch、断线禁用并保留快照、桌面代理读取与管理拒绝通过；仅同机LAN短测。
 - **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
-- **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 
 ## 架构决策
@@ -47,10 +47,11 @@
 
 ## 下一动作
 
-1. 审核PR #33（codex/0.3.1-fixes）及CI；客户电脑回归慢启动、USB拔插同端口/换端口、MCP后台重启、共享断开。实际管理员覆盖安装仍待补验。
-2. 固件全部交给会话01a11b6a-0a88-73a0-b6f7-919ab7454c92；其负责HPM/SES、IAR/Keil占用及RTT+Watch真机矩阵。上位机会话继续修共享连接/界面，必要时通过已授权消息协调。
-3. 按v031-startup-audit.md继续处理启动超时子进程协调、启动日志和解压残留；协议50不可混用旧后台，升级前显式退出旧会话和后台。
-4. 长期验证继续暂停；正式标签、发布资产和更新索引不变。不得把模拟、提取包或另一提交的结果称为当前安装/硬件验证通过。
+1. 梳理客户DeepSeek与GUI控制权冲突：核对Skill共享连接/退出/恢复指引与后台会话行为，修复已证实问题；不以重启电脑或盲杀进程替代恢复。
+2. 审核PR #33及CI；补实体在线/脱机下载自动暂停恢复矩阵，包括旧固件、HPM重连、失败/停止、VOFA与SystemView录制。原安装和旧本地包尚不含本次下载修复。
+3. 继续排查主机RTT搜索遇第一处假签名即停止、精确/AXF地址传参和MUX status5上下文；CS32L015 WFI后RAM可读但RTT不更新仍待客户芯片验证。不得把F103或SWD故障注入等同客户复现。
+4. 固件全部交给会话01a11b6a-0a88-73a0-b6f7-919ab7454c92；其负责HPM/SES、IAR/Keil占用及RTT+Watch真机矩阵。上位机会话继续修共享连接/界面，必要时通过已授权消息协调。
+5. 长期验证继续暂停；正式标签、发布资产和更新索引不变。不得把模拟、提取包或另一提交的结果称为当前安装/硬件验证通过。
 
 ## 已知限制
 
