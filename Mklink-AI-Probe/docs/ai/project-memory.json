@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-08T20:28:05+08:00",
+  "updated_at": "2026-10-08T21:18:45+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/0.3.1-fixes",
-    "head": "Source fix 102bbc12; compiled Web assets 56c251de; later commits only update handoff.",
-    "remote_head": "Verified microkeen/codex/0.3.1-fixes at 56c251de; PR #33 draft (use Git for later handoff commits).",
-    "working_tree": "Isolated 0.3.1 repair worktree; original firmware edits preserved in main checkout. Local candidate built; installed official 0.3.0 unchanged."
+    "head": "Connection source b0400e71 + lease cleanup ed67c134; production Web assets e9350261; later commits update handoff only.",
+    "remote_head": "microkeen/codex/0.3.1-fixes pushed through ed67c134; PR #33 draft (verify Git for later handoff commits).",
+    "working_tree": "Isolated 0.3.1 host repair worktree. Original main firmware edits and installed official 0.3.0 preserved."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
     "status": "awaiting_review",
-    "current_task": "0.3.1首轮梳理及客户后端启动故障修复已推送，PR #33草稿等待审核与客户回归；未合并/发布，长期目标继续暂停。"
+    "current_task": "上位机会话 01a11b53-dbcf-7830-aac0-2d4a6ad5bf77：启动与连接修复已推送 PR #33；固件独占会话 01a11b6a-0a88-73a0-b6f7-919ab7454c92，负责 IAR/Keil 退出调试及共存实机验证。本会话不操作其测试板。未合并/发布，长期目标继续暂停。"
   },
   "milestones": [
     {
@@ -35,8 +35,8 @@
   ],
   "verification": [
     {
-      "area": "0.3.1首批启动修复",
-      "result": "1013 Python通过/0跳过；905 GUI、21 Rust通过。修复120秒外层/60秒运行时启动预算、代理独立窗口保活、重启串行及异步执行、旧固件RTT预检查。标准本地NSIS构建、提取包Windows-only PATH桌面启动12.159秒、真实浏览器8766刷新、冻结MCP/CLI和退出端点释放通过。覆盖安装受WinError740管理员权限阻挡，原正式安装保持不变；客户V4.5.2实体未复测。详见docs/verification/v031-startup-audit.md。"
+      "area": "0.3.1启动及连接修复",
+      "result": "首批启动：1013 Python、905 GUI、21 Rust通过；本地提取包冷启动12.159秒、Web/MCP/CLI通过，实际覆盖安装受WinError740阻挡。连接批次：1175 Python扩大回归通过；最终ed67c134回归404通过；GUI 907通过，生产页面占用提示/管理入口浏览器验证通过（模拟API）。协议50，明确连接重新发现同一USB身份、撤销失效目标会话并保留UART/在途任务；已知MI_04恢复不做多余身份打印；target busy不毒化MUX、不重放写。实体拔插/旧固件/客户电脑待回归。报告v031-startup-audit.md、v031-connections.md；最终本地构建状态见连接报告。"
     },
     {
       "area": "0.3.0正式发布回归",
@@ -92,10 +92,10 @@
     "Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。"
   ],
   "next_actions": [
-    "审核PR #33（codex/0.3.1-fixes）；客户电脑回归慢启动与旧固件RTT。实际管理员覆盖安装仍待补验，不将提取包测试当成安装成功。",
-    "按v031-startup-audit.md继续处理启动超时子进程协调、启动日志和解压目录残留；扩展旧架构兼容审查。",
-    "HPM/SES DAP占用及最终固件完整原生调试矩阵仍待后续；禁止超时强抢调试所有权。",
-    "长期验证继续暂停；正式版本标签与发布资产不可变；网站状态仍按v030-release-handoff.md。"
+    "审核PR #33（codex/0.3.1-fixes）及CI；客户电脑回归慢启动、USB拔插同端口/换端口、MCP后台重启、共享断开。实际管理员覆盖安装仍待补验。",
+    "固件全部交给会话01a11b6a-0a88-73a0-b6f7-919ab7454c92；其负责HPM/SES、IAR/Keil占用及RTT+Watch真机矩阵。上位机会话继续修共享连接/界面，必要时通过已授权消息协调。",
+    "按v031-startup-audit.md继续处理启动超时子进程协调、启动日志和解压残留；协议50不可混用旧后台，升级前显式退出旧会话和后台。",
+    "长期验证继续暂停；正式标签、发布资产和更新索引不变。不得把模拟、提取包或另一提交的结果称为当前安装/硬件验证通过。"
   ],
   "continuation_protocol": [
     "交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。"
