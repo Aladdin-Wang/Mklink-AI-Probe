@@ -23,10 +23,16 @@
 仅修改这些断言得到 `72962eda`，最终受影响的 237 项全部通过；不把两次运行描述为
 一次全套零失败。此前下载/共享烧录 44 项也通过，真实 ASGI 成功/失败路径均恢复一次。
 
+最终代码在 `c89ef46d` 文档提交状态下另跑完整 Python 套件：**4566 通过、2 跳过，
+640.25 秒**，零失败。日志/JUnit 为 `.build/reports/v031-final-python.log/.xml`。
+开始时辅助命令的本地算法目录参数写错，发现后在早期终止，绑定实际维护目录重新完整
+运行；不把被终止的尝试计作验证。最终运行临时目录含测试链接，包装器按规则保留。
+
 - 全套 GUI：88 文件、911 项通过；桌面 Rust 21 项、Site Agent Rust 6 项通过。
 - builder prerequisites、生产 TypeScript/Vite、PyInstaller sidecar、标准 NSIS 和
   Site Agent release 构建通过。Web 资源提交 `66a5d0fb`，构建标识 `72962eda`。
 - `66a5d0fb` 的 GitHub feedback、shared-runtime、shared-gui 三项 CI 全通过。
+  后续纯文档提交 `c89ef46d` 的三项 CI 同样全部通过。
 - 候选 NSIS 96,805,388 字节，SHA256
   `c6ffa3682e8356f99825668a589febb2c1a03591d7e696de3b1fde9452f10030`。
 - Skill ZIP 18,385,491 字节，SHA256

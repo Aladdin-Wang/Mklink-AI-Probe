@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-09T01:00:56+08:00",
+  "updated_at": "2026-10-09T01:13:14.0017914+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "0.3.1发布准备及新真机失败",
-      "result": "见v031-release-preparation.md、v031-hardware-acceptance.md。产品aad53020全Python4563通过/2跳过/3测试断言失败；72962eda修正断言后237相关通过，完整clean run待补。GUI911、Rust桌面21/SiteAgent6、构建及66a5d0fb三项CI通过。提取候选MCP/CLI/Web无外部Python通过，非覆盖安装。V4.6.2+F103RE实际在线/脱机/共享flash成功，校验失败及停止自动恢复RTT8/Watch4，完整512KiB读回不变；OpenOCD halt/step/resume/shutdown、GUI退出AI接管、最后退出5.63秒释放端口通过。UART基础及记录/队列/广播/原始文件通过，但1kHz Watch并发UART无响应，100/10Hz与单RTT正常；固件会话定位priority7 fast-service饿死priority10串口前台。等待修复后的新UF2和最终交接，未完成完整验收，未发布。"
+      "result": "见v031-release-preparation.md、v031-hardware-acceptance.md。最终完整Python4566通过/2跳过，640.25秒；此前3个测试断言修正后全套重新运行通过。GUI911、Rust桌面21/SiteAgent6、构建及66a5d0fb/c89ef46d三项CI通过。提取候选MCP/CLI/Web无外部Python通过，非覆盖安装。V4.6.2+F103RE实际在线/脱机/共享flash成功，校验失败及停止自动恢复RTT8/Watch4，完整512KiB读回不变；OpenOCD halt/step/resume/shutdown、GUI退出AI接管、最后退出5.63秒释放端口通过。UART基础及记录/队列/广播/原始文件通过，但1kHz Watch并发UART无响应，100/10Hz与单RTT正常；固件会话定位priority7 fast-service饿死priority10串口前台。等待修复后的新UF2和最终交接，未完成完整验收，未发布。"
     },
     {
       "area": "0.3.1下载、控制权和界面",
@@ -93,7 +93,7 @@
   ],
   "next_actions": [
     "等待固件会话修复1kHz/最大速率Watch导致UART/RS485饥饿，收到新最终UF2 SHA、原目标恢复SHA和明确设备可接管后，重新验收相关并发矩阵。硬件现由固件会话独占，未交接前不触碰串口/SWD/供电。",
-    "完成最终全Python零失败运行、文档/记忆/PR #33更新并推送精确分支，复核CI。候选包已备齐；用户只授权准备，不合并/签名/发标签/发布/改渠道。",
+    "最终Python4566通过/2跳过，GUI911、Rust桌面21/SiteAgent6、候选构建和c89ef46d三项CI通过。继续更新最终验收文档/记忆/PR #33并推送精确分支；用户只授权准备，不合并/签名/发布/改渠道。",
     "新固件交接后补最终候选重连、完整退出释放与已测烧录自动恢复受影响回归；真实自动UF2升级、旧型号按键路径、物理拔插/客户CS32L015等缺口按实物条件如实记录，不制造模拟实测通过。",
     "完整用户授权范围完成后暂停mklink自动跟进；未变化静默，仅完成/实际失败/需用户动作通知。VCC每次仍需具体电压确认，未知程序禁止覆盖。",
     "长期验证继续暂停。UAC安装验证明确豁免；提取包不能称覆盖安装，旧固件或另一提交结果不能称当前二进制重新实测。"

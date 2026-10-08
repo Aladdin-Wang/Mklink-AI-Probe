@@ -4,7 +4,7 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T01:00:56+08:00`
+- 更新时间：`2026-10-09T01:13:14.0017914+08:00`
 - 分支：`codex/0.3.1-fixes`
 - HEAD：`Product aad53020; final tests 72962eda; production Web 66a5d0fb (build 72962eda). Later documentation only; inspect Git for current tip.`
 - 远端 HEAD：`microkeen/codex/0.3.1-fixes / PR #33; verify Git for latest documentation tip.`
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **0.3.1发布准备及新真机失败**：见v031-release-preparation.md、v031-hardware-acceptance.md。产品aad53020全Python4563通过/2跳过/3测试断言失败；72962eda修正断言后237相关通过，完整clean run待补。GUI911、Rust桌面21/SiteAgent6、构建及66a5d0fb三项CI通过。提取候选MCP/CLI/Web无外部Python通过，非覆盖安装。V4.6.2+F103RE实际在线/脱机/共享flash成功，校验失败及停止自动恢复RTT8/Watch4，完整512KiB读回不变；OpenOCD halt/step/resume/shutdown、GUI退出AI接管、最后退出5.63秒释放端口通过。UART基础及记录/队列/广播/原始文件通过，但1kHz Watch并发UART无响应，100/10Hz与单RTT正常；固件会话定位priority7 fast-service饿死priority10串口前台。等待修复后的新UF2和最终交接，未完成完整验收，未发布。
+- **0.3.1发布准备及新真机失败**：见v031-release-preparation.md、v031-hardware-acceptance.md。最终完整Python4566通过/2跳过，640.25秒；此前3个测试断言修正后全套重新运行通过。GUI911、Rust桌面21/SiteAgent6、构建及66a5d0fb/c89ef46d三项CI通过。提取候选MCP/CLI/Web无外部Python通过，非覆盖安装。V4.6.2+F103RE实际在线/脱机/共享flash成功，校验失败及停止自动恢复RTT8/Watch4，完整512KiB读回不变；OpenOCD halt/step/resume/shutdown、GUI退出AI接管、最后退出5.63秒释放端口通过。UART基础及记录/队列/广播/原始文件通过，但1kHz Watch并发UART无响应，100/10Hz与单RTT正常；固件会话定位priority7 fast-service饿死priority10串口前台。等待修复后的新UF2和最终交接，未完成完整验收，未发布。
 - **0.3.1下载、控制权和界面**：下载源码7b9c87a8/资源b91acb92：Python扩大818、最终相关75通过；GUI最终相关150、TypeScript和生产构建通过，真实浏览器模拟API验证拒绝清凭据及完成自动解锁。控制权/Skill源码7e46aabe：最终364项Python/文档回归及Skill quick_validate通过，含真实无硬件后台进程经新管理入口退出/释放实例锁。修复GUI所有权遗留，新增不依赖connect的诊断/定向管理。见v031-download-acquisition.md、v031-runtime-recovery.md。本批未构建NSIS/覆盖Skill或客户电脑实机验证。 固件升级6d2fc0fa：311 Python、54 GUI、57文档通过，自动同身份UF2与无指令手动回退；串口折叠0e6047ac：24 GUI通过；两批TypeScript/生产构建与真实浏览器模拟API通过，草稿折叠保留。报告v031-firmware-update-ui.md、v031-serial-extensions.md。均未打包安装或刷实机。
 - **0.3.1启动及连接修复**：首批启动：1013 Python、905 GUI、21 Rust通过；本地提取包冷启动12.159秒、Web/MCP/CLI通过，实际覆盖安装受WinError740阻挡。连接批次：1175 Python扩大回归通过；最终ed67c134回归404通过；GUI 907通过，生产页面占用提示/管理入口浏览器验证通过（模拟API）。协议50，明确连接重新发现同一USB身份、撤销失效目标会话并保留UART/在途任务；已知MI_04恢复不做多余身份打印；target busy不毒化MUX、不重放写。实体拔插/旧固件/客户电脑待回归。报告v031-startup-audit.md、v031-connections.md；最终本地构建状态见连接报告。
 - **0.3.0正式发布回归**：4471 Python通过/2跳过；902 GUI通过（干净npm ci后再次通过）；签名NSIS安装退出0，三负载哈希匹配。本地Skill更新，7059目标/2224算法；冻结版和Skill MCP/CLI通过。桌面配置/枚举通过；Web由用户手动确认连接STM32与v0.3.0。关闭后无MKLink进程、8765/8766无监听。详见v030-release-handoff.md，不能等同所有实体矩阵重新通过。
@@ -48,7 +48,7 @@
 ## 下一动作
 
 1. 等待固件会话修复1kHz/最大速率Watch导致UART/RS485饥饿，收到新最终UF2 SHA、原目标恢复SHA和明确设备可接管后，重新验收相关并发矩阵。硬件现由固件会话独占，未交接前不触碰串口/SWD/供电。
-2. 完成最终全Python零失败运行、文档/记忆/PR #33更新并推送精确分支，复核CI。候选包已备齐；用户只授权准备，不合并/签名/发标签/发布/改渠道。
+2. 最终Python4566通过/2跳过，GUI911、Rust桌面21/SiteAgent6、候选构建和c89ef46d三项CI通过。继续更新最终验收文档/记忆/PR #33并推送精确分支；用户只授权准备，不合并/签名/发布/改渠道。
 3. 新固件交接后补最终候选重连、完整退出释放与已测烧录自动恢复受影响回归；真实自动UF2升级、旧型号按键路径、物理拔插/客户CS32L015等缺口按实物条件如实记录，不制造模拟实测通过。
 4. 完整用户授权范围完成后暂停mklink自动跟进；未变化静默，仅完成/实际失败/需用户动作通知。VCC每次仍需具体电压确认，未知程序禁止覆盖。
 5. 长期验证继续暂停。UAC安装验证明确豁免；提取包不能称覆盖安装，旧固件或另一提交结果不能称当前二进制重新实测。
