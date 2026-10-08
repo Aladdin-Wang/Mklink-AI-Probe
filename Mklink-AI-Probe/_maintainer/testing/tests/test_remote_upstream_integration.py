@@ -163,7 +163,8 @@ def test_current_metadata_preserves_core_remote_and_separate_optional_surfaces()
     scripts = project["scripts"]
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "0.3.0"
+    from mklink.runtime import VERSION
+    assert project["version"] == VERSION
     assert {
         "pyelftools==0.32",
         "pycparser>=2.22,<4",

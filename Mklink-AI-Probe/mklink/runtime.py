@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
 PROTOCOL = 50  # Explicit same-probe reconnect invalidates stale target sessions.
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 STARTUP_TIMEOUT_SECONDS = 60
 
 
