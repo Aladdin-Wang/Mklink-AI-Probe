@@ -78,7 +78,7 @@ def test_hpm_burn_bin_sends_four_word_flash_cfg(tmp_path: Path):
 
     assert result["success"] is True
     assert commands[0] == "hpm.flash_cfg(0xfcf90001U,0x00000007U,0x00000000U,0xf3040000U)"
-    assert commands[1] == 'hpm.program("demo.bin",0x80000400)'
+    assert commands[1] == "hpm.program('demo.bin',0x80000400)"
 
 
 def test_hpm_burn_bin_does_not_treat_plain_zero_as_success(tmp_path: Path):

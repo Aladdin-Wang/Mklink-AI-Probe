@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import create_autospec
 
 import pytest
 
@@ -128,7 +125,7 @@ def test_local_fastapi_and_site_agent_keep_resource_policies_isolated(tmp_path):
 
     agent = SiteAgent(
         AgentConfig(project_root=str(tmp_path)),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         request_dispatcher=dispatcher,
     )
 
@@ -166,7 +163,7 @@ def test_current_metadata_preserves_core_remote_and_separate_optional_surfaces()
     scripts = project["scripts"]
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "0.2.3"
+    assert project["version"] == "0.3.0"
     assert {
         "pyelftools==0.32",
         "pycparser>=2.22,<4",
@@ -179,8 +176,8 @@ def test_current_metadata_preserves_core_remote_and_separate_optional_surfaces()
         "mklink-site-agent": "mklink.remote.package_agent:main",
         "mklink-remote-mcp": "mklink.remote.mcp:main",
     }
-    assert extras["remote"] == ["websockets>=11.0", "intelhex>=2.3"]
-    assert extras["mcp"] == ["fastmcp>=2.0", "pydantic<2.13"]
+    assert {"websockets>=11.0", "intelhex>=2.3", "httpx>=0.27,<1", "fastapi>=0.100", "python-multipart>=0.0.9"}.issubset(extras["remote"])
+    assert {"fastmcp>=2.0", "pydantic<2.13", "httpx>=0.27,<1", "fastapi>=0.100"}.issubset(extras["mcp"])
     assert {
         "build==1.5.0",
         "pyinstaller==6.18.0",
@@ -191,129 +188,16 @@ def test_current_metadata_preserves_core_remote_and_separate_optional_surfaces()
     assert not any("pyinstaller" in item.casefold() for item in extras["remote"])
 
 
-def test_dispatcher_matches_v014_device_signatures_and_serializes_richer_results(
-    tmp_path,
-    monkeypatch,
-):
-    from mklink.device import Device
-
-    @dataclass(frozen=True)
-    class RichResult:
-        source: Path
-        payload: bytes
-        values: tuple[int, ...]
-
-    firmware = tmp_path / "firmware.bin"
-    firmware.write_bytes(b"\x01\x02")
-    device = create_autospec(Device, instance=True)
-    device.flash.return_value = RichResult(
-        source=firmware,
-        payload=b"\x01\x02",
-        values=(1, 2),
-    )
-    device.memory_map.return_value = {
-        "source": tmp_path / "firmware.axf",
-        "payload": b"\x03",
-    }
-    device.rtt_start.return_value = RichResult(
-        source=tmp_path / "rtt.map",
-        payload=b"\x04",
-        values=(3,),
-    )
-    device.rtt_stop.return_value = "stopped"
-    device.decode_hardfault.return_value = {
-        "frames": (
-            {
-                "source": tmp_path / "fault.c",
-                "payload": b"\x05",
-            },
-        ),
-    }
-    manager = ResourceManager()
-    context = AgentDispatchContext(device=device, resource_manager=manager)
-    uploads = SimpleNamespace(resolve=lambda _reference: firmware)
-    stream_owners: dict[str, str] = {}
-    monkeypatch.setattr(
-        "mklink.remote.dispatcher.capability_available",
-        lambda _name: True,
-    )
-
-    flashed = dispatch_capability(
-        "flash.program",
-        {
-            "firmware": "remote-file:opaque",
-            "target_part": "TEST123",
-            "verify": True,
-            "confirm": True,
-        },
-        context=context,
-        upload_manager=uploads,
-    )
-    memory_map = dispatch_capability(
-        "symbols.memory_map",
-        {},
-        context=context,
-    )
-    started = dispatch_capability(
-        "rtt.start",
-        {
-            "addr": 0x20000000,
-            "channel": 0,
-            "search_size": 4096,
-            "mode": "static",
-        },
-        context=context,
-        stream_owners=stream_owners,
-    )
-    stopped = dispatch_capability(
-        "rtt.stop",
-        {},
-        context=context,
-        stream_owners=stream_owners,
-    )
-    decoded = dispatch_capability(
-        "hardfault.decode",
-        {"fault_regs": {"cfsr": 1}},
-        context=context,
-        stream_owners=stream_owners,
-    )
-
-    device.flash.assert_called_once_with(
-        str(firmware),
-        target_part="TEST123",
-        verify=True,
-    )
-    device.memory_map.assert_called_once_with()
-    device.rtt_start.assert_called_once_with(
-        0x20000000,
-        channel=0,
-        search_size=4096,
-        mode="static",
-    )
-    device.decode_hardfault.assert_called_once_with({"cfsr": 1})
-    device.rtt_stop.assert_called_once_with()
-    assert flashed == {
-        "source": "firmware.bin",
-        "payload": {"__bytes__": "AQI="},
-        "values": [1, 2],
-    }
-    assert memory_map == {
-        "source": "firmware.axf",
-        "payload": {"__bytes__": "Aw=="},
-    }
-    assert started == {
-        "source": "rtt.map",
-        "payload": {"__bytes__": "BA=="},
-        "values": [3],
-    }
-    assert decoded == {
-        "frames": [
-            {
-                "source": "fault.c",
-                "payload": {"__bytes__": "BQ=="},
-            }
-        ]
-    }
-    assert stopped == "stopped"
-    assert manager.get_status() == {}
-    assert stream_owners == {}
+@pytest.mark.parametrize('operation,params', [
+    ('flash.program', {'firmware': 'remote-file:opaque', 'confirm': True}),
+    ('symbols.memory_map', {}), ('rtt.start', {}), ('rtt.stop', {}),
+    ('hardfault.decode', {'fault_regs': {'cfsr': 1}})])
+def test_direct_device_is_never_used_as_shared_target_fallback(operation, params, monkeypatch):
+    from mklink.remote.capabilities import CapabilityUnavailableError
+    from unittest.mock import Mock
+    device = Mock()
+    context = AgentDispatchContext(device=device, resource_manager=ResourceManager())
+    monkeypatch.setattr('mklink.remote.dispatcher.capability_available', lambda _: True)
+    with pytest.raises(CapabilityUnavailableError):
+        dispatch_capability(operation, params, context=context)
+    assert device.mock_calls == []

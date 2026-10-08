@@ -9,16 +9,9 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 import tempfile
 import time
 from pathlib import Path
-
-# Windows 终端默认 GBK 编码，设备返回的特殊字符会导致 encode 失败
-# 透明替换无法编码的字符，避免 UnicodeEncodeError
-if sys.platform == "win32":
-    sys.stdout.reconfigure(errors="replace", encoding="utf-8")
-    sys.stderr.reconfigure(errors="replace", encoding="utf-8")
 
 from mklink.bridge import MKLinkSerialBridge, quote_probe_string
 from mklink.discovery import find_microkeen_disk
@@ -40,6 +33,8 @@ def parse_hpm_program_result(output: str) -> dict:
     has_failure = (
         "error" in lower
         or "failed" in lower
+        or "hpm_hex_fail" in lower
+        or "hpm_bin_fail" in lower
         or ("open filename" in lower and "fail" in lower)
     )
     has_loaded_success = "loaded successfully" in lower
@@ -248,7 +243,7 @@ class MKLinkFlash:
             True 成功，False 失败
         """
         resp = self._bridge.send_command(f"cmd.erase_sector_flash({addr})", echo=True)
-        return "0" in resp
+        return any(line.strip() == '0' for line in resp.splitlines())
 
     # ------------------------------------------------------------------
     # 文件烧录
@@ -358,6 +353,30 @@ class MKLinkFlash:
         }
 
     def burn_hpm_bin(
+        self, bin_path: str, addr: str, board: str | None = None,
+        flash_cfg: tuple[str, str, str, str] | list[str] | None = None,
+        microkeen_filename: str | None = None, progress_callback=None,
+    ) -> dict:
+        return self._burn_hpm_image(bin_path, addr, board, flash_cfg,
+                                    microkeen_filename, progress_callback)
+
+    def burn_hpm_hex(
+        self, hex_path: str, board: str | None = None,
+        flash_cfg: tuple[str, str, str, str] | list[str] | None = None,
+        microkeen_filename: str | None = None, progress_callback=None,
+    ) -> dict:
+        from mklink.hpm_image import prepare_hpm_hex
+
+        with tempfile.TemporaryDirectory(prefix="mklink-hpm-hex-") as temporary:
+            canonical = Path(temporary) / "image.hex"
+            prepare_hpm_hex(Path(hex_path), canonical)
+            return self._burn_hpm_image(
+                str(canonical), "0x80000000", board, flash_cfg,
+                microkeen_filename or Path(hex_path).name, progress_callback,
+                hex_format=True,
+            )
+
+    def _burn_hpm_image(
         self,
         bin_path: str,
         addr: str,
@@ -365,8 +384,9 @@ class MKLinkFlash:
         flash_cfg: tuple[str, str, str, str] | list[str] | None = None,
         microkeen_filename: str | None = None,
         progress_callback=None,
+        *, hex_format: bool = False,
     ) -> dict:
-        """Program an HPMicro BIN image with the HPM device-side API."""
+        """Common HPM staging/setup; HEX uses a distinct fail-closed API."""
         from mklink.hpm_config import (
             normalize_hpm_address,
             normalize_hpm_configuration,
@@ -376,6 +396,13 @@ class MKLinkFlash:
             None, board=board, flash_cfg=flash_cfg
         )
         _address, normalized_address = normalize_hpm_address(addr)
+        if hex_format:
+            capability = self._bridge.send_command("hpm.program_hex()", timeout=10.0)
+            lines = [line.strip() for line in capability.splitlines() if line.strip()]
+            if not lines or lines[-1] != "-1" or any(
+                word in capability.lower() for word in ("error", "traceback")
+            ):
+                raise FlashError("HPM HEX requires downloader firmware with hpm.program_hex support")
         filename = self._copy_to_microkeen(bin_path, microkeen_filename)
         if not filename:
             raise FlashError("无法将文件拷贝到 MICROKEEN 磁盘")
@@ -386,14 +413,24 @@ class MKLinkFlash:
         elif normalized_cfg:
             commands.append(f"hpm.flash_cfg({','.join(normalized_cfg)})")
 
-        commands.append(f'hpm.program("{filename}",{normalized_address})')
+        quoted_filename = quote_probe_string(filename)
+        commands.append(
+            f"hpm.program_hex({quoted_filename})" if hex_format else
+            f"hpm.program({quoted_filename},{normalized_address})"
+        )
 
         responses: list[str] = []
         start = time.time()
         for index, cmd in enumerate(commands):
             timeout = FLM_LOAD_TIMEOUT if cmd.startswith("hpm.program") else 10.0
-            responses.append(self._bridge.send_command(cmd, timeout=timeout, echo=True))
+            response = self._bridge.send_command(cmd, timeout=timeout, echo=True)
+            responses.append(response)
             if index < len(commands) - 1:
+                lines = [line.strip() for line in response.splitlines() if line.strip()]
+                if not lines or lines[-1] != "0" or any(
+                    word in response.lower() for word in ("error", "failed", "traceback")
+                ):
+                    raise FlashError("HPM flash configuration failed: " + response)
                 time.sleep(0.1)
         time.sleep(0.5)
 

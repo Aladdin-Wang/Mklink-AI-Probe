@@ -18,6 +18,7 @@ import webbrowser
 import xml.etree.ElementTree as ET
 
 from mklink.memory_access import parse_read_ram_response, read_memory
+from mklink.mux_watch import PackedWatchSample
 from mklink.watch import decode_value, resolve_variable_path
 
 
@@ -84,17 +85,35 @@ class CompiledFrameDecoder:
         self,
         channel_names: tuple[str, ...],
         region_fields: tuple[tuple[CompiledDecodeField, ...], ...],
+        region_sizes: tuple[int, ...] = (),
     ):
         self.channel_names = channel_names
         self.channel_index = {name: index for index, name in enumerate(channel_names)}
         self.region_fields = region_fields
         self._values = [0.0] * len(channel_names)
-        self._seen = [0] * len(channel_names)
-        self._generation = 0
+        self._region_masks = tuple(sum({1 << field.channel_index for field in fields})
+                                   for fields in region_fields)
+        self._complete_mask = (1 << len(channel_names)) - 1
+        self._packed_fields = []
+        offset = 0
+        for size, fields in zip(region_sizes, region_fields):
+            self._packed_fields.extend((offset + f.offset, f) for f in fields)
+            offset += size
+        self._packed_size = offset
+        self._packed_complete = {f.channel_index for _, f in self._packed_fields} == set(range(len(channel_names)))
 
-    def decode(self, frame: dict) -> list[float] | None:
-        self._generation += 1
-        generation = self._generation
+    def decode(self, frame: dict | PackedWatchSample) -> list[float] | None:
+        if isinstance(frame, PackedWatchSample):
+            if (not self._packed_complete or not self._packed_size or frame.offset < 0
+                    or frame.offset + self._packed_size > len(frame.payload)):
+                return None
+            for offset, field in self._packed_fields:
+                value = field.unpacker.unpack_from(frame.payload, frame.offset + offset)[0]
+                if field.bit_mask is not None:
+                    value = (int(value) >> field.bit_offset) & field.bit_mask
+                self._values[field.channel_index] = float(value)
+            return self._values
+        seen = 0
         for region_index, region_data in frame.get("regions", ()):
             if not 0 <= region_index < len(self.region_fields):
                 continue
@@ -105,8 +124,8 @@ class CompiledFrameDecoder:
                 if field.bit_mask is not None:
                     value = (int(value) >> field.bit_offset) & field.bit_mask
                 self._values[field.channel_index] = float(value)
-                self._seen[field.channel_index] = generation
-        if any(marker != generation for marker in self._seen):
+            seen |= self._region_masks[region_index]
+        if seen != self._complete_mask:
             return None
         return self._values
 
@@ -153,7 +172,10 @@ def parse_timestamped_read_ram_response(response: str) -> TimestampedRead:
     )
 
 
-def build_read_blocks(items: list[WatchItem], *, max_gap: int = 16) -> list[ReadBlock]:
+def build_read_blocks(
+    items: list[WatchItem], *, max_gap: int = 16,
+    ram_ranges: tuple[tuple[int, int], ...] = (),
+) -> list[ReadBlock]:
     if not items:
         return []
     sorted_items = sorted(items, key=lambda i: (i.source != "ram", i.address))
@@ -173,19 +195,29 @@ def build_read_blocks(items: list[WatchItem], *, max_gap: int = 16) -> list[Read
         current_source = ""
 
     for item in sorted_items:
+        item_start = item.address
         item_end = item.address + max(1, item.size)
+        # Only widen reads within a known writable ELF/profile RAM range.
+        # Decoding still uses each item's original address/width, including
+        # packed values crossing a word boundary. Never widen MMIO accesses.
+        aligned_start = item_start & ~3
+        aligned_end = (item_end + 3) & ~3
+        if (item.source == "ram" and aligned_end - aligned_start <= 128
+                and any(start <= aligned_start and aligned_end <= end
+                        for start, end in ram_ranges)):
+            item_start, item_end = aligned_start, aligned_end
         if (
             current_items
             and item.source == current_source
             and (item.source == "ram" or item.address == current_start)
-            and item.address <= current_end + max_gap
+            and item_start <= current_end + max_gap
         ):
             current_items.append(item)
             current_end = max(current_end, item_end)
             continue
         flush()
         current_items = [item]
-        current_start = item.address
+        current_start = item_start
         current_end = item_end
         current_source = item.source
     flush()
@@ -246,7 +278,7 @@ def compile_frame_decoder(
                 bit_offset, (1 << bit_width) - 1 if bit_width is not None else None,
             ))
         region_fields.append(tuple(fields))
-    return CompiledFrameDecoder(channel_names, tuple(region_fields))
+    return CompiledFrameDecoder(channel_names, tuple(region_fields), tuple(block.size for block in blocks))
 
 
 def _read_block_via_bridge(bridge, address: int, size: int, *, timeout: float = 10.0) -> tuple[bytes, str]:
@@ -685,12 +717,13 @@ class SuperWatchRuntime:
         self.items = list(items)
         self.dwarf_info = dwarf_info
         self.symbol_catalog = symbol_catalog
+        self.ram_ranges = tuple(getattr(symbol_catalog, "_ram_ranges", ()))
         self.svd_registers = svd_registers or {}
         self.peripheral_items = peripheral_items or {}
         self.port = port
         self.read_lock = read_lock or threading.Lock()
         self.blocks = build_read_blocks(
-            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
+            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP, ram_ranges=self.ram_ranges,
         )
         self.blocks_version = 0
 
@@ -734,7 +767,7 @@ class SuperWatchRuntime:
                 break
         return results
 
-    def add(self, name: str) -> dict:
+    def add(self, name: str, *, validate_layout=None) -> dict:
         existing = next((item for item in self.items if item.name == name), None)
         if existing is not None:
             return {"name": existing.name, **make_channel_metadata([existing])[existing.name]}
@@ -756,6 +789,8 @@ class SuperWatchRuntime:
                 ),
             )
         else:
+            if self.symbol_catalog is not None and self.symbol_catalog.is_overridden(name):
+                return {"error": f"Cannot resolve '{name}': unavailable in the active C layout"}
             try:
                 resolved = resolve_watch_items(
                     [name],
@@ -767,20 +802,40 @@ class SuperWatchRuntime:
             if not resolved:
                 return {"error": f"Cannot resolve '{name}': skipped (address outside SRAM or not found)"}
             item = resolved[0]
-        self.items.append(item)
-        self.blocks = build_read_blocks(
-            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
-        )
+        # Validate before publishing a new sampling layout: an invalid item must
+        # not stop the worker or displace the existing valid channels.
+        if item.scalar_kind in {"array", "struct", "union"}:
+            return {"error": f"Cannot watch '{name}' as a scalar; select a member or use an array snapshot"}
+        candidate_items = [*self.items, item]
+        try:
+            candidate_blocks = build_read_blocks(
+                candidate_items, max_gap=SUPERWATCH_DUMP_MERGE_GAP, ram_ranges=self.ram_ranges,
+            )
+            compile_frame_decoder(candidate_items, candidate_blocks)
+        except ValueError as exc:
+            return {"error": f"Cannot watch '{name}': {exc}; select a scalar member or use an array snapshot"}
+        try:
+            if validate_layout is not None:
+                validate_layout(candidate_items)
+        except ValueError as exc:
+            return {"error": f"Cannot watch '{name}': {exc}"}
+        self.items = candidate_items
+        self.blocks = candidate_blocks
         self.blocks_version += 1
         return {"name": item.name, **make_channel_metadata([item])[item.name]}
 
-    def remove(self, name: str) -> dict:
-        before = len(self.items)
-        self.items = [item for item in self.items if item.name != name]
-        if len(self.items) == before:
+    def remove(self, name: str, *, validate_layout=None) -> dict:
+        candidate_items = [item for item in self.items if item.name != name]
+        if len(candidate_items) == len(self.items):
             return {"removed": False, "name": name}
+        try:
+            if validate_layout is not None:
+                validate_layout(candidate_items)
+        except ValueError as exc:
+            return {"error": str(exc), "removed": False, "name": name}
+        self.items = candidate_items
         self.blocks = build_read_blocks(
-            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
+            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP, ram_ranges=self.ram_ranges,
         )
         self.blocks_version += 1
         return {"removed": True, "name": name}

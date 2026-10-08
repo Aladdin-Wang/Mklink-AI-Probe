@@ -1,9 +1,10 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import { IS_TAURI } from './lib/runtimeEndpoint'
+import { IS_REMOTE } from './lib/runtimeEndpoint'
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: '/:pathMatch(.*)*', redirect: '/config' },
     {
       path: '/',
       redirect: '/config',
@@ -29,12 +30,13 @@ const router = createRouter({
       component: () => import('./views/OnlineFlashView.vue'),
     },
     {
-      path: '/site-agent',
-      name: 'site-agent',
+      path: '/remote-service',
+      name: 'remote-service',
       component: () => import('./views/SiteAgentView.vue'),
-      beforeEnter: () => IS_TAURI || { name: 'config' },
     },
   ],
 })
+
+router.beforeEach(to => IS_REMOTE && to.name !== 'dashboard' ? { name: 'dashboard' } : true)
 
 export default router

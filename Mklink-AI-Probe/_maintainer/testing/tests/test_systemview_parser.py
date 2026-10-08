@@ -233,3 +233,35 @@ def test_overflow_clears_cached_task_for_following_stop_event():
     ]
     assert events[1]["drop_count"] == 3
     assert "task_id" not in events[2]
+
+@pytest.mark.parametrize('chunk_size', [1, 3, 4096])
+@pytest.mark.parametrize('cpu_hint', [0, 360_000_000])
+def test_independent_timestamp_clock_is_not_overridden_by_cpu_hint(chunk_size, cpu_hint):
+    parser = SystemViewParser()
+    if cpu_hint:
+        parser.set_cpu_freq(cpu_hint, lock=True)
+    payload = b''.join(_encode_u32(v) for v in (1_000_000, 72_000_000, 0, 0))
+    stream = bytes((EVTID_INIT, len(payload))) + payload + _encode_u32(0)
+    stream += bytes((EVTID_TASK_START_EXEC,)) + _encode_u32(1) + _encode_u32(2500)
+    stream += bytes((EVTID_TASK_STOP_EXEC,)) + _encode_u32(7500)
+    events = []
+    for offset in range(0, len(stream), chunk_size):
+        events.extend(parser.feed(stream[offset:offset + chunk_size]))
+    assert parser.cpu_freq == (cpu_hint or 72_000_000)
+    assert parser.timestamp_freq == 1_000_000
+    assert events[-1]['t_us'] == 10000
+    assert events[-1]['cpu_delta_us'] == 7500
+    assert not parser.dropped_bytes and not parser.dropped_packets
+
+
+def test_next_init_replaces_independent_timestamp_source():
+    parser = SystemViewParser()
+    parser.set_cpu_freq(72_000_000, lock=True)
+    for sys_freq, cpu_freq, expected in [
+        (1_000_000, 72_000_000, 1_000_000),
+        (36_000_000, 36_000_000, 72_000_000),
+        (0, 36_000_000, 72_000_000),
+    ]:
+        payload = b''.join(_encode_u32(v) for v in (sys_freq, cpu_freq, 0, 0))
+        parser.feed(bytes((EVTID_INIT, len(payload))) + payload + _encode_u32(0))
+        assert parser.timestamp_freq == expected

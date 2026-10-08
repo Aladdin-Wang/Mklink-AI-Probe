@@ -89,6 +89,10 @@ def copy_clean_product_source(destination: Path) -> Path:
     for path in destination.rglob("*"):
         assert not forbidden_parts.intersection(path.relative_to(destination).parts)
         assert not path.name.endswith((".egg-info", ".pyc", ".pyo"))
+    # Shared build-time validator only; no skills enter the product wheel or artifact.
+    validator = Path("skills/tauri-gui-builder/scripts/builtin_flm_assets.py")
+    (destination / validator).parent.mkdir(parents=True)
+    shutil.copy2(ROOT / validator, destination / validator)
     return destination
 
 
@@ -320,7 +324,7 @@ from mklink.remote.cli import build_agent_parser, build_parser
 from mklink.remote.package_agent import build_parser as build_package_parser
 import mklink.remote.mcp
 
-agent = SiteAgent(AgentConfig(port=0), device_factory=lambda: None)
+agent = SiteAgent(AgentConfig(port=0), device_factory=lambda **_kwargs: None)
 errors = []
 def serve():
     try:
@@ -350,7 +354,8 @@ installed = sorted({
 })
 roots = {name.split(".", 1)[0].casefold() for name in sys.modules}
 assert blocked.isdisjoint(roots)
-assert blocked.isdisjoint(installed)
+assert (blocked - {"fastapi"}).isdisjoint(installed)
+assert {"fastapi", "starlette", "uvicorn", "httpx", "python-multipart"} <= set(installed)
 requirements = importlib.metadata.distribution("mklink").requires or []
 websockets = [item for item in requirements if item.casefold().startswith("websockets")]
 normalized_websockets = [" ".join(item.split()) for item in websockets]

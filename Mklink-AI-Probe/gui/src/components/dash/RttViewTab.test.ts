@@ -109,7 +109,7 @@ describe('RttViewTab binary migration', () => {
     mocks.dash.state = ref('idle')
     mocks.dash.error = ref(null)
     mocks.useBinaryStream.mockImplementation(name => (
-      name === 'rtt-terminal' ? mocks.terminalBinary : mocks.binary
+      name.startsWith('rtt-terminal-') ? mocks.terminalBinary : mocks.binary
     ))
     mocks.saveBlobFile.mockReset().mockResolvedValue(true)
     mocks.checkConflict.mockResolvedValue([])
@@ -143,14 +143,89 @@ describe('RttViewTab binary migration', () => {
     }
   }
 
-  it('constructs separate RTT transports and mounts only the terminal view by default', () => {
+  it('retains independent logs while another channel is paused or switched to terminal', async () => {
+    vi.useFakeTimers()
+    const streams = new Map<string, typeof mocks.binary>()
+    mocks.useBinaryStream.mockImplementation((name: string) => {
+      const state = { ...mocks.binary, rttLines: shallowRef(null), rttTerminal: shallowRef(null), waveformBatch: shallowRef(null), envelope: shallowRef(null) }
+      streams.set(name, state)
+      return state
+    })
+    mocks.status = { running: true, channels: [0, 1], down_buffers: [] }
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
-    expect(mocks.useBinaryStream).toHaveBeenCalledWith('rtt', expect.any(Object))
-    expect(mocks.useBinaryStream).toHaveBeenCalledWith('rtt-terminal', expect.any(Object))
-    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(false)
+    await flushPromises()
+    const panels = wrapper.findAllComponents({ name: 'RttChannelPanel' })
+    await panels[0]!.get('[data-testid=channel-pause]').trigger('click')
+    for (const ch of [0, 1]) streams.get(`rtt-${ch}`)!.rttLines.value = { type: 'rtt-lines', sequence: 1n, lines: [{ timestampNs: 1n, level: 'raw', text: `channel-${ch}` }] }
+    await nextTick(); await vi.advanceTimersByTimeAsync(100)
+    const logs = panels.map(p => p.findComponent({ name: 'VirtualLogPanel' }).vm as any)
+    expect(logs[0].retainedCount).toBe(0)
+    expect(logs[1].retainedCount).toBe(1)
+    await panels[0]!.get('[data-testid=channel-pause]').trigger('click')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(logs[0].exportText()).toContain('channel-0')
+    expect(logs[0].exportText()).not.toContain('channel-1')
+    await panels[1]!.get('[data-testid=rtt-log-mode]').trigger('click')
+    await panels[1]!.get('[data-testid=rtt-terminal-mode]').trigger('click')
+    await panels[1]!.get('[data-testid=rtt-log-mode]').trigger('click')
+    expect(logs[1].exportText()).toContain('channel-1')
+    expect(logs[1].exportText()).not.toContain('channel-0')
+    wrapper.unmount()
+  })
+
+  it('renders each channel once with a fixed send destination', async () => {
+    mocks.status = { running: true, channels: [2, 5], down_buffers: [{ channel: 2, active: true }, { channel: 5, active: true }] }
+    mocks.api.writeRtt.mockResolvedValue({})
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-channel="2"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-channel="5"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="rtt-view-channel"]').exists()).toBe(false)
+    const panel = wrapper.findAllComponents({ name: 'RttChannelPanel' })[1]!
+    const payload = new Uint8Array([10])
+    await panel.findComponent({ name: 'RttTransmitBar' }).props('send')(payload)
+    expect(mocks.api.writeRtt).toHaveBeenCalledWith(payload, 5)
+    wrapper.unmount()
+  })
+
+  it('keeps both output histories mounted and shows the terminal by default', () => {
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    expect(mocks.useBinaryStream).toHaveBeenCalledWith('rtt-0', expect.any(Object))
+    expect(mocks.useBinaryStream).toHaveBeenCalledWith('rtt-terminal-0', expect.any(Object))
+    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).exists()).toBe(true)
     expect(wrapper.find('[data-testid="rtt-save-log"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('keeps acquisition attached while a symbol reload waits and adopts the address only after applying', async () => {
+    vi.useFakeTimers()
+    mocks.status = { running: true, down_buffers: [], numeric_channels: [] }
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const stopped = mocks.terminalBinary.stop.mock.calls.length
+    mocks.status.file_source_change = { sequence: 1, pending: true, state: 'deferred', message: '等待停止采集后重载' }
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="rtt-address"]').element).toHaveProperty('value', '0x20000000')
+    expect(wrapper.get('[data-testid="rtt-source-notice"]').text()).toContain('等待停止采集')
+    expect(wrapper.get('[data-testid=channel-pause]').text()).toContain('暂停')
+    expect(mocks.terminalBinary.stop.mock.calls.length).toBe(stopped)
+    mocks.status.running = false
+    mocks.status.file_source_change = { sequence: 2, pending: false, state: 'applied', rtt_addr: '0x20000040', message: '请确认目标固件后重新启动' }
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="rtt-address"]').element).toHaveProperty('value', '0x20000040')
+    expect(wrapper.get('[data-testid="rtt-source-notice"]').text()).toContain('请确认目标固件')
+    expect(wrapper.get('.control-toolbar').text()).toContain('开始')
+    expect(wrapper.get('.control-toolbar').text()).not.toContain('重试')
+    // A new viewer may see an earlier applied event while another client is running RTT.
+    wrapper.unmount()
+    mocks.status.running = true
+    const viewer = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    expect(viewer.get('[data-testid=channel-pause]').text()).toContain('暂停')
+    viewer.unmount()
   })
 
   it('keeps RTT setup available while disconnected but requires an explicit connection', async () => {
@@ -160,7 +235,7 @@ describe('RttViewTab binary migration', () => {
     expect(wrapper.get('[data-testid="rtt-address"]').exists()).toBe(true)
     expect(wrapper.get('.control-toolbar .btn-primary').attributes('disabled')).toBeDefined()
 
-    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
+    await wrapper.get('[data-testid=channel-pause]').trigger('click')
     await flushPromises()
 
     expect(mocks.dash.start).not.toHaveBeenCalled()
@@ -174,10 +249,10 @@ describe('RttViewTab binary migration', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="rtt-terminal-mode"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).exists()).toBe(true)
     expect(mocks.terminalBinary.start).toHaveBeenCalled()
-    expect(mocks.binary.start).not.toHaveBeenCalled()
+    expect(mocks.binary.start).toHaveBeenCalled()
 
     mocks.terminalBinary.rttTerminal.value = {
       type: 'rtt-terminal', sequence: 1n, text: '\x1b[31merror\x1b[0m\r',
@@ -186,7 +261,7 @@ describe('RttViewTab binary migration', () => {
 
     await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
     expect(wrapper.get('[data-testid="rtt-log-mode"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(true)
     expect(wrapper.find('[data-testid="rtt-chart-toggle"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="rtt-save-log"]').exists()).toBe(true)
@@ -225,12 +300,12 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
-  it('groups RTT setup and stream controls into two compact rows', async () => {
+  it('keeps shared capture controls outside per-channel display controls', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
 
     expect(wrapper.find('.rtt-address-row').exists()).toBe(true)
-    expect(wrapper.find('.rtt-primary-tools .control-toolbar').exists()).toBe(true)
+    expect(wrapper.find('.rtt-view-tab > .control-toolbar').exists()).toBe(true)
     expect(wrapper.find('.rtt-primary-tools .encoding-control').exists()).toBe(true)
     expect(wrapper.find('.rtt-primary-tools .stream-metrics').exists()).toBe(true)
     expect(wrapper.find('.rtt-secondary-tools [data-testid="rtt-chart-toggle"]').exists()).toBe(true)
@@ -289,11 +364,58 @@ describe('RttViewTab binary migration', () => {
 
     await wrapper.get('[data-testid="rtt-save-log"]').trigger('click')
 
-    expect(wrapper.get('[data-testid="rtt-log-text"]').attributes('aria-pressed')).toBe('true')
-    expect((wrapper.get('[data-testid="rtt-log-timestamp"]').element as HTMLInputElement).checked).toBe(false)
-    expect(mocks.saveBlobFile).toHaveBeenCalledWith('rtt-test.log', expect.any(Blob))
+    expect(wrapper.get('[data-testid="rtt-0-log-text"]').attributes('aria-pressed')).toBe('true')
+    expect((wrapper.get('[data-testid="rtt-0-log-timestamp"]').element as HTMLInputElement).checked).toBe(false)
+    expect(mocks.saveBlobFile).toHaveBeenCalledWith('rtt-0-test.log', expect.any(Blob))
     const saved = mocks.saveBlobFile.mock.calls[0][1] as Blob
     expect(new TextDecoder().decode(await saved.arrayBuffer())).toBe('ready\n')
+    wrapper.unmount()
+  })
+
+  it.each([0, 1, 2, 3, 4, 5, 6, 7])('isolates save failure, cancel and retry on RTT %i while acquisition continues', async (channel) => {
+    vi.useFakeTimers()
+    const streams = new Map<string, typeof mocks.binary>()
+    mocks.useBinaryStream.mockImplementation((name: string) => {
+      const state = { ...mocks.binary, rttLines: shallowRef(null), rttTerminal: shallowRef(null), waveformBatch: shallowRef(null), envelope: shallowRef(null) }
+      streams.set(name, state)
+      return state
+    })
+    mocks.status = { running: true, channels: [0, 1, 2, 3, 4, 5, 6, 7], down_buffers: [] }
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const panels = wrapper.findAllComponents({ name: 'RttChannelPanel' })
+    for (let ch = 0; ch < 8; ch++) {
+      await panels[ch]!.get('[data-testid=rtt-log-mode]').trigger('click')
+      streams.get(`rtt-${ch}`)!.rttLines.value = { type: 'rtt-lines', sequence: 1n, lines: [{ timestampNs: 1n, level: 'raw', text: `channel-${ch}` }] }
+    }
+    await nextTick(); await vi.advanceTimersByTimeAsync(100)
+    const panel = panels[channel]!
+    const neighbor = panels[(channel + 1) % 8]!
+    let rejectSave!: (reason: Error) => void
+    mocks.saveBlobFile.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject }))
+    await panel.get('[data-testid=rtt-save-log]').trigger('click')
+    await panel.get('[data-testid=rtt-save-log]').trigger('click')
+    expect(mocks.saveBlobFile).toHaveBeenCalledTimes(1)
+    expect(panel.get('[data-testid=rtt-save-log]').attributes('aria-busy')).toBe('true')
+    expect(neighbor.get('[data-testid=rtt-save-log]').attributes('disabled')).toBeUndefined()
+    await neighbor.get('[data-testid=rtt-save-log]').trigger('click')
+    streams.get(`rtt-${channel}`)!.rttLines.value = { type: 'rtt-lines', sequence: 2n, lines: [{ timestampNs: 2n, level: 'raw', text: 'during-save' }] }
+    await nextTick(); await vi.advanceTimersByTimeAsync(100)
+    rejectSave(new Error('disk full'))
+    await flushPromises()
+    expect(panel.get('[data-testid=rtt-save-error]').text()).toContain('disk full')
+    expect(neighbor.find('[data-testid=rtt-save-error]').exists()).toBe(false)
+    expect(panel.get('[data-testid=rtt-save-log]').attributes('disabled')).toBeUndefined()
+    mocks.saveBlobFile.mockResolvedValueOnce(false)
+    await panel.get('[data-testid=rtt-save-log]').trigger('click')
+    await flushPromises()
+    expect(panel.find('[data-testid=rtt-save-error]').exists()).toBe(false)
+    await panel.get('[data-testid=rtt-save-log]').trigger('click')
+    await flushPromises()
+    const [name, blob] = mocks.saveBlobFile.mock.calls.at(-1)!
+    expect(name).toBe(`rtt-${channel}-test.log`)
+    expect(new TextDecoder().decode(await (blob as Blob).arrayBuffer())).toBe(`channel-${channel}\nduring-save\n`)
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -307,8 +429,7 @@ describe('RttViewTab binary migration', () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await wrapper.get('.btn-primary').trigger('click')
     await flushPromises()
-    expect(mocks.binary.reset).toHaveBeenCalled()
-    expect(mocks.terminalBinary.reset).toHaveBeenCalled()
+    expect(wrapper.findAllComponents({ name: 'RttChannelPanel' })).toHaveLength(1)
     expect(mocks.dash.start).toHaveBeenCalledWith({
       addr: '0x20000000', mode: 0, search_size: 0, encoding: 'utf-8',
     })
@@ -320,48 +441,47 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
-  it('persists the selected encoding and sends it when RTT starts', async () => {
-    mocks.status = { running: false, numeric_channels: [], down_buffers: [] }
-    mocks.dash.start.mockImplementationOnce(async () => {
-      mocks.status = {
-        running: true,
-        control_block_addr: '0x20000000',
-        encoding: 'gbk',
-        numeric_channels: [],
-        down_buffers: [],
-      }
-      return true
-    })
+  it.each([false, true])('keeps the viewer and render pause=%s when shared stop is refused', async (paused) => {
+    mocks.status = { running: true, numeric_channels: [], down_buffers: [{ channel: 0, active: true }] }
+    mocks.dash.state.value = 'running'
+    let finishStop!: (value: boolean) => void
+    mocks.dash.stop.mockReturnValueOnce(new Promise(resolve => { finishStop = resolve }))
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
-    await wrapper.get('[data-testid="rtt-encoding"]').setValue('gbk')
-    await wrapper.get('.btn-primary').trigger('click')
     await flushPromises()
-
-    expect(mocks.dash.start).toHaveBeenCalledWith({
-      addr: '0x20000000', mode: 0, search_size: 0, encoding: 'gbk',
-    })
-    expect(JSON.parse(localStorage.getItem('mklink.desktop.settings.v1') ?? '{}').rttEncoding)
-      .toBe('gbk')
+    const toolbar = wrapper.findComponent({ name: 'ControlToolbar' })
+    if (paused) await wrapper.get('[data-testid=channel-pause]').trigger('click')
+    await nextTick()
+    const before = mocks.terminalBinary.stop.mock.calls.length
+    toolbar.vm.$emit('stop')
+    toolbar.vm.$emit('stop')
+    await nextTick()
+    expect(mocks.dash.stop).toHaveBeenCalledOnce()
+    expect(mocks.terminalBinary.stop).toHaveBeenCalledTimes(before)
+    mocks.dash.error.value = 'Other clients subscribe to this acquisition'
+    finishStop(false)
+    await flushPromises()
+    expect(toolbar.props('state')).toBe('running')
+    expect(wrapper.get('[data-testid=channel-pause]').text()).toContain(paused ? '继续' : '暂停')
+    expect(toolbar.text()).toContain('Other clients subscribe')
+    expect(toolbar.text()).not.toContain('重试')
+    expect(mocks.terminalBinary.stop).toHaveBeenCalledTimes(before)
+    mocks.dash.stop.mockResolvedValueOnce(true)
+    toolbar.vm.$emit('stop')
+    await flushPromises()
+    expect(toolbar.props('state')).toBe('idle')
+    expect(mocks.terminalBinary.stop).toHaveBeenCalledTimes(before + 1)
     wrapper.unmount()
   })
 
-  it('switches decoder encoding while RTT is running', async () => {
-    mocks.status = {
-      running: true,
-      encoding: 'utf-8',
-      numeric_channels: [],
-      down_buffers: [],
-    }
-    mocks.dash.state.value = 'running'
+  it('changes only the addressed channel encoding without rewriting other panel settings', async () => {
+    mocks.status = { running: true, channels: [0, 1], down_buffers: [] }
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await flushPromises()
-
-    await wrapper.get('[data-testid="rtt-encoding"]').setValue('gb18030')
+    await wrapper.get('[data-channel="1"] [data-testid="rtt-encoding"]').setValue('gbk')
     await flushPromises()
-
-    expect(mocks.api.setRttEncoding).toHaveBeenCalledWith('gb18030')
-    expect(JSON.parse(localStorage.getItem('mklink.desktop.settings.v1') ?? '{}').rttEncoding)
-      .toBe('gb18030')
+    expect(fetch).toHaveBeenCalledWith('/api/dash/rtt/encoding', expect.objectContaining({body: JSON.stringify({channel: 1, encoding: 'gbk'})}))
+    expect((wrapper.get('[data-channel="0"] [data-testid="rtt-encoding"]').element as HTMLSelectElement).value).toBe('utf-8')
+    expect(mocks.dash.start).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -597,10 +717,10 @@ describe('RttViewTab binary migration', () => {
 
     const bar = wrapper.findComponent({ name: 'RttTransmitBar' })
     expect(bar.props('enabled')).toBe(true)
-    await bar.get('[data-testid="rtt-input"]').setValue('OK')
-    await bar.get('[data-testid="rtt-send"]').trigger('click')
+    await bar.get('[data-testid="rtt-channel-0-input"]').setValue('OK')
+    await bar.get('[data-testid="rtt-channel-0-send"]').trigger('click')
     await flushPromises()
-    expect(mocks.api.writeRtt).toHaveBeenCalledWith(Uint8Array.of(0x4f, 0x4b))
+    expect(mocks.api.writeRtt).toHaveBeenCalledWith(Uint8Array.of(0x4f, 0x4b), 0)
 
     mocks.status = { running: true, numeric_channels: [], down_buffers: [] }
     vi.advanceTimersByTime(1_000)
@@ -706,13 +826,44 @@ describe('RttViewTab binary migration', () => {
 
     mocks.dash.state.value = 'running'
     await nextTick()
-    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    await wrapper.get('[data-testid=channel-pause]').trigger('click')
     await wrapper.get('.btn-danger').trigger('click')
 
     expect(wrapper.get('.rtt-chart-shell').isVisible()).toBe(true)
     await wrapper.get('[data-testid="rtt-chart-toggle"]').trigger('click')
     expect(wrapper.find('.rtt-chart-shell').exists()).toBe(false)
     expect(wrapper.get('[data-testid="rtt-chart-toggle"]').text()).toContain('打开曲线')
+    wrapper.unmount()
+  })
+
+  it.each([
+    [0, 100, ['110', '86', '62', '38', '14', '-10']],
+    [-1000, 0, ['100', '-140', '-380', '-620', '-860', '-1100']],
+    [0, 1, ['1.1', '0.86', '0.62', '0.38', '0.14', '-0.1']],
+  ])('keeps chart axis magnitudes for %s..%s', async (minimum, maximum, labels) => {
+    const fillText = vi.fn()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      setTransform: vi.fn(), clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(),
+      lineTo: vi.fn(), stroke: vi.fn(), fillText, save: vi.fn(),
+      restore: vi.fn(), rect: vi.fn(), clip: vi.fn(), translate: vi.fn(),
+      rotate: vi.fn(), strokeStyle: '', fillStyle: '', font: '', textAlign: '',
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
+    mocks.binary.waveformBatch.value = {
+      itemCount: 2, channelCount: 1, bufferStartMs: 1000, bufferEndMs: 2000,
+    }
+    await nextTick()
+    mocks.binary.envelope.value = {
+      requestId: 0, channelCount: 1,
+      values: Float32Array.of(minimum as number, maximum as number).buffer,
+      times: Float64Array.of(1000, 2000).buffer,
+      timeIndices: Uint32Array.of(0, 1).buffer,
+      channelOffsets: Uint32Array.of(0, 2).buffer,
+    }
+    await nextTick()
+    expect(fillText.mock.calls.filter(call => call[1] === 51).map(call => call[0])).toEqual(labels)
     wrapper.unmount()
   })
 
@@ -774,7 +925,7 @@ describe('RttViewTab binary migration', () => {
     await wrapper.get('.btn-primary').trigger('click')
     await Promise.resolve()
 
-    expect(mocks.binary.reset).toHaveBeenCalled()
+    expect(mocks.binary.start).not.toHaveBeenCalled()
     expect(mocks.binary.start).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -838,8 +989,9 @@ describe('RttViewTab binary migration', () => {
     mocks.dash.state.value = 'running'
     await flushPromises()
     mocks.binary.start.mockClear()
+    mocks.binary.stop.mockClear()
 
-    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    await wrapper.get('[data-testid=channel-pause]').trigger('click')
     expect(mocks.scheduler.stop).toHaveBeenCalled()
     expect(mocks.dash.pause).not.toHaveBeenCalled()
     expect(mocks.binary.stop).not.toHaveBeenCalled()
@@ -852,8 +1004,8 @@ describe('RttViewTab binary migration', () => {
     await nextTick()
     expect((wrapper.findComponent({ name: 'VirtualLogPanel' }).vm as any).retainedCount).toBe(0)
 
-    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
-    expect(mocks.scheduler.start).toHaveBeenCalledTimes(3)
+    await wrapper.get('[data-testid=channel-pause]').trigger('click')
+    expect(mocks.scheduler.start).toHaveBeenCalled()
     expect(mocks.scheduler.invalidate).toHaveBeenCalledWith('data')
     expect(mocks.dash.resume).not.toHaveBeenCalled()
     expect(mocks.binary.start).not.toHaveBeenCalled()
@@ -864,7 +1016,7 @@ describe('RttViewTab binary migration', () => {
     await nextTick()
     vi.advanceTimersByTime(100)
     await nextTick()
-    expect((wrapper.findComponent({ name: 'VirtualLogPanel' }).vm as any).retainedCount).toBe(1)
+    expect((wrapper.findComponent({ name: 'VirtualLogPanel' }).vm as any).retainedCount).toBe(2)
     wrapper.unmount()
   })
 
@@ -878,7 +1030,7 @@ describe('RttViewTab binary migration', () => {
     mocks.dash.state.value = 'running'
     await nextTick()
 
-    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    await wrapper.get('[data-testid=channel-pause]').trigger('click')
     mocks.binary.envelope.value = {
       type: 'render-envelope', requestId: 0, channelCount: 1, pointCount: 2,
       values: Float32Array.of(1, 2).buffer,

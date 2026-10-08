@@ -65,7 +65,7 @@ _RTT_SCAN_CHUNK = 1024
 _RTT_DEFAULT_SEARCH_SIZE = 1024
 _RTT_MAX_SEARCH_SIZE = 64 * 1024
 _RTT_DESCRIPTOR_SIZE = 24
-_RTT_FIRMWARE_MAX_CHANNELS = 3
+_RTT_FIRMWARE_MAX_CHANNELS = 8
 _RTT_MAX_TARGET_BUFFERS = 16
 _RTT_MAX_BUFFER_SIZE = 1024 * 1024
 _RTT_RESERVED_STOP = b"RTTView.stop()"
@@ -110,7 +110,7 @@ def _resolve_rtt_stream_parameters(
     if type(mode) is not int or mode not in (0, 1):
         raise ValueError(f"rtt_storage_mode must be 0 or 1, got {mode!r}")
     if type(channel) is not int or not 0 <= channel < _RTT_FIRMWARE_MAX_CHANNELS:
-        raise ValueError("channel must be between 0 and 2 for V4 probe firmware")
+        raise ValueError("channel must be between 0 and 7; channels above 2 require multiplex firmware")
     if (
         type(search_size) is not int
         or not 0 <= search_size <= _RTT_MAX_SEARCH_SIZE
@@ -318,86 +318,26 @@ class Device:
     # ------------------------------------------------------------------
     def _connect(self) -> None:
         from mklink.bridge import MKLinkSerialBridge
-        from mklink.discovery import find_mklink_cdc_port, list_available_ports
-        from mklink.project_config import load_config, save_config
-        from mklink.serial._port import _PortLock
+        from mklink.discovery import find_mklink_cdc_port
+        from mklink.project_config import load_config
 
-        automatic = self._port is None
         config = load_config(self._project_root) or {}
-        saved_port = str(config.get("com_port") or "").strip() or None
-        candidate = self._port or self._preferred_port or saved_port
-        attempted: set[str] = set()
-        candidate_attempts: dict[str, int] = {}
-        discovery_lock = None
-
-        try:
-            while True:
-                if candidate is None:
-                    if discovery_lock is None:
-                        discovery_lock = _PortLock("mklink_auto_connect")
-                        deadline = time.monotonic() + 60.0
-                        while not discovery_lock.acquire():
-                            if time.monotonic() >= deadline:
-                                break
-                            time.sleep(0.05)
-                        else:
-                            deadline = None
-                        if deadline is not None:
-                            break
-
-                    candidate = find_mklink_cdc_port(exclude_ports=set(attempted))
-                    if candidate is None:
-                        break
-
-                candidate_key = candidate.strip().casefold()
-                attempt = candidate_attempts.get(candidate_key, 0)
-                bridge = MKLinkSerialBridge(candidate)
-                if bridge.connect():
-                    self._bridge = bridge
-                    self._port = candidate
-                    break
-                bridge.close()
-
-                # USB CDC ports can be visible a short moment before the
-                # firmware REPL is ready. Retry the same candidate once so a
-                # transient enumeration race does not require a second user
-                # click. Only exhausted candidates are excluded from the next
-                # discovery pass.
-                if attempt == 0:
-                    candidate_attempts[candidate_key] = 1
-                    time.sleep(0.15)
-                    continue
-
-                attempted.add(candidate_key)
-
-                if not automatic:
-                    break
-                candidate = None
-        finally:
-            if discovery_lock is not None:
-                discovery_lock.release()
-
-        if self._bridge is None:
-            ports = ", ".join(sorted(attempted)) or "none"
+        # COM numbers saved in a project are neither an identity nor permission
+        # to switch probes. Shared callers already supply the selected port.
+        candidate = self._port or self._preferred_port or find_mklink_cdc_port()
+        if candidate is None:
             raise DeviceNotConnectedError(
-                f"Failed to connect to an available MKLink port (tried: {ports})"
+                'No unique MKLink command port; run mklink probes list and select a probe or explicit port'
             )
-
-        if automatic and self._port != saved_port:
-            visible_ports = {
-                str(info.get("device") or "").strip().casefold()
-                for info in list_available_ports()
-            }
-            saved_port_is_present = (
-                saved_port is not None and saved_port.casefold() in visible_ports
-            )
-            if not saved_port_is_present:
-                updated = dict(config)
-                updated["com_port"] = self._port
-                try:
-                    save_config(self._project_root, updated)
-                except Exception:
-                    pass
+        bridge = MKLinkSerialBridge(candidate)
+        try:
+            if not bridge.connect():
+                raise DeviceNotConnectedError(f'Failed to connect to selected MKLink port {candidate}; no fallback attempted')
+        except BaseException:
+            bridge.close()
+            raise
+        self._bridge = bridge
+        self._port = candidate
         self._connected = True
 
         from mklink.flash import MKLinkFlash
@@ -572,6 +512,7 @@ class Device:
             info,
             axf_path=candidate,
             generation=generation,
+            project_root=self._project_root,
             ram_ranges=writable_memory_ranges(
                 candidate,
                 backend=effective_backend,
@@ -881,9 +822,9 @@ class Device:
             board=resolved_board,
         ) or is_hpm_profile
         if hpm_target:
-            if ext != ".bin":
-                raise DeviceError("HPM ROM API only supports BIN firmware")
-            raw_address = base_address
+            if ext not in (".bin", ".hex"):
+                raise DeviceError("HPM ROM API supports BIN and HEX firmware")
+            raw_address = 0x80000000 if ext == ".hex" else base_address
             if raw_address is None:
                 raw_address = (
                     project_info.get("bin_base")
@@ -903,9 +844,11 @@ class Device:
             resolved_flash_cfg = hpm_flash_cfg or project_info.get("hpm_flash_cfg")
             if not resolved_board and not resolved_flash_cfg:
                 raise DeviceError("HPM target requires a board or flash configuration")
-            result = self._flash.burn_hpm_bin(
+            burn = self._flash.burn_hpm_hex if ext == ".hex" else self._flash.burn_hpm_bin
+            address_options = {} if ext == ".hex" else {"addr": _fmt_hex(address)}
+            result = burn(
                 firmware,
-                addr=_fmt_hex(address),
+                **address_options,
                 board=resolved_board or None,
                 flash_cfg=resolved_flash_cfg,
                 progress_callback=progress_callback,
@@ -1111,16 +1054,18 @@ class Device:
                         f"Flash verify failed at 0x{address:08X}"
                     )
 
-    def erase_chip(self) -> bool:
+    def erase_chip(self, *, target_part=None, algorithm_id=None) -> bool:
         self._require_connected()
-        mcu_profile = self._get_mcu_profile()
-        flash_base = "0x08000000"
-        if mcu_profile:
-            flash_base = mcu_profile.get("flash_base", flash_base)
-        return self._flash.erase_chip(flash_base)
+        from mklink.native_erase import prepare_erase
+        base = prepare_erase(self, target_part=target_part, algorithm_id=algorithm_id)
+        return self._flash.erase_chip(f'0x{base:08X}')
 
-    def erase_sector(self, addr: int) -> bool:
+    def erase_sector(self, addr: int, *, target_part=None, algorithm_id=None) -> bool:
         self._require_connected()
+        if type(addr) is not int or not 0 <= addr <= 0xffffffff:
+            raise ValueError('Sector address must be a 32-bit integer')
+        from mklink.native_erase import prepare_erase
+        prepare_erase(self, address=addr, target_part=target_part, algorithm_id=algorithm_id)
         return self._flash.erase_sector(f"0x{addr:08X}")
 
     def reset(self) -> None:
@@ -1297,20 +1242,6 @@ class Device:
                 defaults["cpu_freq_source"] = "project_info"
 
         return defaults
-
-    def _symbol_source_path(self) -> str | None:
-        if self._axf and Path(self._axf).exists():
-            return self._axf
-        try:
-            from mklink.project_config import load_project_info
-            project = load_project_info(self._project_root) or {}
-        except Exception:
-            project = {}
-        for key in ("elf_path", "axf_path", "bin_path", "hex_path"):
-            path = project.get(key) if isinstance(project, dict) else None
-            if path and Path(path).exists():
-                return str(path)
-        return None
 
     def _read_cpu_clock_hint(self) -> tuple[int, str]:
         for name in ("SystemCoreClock", "hpm_core_clock"):
@@ -1656,13 +1587,9 @@ class Device:
         *,
         require_down: bool = False,
     ) -> dict[str, Any] | None:
-        if info["max_up_buffers"] > _RTT_FIRMWARE_MAX_CHANNELS:
-            raise DeviceError(
-                "Target RTT MaxNumUpBuffers exceeds the V4 probe firmware limit of 3"
-            )
         if channel >= _RTT_FIRMWARE_MAX_CHANNELS:
             raise DeviceError(
-                "V4 probe firmware only supports RTT channels 0..2"
+                "Multiplex firmware supports RTT channels 0..7"
             )
         up_buffers = info["up_buffers"]
         if channel >= len(up_buffers):
@@ -1693,6 +1620,7 @@ class Device:
         addr: str | int | None = None,
         *,
         channel: int = 0,
+        channels: list[int] | None = None,
         search_size: int = 0,
         mode: int | None = None,
     ) -> dict:
@@ -1713,6 +1641,14 @@ class Device:
             self._project_root,
             source_path=self._axf,
         )
+        multiplex = self._bridge.supports_multiplex() is True if hasattr(self._bridge, 'supports_multiplex') else False
+        selected = list(channels) if channels is not None else [channel]
+        if not selected or len(selected)>8 or len(set(selected))!=len(selected) or any(type(ch) is not int or not 0<=ch<8 for ch in selected) or channel not in selected:
+            raise ValueError('channels must be unique integers 0..7 and include channel')
+        if not multiplex and (selected != [channel] or channel > 2):
+            raise DeviceError('Multiple RTT channels require updated multiplex firmware')
+        if multiplex:
+            self._bridge.enable_multiplex()
         if self._rtt_session and self._rtt_session._running:
             self._rtt_session.stop()
         self._rtt_session = None
@@ -1733,12 +1669,19 @@ class Device:
         else:
             control_block_addr = requested_addr
         control_info = self._read_rtt_control_block(control_block_addr)
-        self._validate_rtt_channel(control_info, channel)
+        if not multiplex and control_info['max_up_buffers'] > 3:
+            raise DeviceError('RTT up descriptor count exceeds legacy firmware limit of 3')
+        for selected_channel in selected:
+            self._validate_rtt_channel(control_info, selected_channel)
         session_addr = f"0x{control_block_addr:08X}"
         session_search_size = 4 if mode == 0 else search_size
 
         from mklink.rtt import RTTSession
-        session = RTTSession(self._bridge, channel=channel)
+        if multiplex:
+            from mklink.mux_rtt import MuxRTTSession
+            session = MuxRTTSession(self._bridge._mux, control_info, channel, selected)
+        else:
+            session = RTTSession(self._bridge, channel=channel)
         self._rtt_session = session
         try:
             result = session.start(
@@ -1813,7 +1756,13 @@ class Device:
             raise DeviceError("RTT not started. Call rtt_start() first.")
         return self._rtt_session.read_output_bytes(duration=duration)
 
-    def rtt_write(self, data: bytes | str) -> bool:
+    def rtt_read_channels(self, duration=.01):
+        session = self._rtt_session
+        if session is not None and hasattr(session, 'read_channels'):
+            return session.read_channels(duration)
+        return {getattr(session, '_channel', 0): self.rtt_read_bytes(duration)}
+
+    def rtt_write(self, data: bytes | str, channel: int | None = None) -> bool:
         self._require_connected()
         if not self._rtt_session or not self._rtt_session._running:
             raise DeviceError("RTT not started. Call rtt_start() first.")
@@ -1825,8 +1774,12 @@ class Device:
         if not info:
             raise DeviceError("RTT control-block metadata is unavailable")
         self._validate_rtt_channel(
-            info, self._rtt_session._channel, require_down=True,
+            info, self._rtt_session._channel if channel is None else channel, require_down=True,
         )
+        if hasattr(self._rtt_session, 'transport'):
+            return self._rtt_session.send_input(data, channel=channel)
+        if channel is not None and channel != self._rtt_session._channel:
+            raise DeviceError('Selected RTT channel is not active')
         guarded = self._rtt_write_guard_tail + data
         if _RTT_RESERVED_STOP in guarded:
             raise DeviceError(
@@ -1913,6 +1866,8 @@ class Device:
             self._project_root,
             source_path=self._axf,
         )
+        if channel > 2:
+            raise DeviceError('Legacy SystemView supports channels 0..2')
         old_systemview_session = self._systemview_session
         if old_systemview_session is not None:
             try:
@@ -2134,6 +2089,10 @@ class Device:
     # ------------------------------------------------------------------
     def read_memory(self, address: int, size: int) -> bytes:
         self._require_connected()
+        from mklink.mux import MuxTransport
+        mux = getattr(self._bridge, '_mux', None)
+        if isinstance(mux, MuxTransport):
+            return mux.read_memory(address, size)
         from mklink.memory_access import parse_read_ram_response
         cmd = f"cmd.read_ram(0x{address:08X}, {size})"
         raw = self._bridge.send_command(cmd, timeout=10.0)
@@ -2192,93 +2151,50 @@ class Device:
         self._require_connected()
         if not data:
             return
-        # cmd.write_ram 的逐字节参数在当前探针固件不稳定（写入不生效，回读为空）；
-        # 改用 cmd.flush_memory 的 bytes 表达式（与 MCP flush_memory 一致）：
-        # 全相同字节折叠为短表达式（单条可达 12 KiB），非重复数据按 30B 分块，
-        # 保证命令串 < 230（PIKA_LINE_BUFF 上限）。详见 references/flush-memory.md。
-        CHUNK = 30
-        i = 0
-        while i < len(data):
-            rest = data[i:]
-            if all(b == rest[0] for b in rest):
-                seg, step = rest, len(rest)
-                expr = f"bytes([0x{seg[0]:02X}])*{len(seg)}"
-            else:
-                seg, step = rest[:CHUNK], CHUNK
-                expr = "bytes([" + ", ".join(f"0x{b:02X}" for b in seg) + "])"
-            cmd = f"cmd.flush_memory([(0x{address + i:08X}, {expr})])"
-            self._bridge.send_command(cmd, timeout=10.0)
-            i += step
+        from mklink.mux import MuxTransport
+        mux = getattr(self._bridge, '_mux', None)
+        if isinstance(mux, MuxTransport):
+            mux.write_memory(address, data)
+            return
+        from mklink.memory_write import execute_flush, validate_writes
+        parsed = validate_writes([{'address': address, 'data_hex': data.hex()}])
+        result = execute_flush(self, parsed)
+        if not result['ok']:
+            raise DeviceError('Memory write failed; no remaining batches sent: ' + result['results'][-1]['message'])
 
     # ------------------------------------------------------------------
     # Variables
     # ------------------------------------------------------------------
     def read_variable(self, name: str) -> Any:
         self._require_connected()
-        if self.symbol_catalog is not None and self.symbol_catalog.is_stale():
-            self.reparse_axf_atomically()
-        if not self._dwarf_info:
-            return self._read_variable_from_map(name)
-        from mklink.watch import resolve_variable_path, decode_value
-        try:
-            addr, type_name, size, enum_values = resolve_variable_path(
-                self._dwarf_info, name
-            )
-        except KeyError:
-            descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
-            if descriptor is None:
-                return self._read_variable_from_map(name)
-            from mklink.symbol_catalog import decode_descriptor
+        from mklink.symbol_catalog import SymbolCatalogError, decode_descriptor
+        catalog = self.symbol_catalog
+        if catalog is None:
+            raise SymbolCatalogError('Load an AXF/ELF catalog before variable access')
+        catalog.require_fresh_source()
+        descriptor = catalog.read_descriptor(name)
+        data = self.read_memory(descriptor.address, descriptor.size)
+        catalog.require_fresh_source()
+        if descriptor.source == 'map':
+            catalog.read_descriptor(name)
+        return decode_descriptor(descriptor, data)
 
-            return decode_descriptor(
-                descriptor, self.read_memory(descriptor.address, descriptor.size),
-            )
-        raw = self.read_memory(addr, size)
-        return decode_value(raw, type_name, enum_values, known_size=size)
-
-    def _read_variable_from_map(self, name: str) -> Any:
-        source = self._symbol_source_path()
-        if not source:
-            raise DeviceError(
-                "No AXF/ELF/MAP source available. Pass axf= to connect() for variable access."
-            )
-        from mklink.watch import resolve_map_source_variable, decode_value
-        resolved = resolve_map_source_variable(source, name)
-        if not resolved:
-            raise KeyError(f"variable '{name}' not found or has no address")
-        addr, type_name, size = resolved
-        if not size:
-            size = 4
-        raw = self.read_memory(addr, size)
-        return decode_value(raw, type_name, None, known_size=size)
+    def watch(self, names: list[str]) -> list[dict]:
+        self._require_connected()
+        from mklink.watch import read_watch_values
+        return read_watch_values(self, names)
 
     def write_variable(self, name: str, value: int) -> None:
         self._require_connected()
-        if self.symbol_catalog is not None and self.symbol_catalog.is_stale():
-            raise DeviceError("AXF content changed; reparse and confirm target firmware before writing")
-        if not self._dwarf_info:
+        catalog = self.symbol_catalog
+        if catalog is None:
             raise DeviceError(
-                "No AXF/ELF loaded. Pass axf= to connect() for variable access."
+                "No AXF symbol catalog loaded. Pass axf= to connect() for variable access."
             )
-        from mklink.watch import resolve_variable_path, TYPE_FORMATS
-        try:
-            addr, type_name, size, _ = resolve_variable_path(self._dwarf_info, name)
-        except KeyError:
-            descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
-            if descriptor is None:
-                raise
-            from mklink.symbol_catalog import encode_descriptor
+        from mklink.symbol_catalog import encode_descriptor
 
-            self.write_memory(descriptor.address, encode_descriptor(descriptor, value))
-            return
-        key = type_name.strip().lower()
-        fmt_entry = TYPE_FORMATS.get(key)
-        if fmt_entry:
-            fmt, _ = fmt_entry
-        else:
-            fmt = {1: "<B", 2: "<H", 4: "<I", 8: "<Q"}.get(size, "<I")
-        data = struct.pack(fmt, value)
-        self.write_memory(addr, data)
+        descriptor = catalog.require(name, catalog.generation)
+        self.write_memory(descriptor.address, encode_descriptor(descriptor, value))
 
     # ------------------------------------------------------------------
     # Registers
@@ -2302,7 +2218,7 @@ class Device:
         self._peripheral_catalog = catalog
         return catalog.public(query) if catalog else {"selection": None, "items": []}
 
-    def capture_peripherals(self, names, *, duration=1.0, period=0.01):
+    def capture_peripherals(self, names, *, duration=1.0, period=0.01, cancelled=None):
         from .peripheral_watch import load_catalog, capture_items
 
         self._require_connected()
@@ -2310,7 +2226,7 @@ class Device:
         if catalog is None:
             raise ValueError("Select a peripheral chip first")
         return capture_items(
-            self, [catalog.resolve(n) for n in names], duration=duration, period=period
+            self, [catalog.resolve(n) for n in names], duration=duration, period=period, cancelled=cancelled
         )
 
     def read_register(self, name: str) -> int:
@@ -2399,7 +2315,7 @@ class Device:
         self, fault_regs: dict[str, int] | None = None
     ) -> HardFaultReport | None:
         """Decode fault registers into a human-readable report."""
-        self._require_connected()
+        self._require_cortex_m_debug()
         if fault_regs is None:
             fault_regs = self.check_hardfault()
         if not fault_regs:
@@ -2412,6 +2328,8 @@ class Device:
 
         cfsr = fault_regs.get("SCB.CFSR", 0)
         hfsr = fault_regs.get("SCB.HFSR", 0)
+        if cfsr == 0 and hfsr == 0:
+            return None
         cfsr_flags = decode_cfsr(cfsr)
         hfsr_flags = decode_hfsr(hfsr)
 
@@ -2558,7 +2476,7 @@ def connect(
 
     Args:
         port: Explicit COM port. Auto-detected if not specified.
-        preferred_port: Soft preference used before automatic discovery.
+        preferred_port: Previously selected port; a failed connection never falls back.
         axf: Path to AXF/ELF file for symbol resolution.
         mcu: MCU profile hint (e.g. "stm32f4").
         project_root: Project root for .mklink/ config lookup.

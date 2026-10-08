@@ -5,9 +5,79 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
-
 from mklink import web_entry
 
+
+@pytest.fixture
+def isolated_entry_workspace(tmp_path, monkeypatch):
+    monkeypatch.setattr(web_entry, 'platform_data_dir', lambda **kwargs: tmp_path / 'web-entry')
+
+
+def test_protocol_entry_uses_persistent_workspace_not_shell_cwd(tmp_path, monkeypatch, isolated_entry_workspace):
+    shell_cwd = tmp_path / 'system32'
+    shell_cwd.mkdir()
+    monkeypatch.chdir(shell_cwd)
+    calls = []
+    def ensure(**kwargs):
+        calls.append(kwargs)
+        assert Path(kwargs['project_root']).is_dir()
+        return {'port': 8765, 'token': 'test-token'}
+    monkeypatch.setattr('mklink.runtime.ensure_runtime', ensure)
+    monkeypatch.setattr('mklink.runtime.handoff_gui', lambda info, prepare: (prepare(None), True)[1])
+    web_entry.start_web_entry(browser_open=lambda url: None)
+    assert calls == [{'project_root': str((tmp_path / 'web-entry/workspace').resolve()),
+                      'port': web_entry.DEFAULT_PORT, 'allow_lobby': True}]
+    assert not (shell_cwd / '.mklink').exists()
+
+
+def test_default_web_entry_reuses_shared_backend_without_owning_process(monkeypatch, isolated_entry_workspace):
+    from mklink import web_entry
+    opened = []
+    info = {'port': 8765, 'token': 'test-token'}
+    monkeypatch.setattr('mklink.runtime.ensure_runtime', lambda **_: info)
+    monkeypatch.setattr('mklink.runtime.handoff_gui', lambda info, prepare: (prepare(None), True)[1])
+    result = web_entry.start_web_entry(browser_open=opened.append)
+    assert result['shared'] is True
+    assert result['owned'] is False
+    assert opened == ['http://127.0.0.1:8765/_runtime/open#test-token']
+
+
+@pytest.mark.parametrize('outcome', ['connected', 'timeout', 'browser_error'])
+def test_web_entry_holds_lease_before_open_and_releases_on_all_outcomes(monkeypatch, outcome, isolated_entry_workspace):
+    from mklink import runtime
+    calls, clock = [], [0]
+    class Client:
+        def __init__(self, **kwargs): pass
+        def connect(self, **kwargs): calls.append(('connect', kwargs))
+        def close(self): calls.append(('close', {}))
+    monkeypatch.setattr(runtime, 'RuntimeClient', Client)
+    monkeypatch.setattr(runtime, 'ensure_runtime', lambda **kwargs: {'port':8765, 'token':'test'})
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(runtime.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0]+30))
+    monkeypatch.setattr(runtime, 'request', lambda *args: {'clients':[{'kind':'gui'}]} if outcome=='connected' else {'clients':[]})
+    def opened(url):
+        assert calls == [('connect', {'scope':'uart'})]
+        calls.append(('opened', {}))
+        if outcome == 'browser_error': raise OSError('browser failed')
+    if outcome == 'timeout':
+        with pytest.raises(web_entry.WebEntryError, match='60 seconds'):
+            web_entry.start_web_entry(browser_open=opened)
+    elif outcome == 'browser_error':
+        with pytest.raises(OSError, match='browser failed'):
+            web_entry.start_web_entry(browser_open=opened)
+    else:
+        assert web_entry.start_web_entry(browser_open=opened)['shared']
+    assert calls[-1] == ('close', {})
+
+
+def test_shared_web_stop_refuses_ambiguous_multi_probe_runtime(monkeypatch):
+    from mklink import web_entry
+    from mklink.runtime import RuntimeErrorResponse
+    def ambiguous():
+        raise RuntimeErrorResponse('Multiple runtimes are running; select a probe explicitly')
+    monkeypatch.setattr('mklink.runtime.discover', ambiguous)
+    with pytest.raises(web_entry.WebEntryError, match='Multiple runtimes'):
+        web_entry.stop_web_entry()
 
 def test_protocol_python_executable_keeps_venv_interpreter(tmp_path, monkeypatch):
     executable = tmp_path / ".venv" / "bin" / "python"
@@ -247,24 +317,6 @@ def test_windows_registry_command_uses_an_absolute_handler_and_quoted_uri(tmp_pa
     assert '"%1"' in command
 
 
-def test_gui_server_command_reuses_the_existing_cli_without_touching_mcp_or_serve(tmp_path):
-    executable = Path("python3")
-    command = web_entry.gui_server_command(
-        port=8771,
-        executable=executable,
-        repository_root=tmp_path,
-        project_root=tmp_path / "runtime workspace",
-    )
-
-    assert command[:4] == [str(executable), "-m", "mklink", "gui"]
-    assert "--no-browser" in command
-    assert command[command.index("--browser-session-timeout") + 1] == "15"
-    assert "--port" in command and "8771" in command
-    assert command[command.index("--project-root") + 1] == str(tmp_path / "runtime workspace")
-    assert "serve" not in command
-    assert "mcp" not in command
-
-
 def test_web_entry_url_changes_with_the_frontend_build(tmp_path):
     dist = tmp_path / "gui" / "dist"
     dist.mkdir(parents=True)
@@ -280,221 +332,6 @@ def test_web_entry_url_changes_with_the_frontend_build(tmp_path):
     assert new_url != old_url
 
 
-def test_start_reuses_an_existing_web_server_without_spawning_or_owning_it(tmp_path):
-    spawned = []
-    opened = []
-
-    result = web_entry.start_web_entry(
-        data_dir=tmp_path,
-        probe=lambda port: "web" if port == 8765 else None,
-        port_available=lambda _port: False,
-        spawn=lambda *_args, **_kwargs: spawned.append(True),
-        browser_open=opened.append,
-    )
-
-    assert result == {"status": "reused", "port": 8765, "owned": False}
-    assert spawned == []
-    assert opened == [web_entry.web_entry_url(8765)]
-    assert not (tmp_path / "state.json").exists()
-
-
-def test_start_scans_the_port_range_before_starting_a_competing_backend(tmp_path):
-    opened = []
-
-    result = web_entry.start_web_entry(
-        data_dir=tmp_path,
-        probe=lambda port: "web" if port == 8766 else None,
-        port_available=lambda port: port == 8765,
-        spawn=lambda *_args, **_kwargs: pytest.fail("must reuse the existing Web service"),
-        browser_open=opened.append,
-    )
-
-    assert result == {"status": "reused", "port": 8766, "owned": False}
-    assert opened == [web_entry.web_entry_url(8766)]
-
-
-def test_start_skips_a_running_api_without_web_assets_and_uses_next_port(tmp_path):
-    opened = []
-    commands = []
-
-    def probe(port):
-        if port == 8765:
-            return "api"
-        return "web" if port == 8766 else None
-
-    result = web_entry.start_web_entry(
-        data_dir=tmp_path,
-        probe=probe,
-        port_available=lambda port: port == 8766,
-        spawn=lambda *args, **kwargs: commands.append((args, kwargs)),
-        browser_open=opened.append,
-    )
-
-    assert result == {"status": "reused", "port": 8766, "owned": False}
-    assert commands == []
-    assert opened == [web_entry.web_entry_url(8766)]
-
-
-def test_start_spawns_web_gui_after_api_only_port(tmp_path):
-    opened = []
-    commands = []
-
-    def probe(port):
-        return "api" if port == 8765 else "web" if len(commands) else None
-
-    def spawn(*args, **kwargs):
-        commands.append((args, kwargs))
-        return SimpleNamespace(pid=4321)
-
-    result = web_entry.start_web_entry(
-        data_dir=tmp_path,
-        probe=probe,
-        port_available=lambda port: port == 8766,
-        spawn=spawn,
-        browser_open=opened.append,
-        process_identity=lambda pid: f"process-{pid}",
-        sleep=lambda _seconds: None,
-        timeout=1,
-    )
-
-    assert result == {"status": "started", "port": 8766, "owned": True, "pid": 4321}
-    assert commands and "8766" in commands[0][0][0]
-    assert opened == [web_entry.web_entry_url(8766)]
-
-
-def test_start_spawns_one_owned_gui_and_stop_only_terminates_that_pid(tmp_path):
-    probes = {8765: [None, None, "web"]}
-    terminated = []
-    opened = []
-    commands = []
-
-    def probe(port):
-        values = probes.get(port, [None])
-        return values.pop(0) if len(values) > 1 else values[0]
-
-    def spawn(command, **_kwargs):
-        commands.append(command)
-        return SimpleNamespace(pid=4321)
-
-    result = web_entry.start_web_entry(
-        data_dir=tmp_path,
-        probe=probe,
-        port_available=lambda port: port == 8765,
-        spawn=spawn,
-        browser_open=opened.append,
-        sleep=lambda _seconds: None,
-        timeout=1,
-        process_identity=lambda pid: f"process-{pid}",
-    )
-
-    assert result == {"status": "started", "port": 8765, "owned": True, "pid": 4321}
-    assert commands and "gui" in commands[0]
-    state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
-    assert state["pid"] == 4321 and state["owned"] is True
-
-    stopped = web_entry.stop_web_entry(
-        data_dir=tmp_path,
-        terminate=terminated.append,
-        process_identity=lambda pid: f"process-{pid}",
-    )
-    assert stopped == {"status": "stopped", "port": 8765, "pid": 4321}
-    assert terminated == [4321]
-    assert not (tmp_path / "state.json").exists()
-
-
-def test_start_timeout_terminates_the_owned_process_and_clears_state(tmp_path):
-    terminated = []
-
-    with pytest.raises(web_entry.WebEntryError, match="did not become ready"):
-        web_entry.start_web_entry(
-            data_dir=tmp_path,
-            probe=lambda _port: None,
-            port_available=lambda port: port == 8765,
-            spawn=lambda *_args, **_kwargs: SimpleNamespace(pid=4321),
-            terminate=terminated.append,
-            browser_open=lambda _url: pytest.fail("must not open before ready"),
-            process_identity=lambda pid: f"process-{pid}",
-            sleep=lambda _seconds: None,
-            timeout=0,
-        )
-
-    assert terminated == [4321]
-    assert not (tmp_path / "state.json").exists()
-
-
-def test_stop_does_not_kill_a_reused_pid_from_stale_state(tmp_path):
-    terminated = []
-    (tmp_path / "state.json").write_text(json.dumps({
-        "pid": 4321,
-        "port": 8765,
-        "owned": True,
-        "process_identity": "old-process",
-    }), encoding="utf-8")
-
-    result = web_entry.stop_web_entry(
-        data_dir=tmp_path,
-        terminate=terminated.append,
-        process_identity=lambda _pid: "new-process",
-    )
-
-    assert result == {"status": "stale", "port": 8765, "pid": 4321}
-    assert terminated == []
-    assert not (tmp_path / "state.json").exists()
-
-
-def test_stop_never_terminates_a_reused_or_missing_service(tmp_path):
-    terminated = []
-    (tmp_path / "state.json").write_text(json.dumps({
-        "pid": 999, "port": 8765, "owned": False,
-    }), encoding="utf-8")
-
-    result = web_entry.stop_web_entry(
-        data_dir=tmp_path,
-        terminate=terminated.append,
-    )
-
-    assert result["status"] == "not_owned"
-    assert terminated == []
-
-
-def test_status_reports_an_exited_owned_backend_as_stopped(tmp_path):
-    (tmp_path / "state.json").write_text(json.dumps({
-        "pid": 4321,
-        "port": 8765,
-        "owned": True,
-        "process_identity": "exited-process",
-    }), encoding="utf-8")
-
-    result = web_entry.web_entry_status(
-        data_dir=tmp_path,
-        process_identity=lambda _pid: None,
-    )
-
-    assert result == {
-        "status": "stopped", "port": 8765, "pid": 4321, "owned": False,
-    }
-    assert not (tmp_path / "state.json").exists()
-
-
-def test_status_clears_an_owned_process_that_no_longer_serves_web(tmp_path, monkeypatch):
-    (tmp_path / "state.json").write_text(json.dumps({
-        "pid": 4321,
-        "port": 8765,
-        "owned": True,
-        "process_identity": "same-process",
-    }), encoding="utf-8")
-    monkeypatch.setattr(web_entry, "probe_server", lambda _port: None)
-
-    result = web_entry.web_entry_status(
-        data_dir=tmp_path,
-        process_identity=lambda _pid: "same-process",
-    )
-
-    assert result["status"] == "stopped"
-    assert result["owned"] is False
-    assert not (tmp_path / "state.json").exists()
-
-
 def test_protocol_handler_dispatches_start_open_and_stop(monkeypatch, tmp_path):
     starts = []
     stops = []
@@ -507,7 +344,8 @@ def test_protocol_handler_dispatches_start_open_and_stop(monkeypatch, tmp_path):
     assert web_entry.handle_protocol_uri("mklink-ai-probe://web/stop")["status"] == "stopped"
     assert len(starts) == 2
     assert len(stops) == 1
-    assert starts[0]["data_dir"] == tmp_path
+    assert starts == [{}, {}]
+    assert stops == [{}]
 
 
 def test_process_identity_is_stable_for_the_current_process():

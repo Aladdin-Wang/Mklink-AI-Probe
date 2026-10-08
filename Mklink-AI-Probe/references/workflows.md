@@ -58,11 +58,11 @@ python -m mklink rtt
 
 | 场景 | 处理方式 |
 |------|----------|
-| COM 口不存在 | `python -m mklink discover` 查找端口 |
+| COM 口不存在 | `python -m mklink probes list` 查找端口 |
 | IDCODE 无效 | 检查 SWD 接线和目标板供电 |
-| 新 MCU 未知 / profile 缺失 | 先按内置 Pack、内置 DAPLink FLM、已安装 Pack、自定义 FLM 顺序解析；仍无匹配时运行 `python -m mklink mcu-detect`，多候选再选择内部 Flash FLM 固化 |
+| 新 MCU 未知 / profile 缺失 | 先按内置 Pack、内置 DAPLink FLM、已安装 Pack、自定义 FLM 顺序解析；仍无匹配时运行 `python -m mklink mcu-detect`，多候选按算法 ID 查看，不生成 profile |
 | 找不到 H723/H7 等 FLM | 先确认发布包内置 Pack/DAPLink 算法；再检查已安装 Keil/Arm Pack；最后才使用显式自定义 `--flm` |
-| FLM 加载失败 | 先 `python -m mklink mcu-detect` 确认 profile/FLM，再 `python -m mklink copy-flm` 拷贝 FLM |
+| FLM 加载失败 | 先 `python -m mklink mcu-detect` 只读核对算法来源；必要时用 `copy-flm --probe <ID> --flm <本地文件>` 显式复制 |
 | RTT 搜索失败 | 检查固件是否已集成 RTT 并重新编译 |
 | RTT 集成验证失败 | 确认 `main()` 在合适位置调用了 `SEGGER_RTT_Init()`（通常在系统初始化之后） |
 | 头文件目录不存在 | 检查项目的 Include Path 配置，使用 --inc-dir 指定正确路径 |

@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RttTerminalPanel from './RttTerminalPanel.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   nextAnimationFrame: 1,
   native: false,
   invoke: vi.fn(),
+  fit: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -75,16 +76,19 @@ vi.mock('@xterm/xterm', () => ({
 
 vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
-    fit() {}
+    fit() { mocks.fit() }
   },
 }))
 
 describe('RttTerminalPanel', () => {
+  afterEach(() => vi.unstubAllGlobals())
   beforeEach(() => {
     mocks.terminalOptions.length = 0
     mocks.terminals.length = 0
     mocks.native = false
     mocks.invoke.mockReset()
+    mocks.fit.mockReset()
+    vi.stubGlobal('IntersectionObserver', undefined)
     mocks.animationFrames.clear()
     mocks.nextAnimationFrame = 1
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -116,6 +120,42 @@ describe('RttTerminalPanel', () => {
     expect(mocks.terminalOptions).toHaveLength(1)
     expect(mocks.terminalOptions[0].convertEol).toBe(true)
     wrapper.unmount()
+  })
+
+  it('keeps offscreen output but waits for visibility before fitting stale renderer dimensions', () => {
+    let intersect!: (entries: Array<{ isIntersecting: boolean }>) => void
+    let resize!: () => void
+    const disconnect = vi.fn()
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: typeof intersect) { intersect = callback }
+      observe() {}
+      disconnect = disconnect
+    })
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const wrapper = mount(RttTerminalPanel, { props: { inputEnabled: true } })
+    Object.defineProperties(wrapper.element, {
+      clientWidth: { value: 520 }, clientHeight: { value: 420 },
+    })
+    resize()
+    ;(wrapper.vm as any).write('offscreen data\n')
+    ;(wrapper.vm as any).flushOutput()
+    expect(mocks.terminals[0].writes).toEqual(['offscreen data\n'])
+    expect(mocks.fit).not.toHaveBeenCalled()
+    intersect([{ isIntersecting: true }])
+    expect(mocks.fit).toHaveBeenCalledTimes(1)
+    resize()
+    expect(mocks.fit).toHaveBeenCalledTimes(2)
+    intersect([{ isIntersecting: false }])
+    resize()
+    expect(mocks.fit).toHaveBeenCalledTimes(2)
+    intersect([{ isIntersecting: true }])
+    expect(mocks.fit).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+    expect(disconnect).toHaveBeenCalledOnce()
   })
 
   it('coalesces high-rate output into one xterm write per animation frame', () => {

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, shallowRef } from 'vue'
 import WaveformViewer from './WaveformViewer.vue'
@@ -83,8 +83,8 @@ function superwatchFrame(
 }
 
 function canvasContext(): CanvasRenderingContext2D {
-  const gradient = { addColorStop: vi.fn() }
   const noop = () => undefined
+  const gradient = { addColorStop: noop }
   const visitPoint = () => { (window as any).__canvasPointVisits++ }
   return new Proxy({} as CanvasRenderingContext2D, {
     get(target, property) {
@@ -92,7 +92,7 @@ function canvasContext(): CanvasRenderingContext2D {
       if (property === 'measureText') return () => ({ width: 10 })
       if (property === 'createLinearGradient') return () => gradient
       if (property === 'fillText') {
-        return (value: unknown) => { (window as any).__canvasLabels.push(String(value)) }
+        return (value: unknown) => { (window as any).__canvasLabels?.push(String(value)) }
       }
       if (property === 'moveTo' || property === 'lineTo') {
         return visitPoint
@@ -127,10 +127,21 @@ async function loadRttViewerRuntime(
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true, json: async () => ({ running: false, channels: [] }),
   }))
-  const contextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
-    .mockReturnValue(canvasContext())
-  const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-    .mockImplementation(function(this: HTMLElement) {
+  // These are DOM substitutes, not assertions: recording every call retains
+  // thousands of contexts/rectangles during the sustained render gate.
+  const restore: Array<() => void> = []
+  function replaceProperty(target: object, name: string, descriptor: PropertyDescriptor) {
+    const original = Object.getOwnPropertyDescriptor(target, name)
+    Object.defineProperty(target, name, { configurable: true, ...descriptor })
+    restore.push(() => {
+      if (original) Object.defineProperty(target, name, original)
+      else Reflect.deleteProperty(target, name)
+    })
+  }
+  const context = canvasContext()
+  replaceProperty(HTMLCanvasElement.prototype, 'getContext', { value: () => context })
+  replaceProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+    value: function(this: HTMLElement) {
       if (this.id === 'y-axis-hit') {
         return {
           x: 0, y: 8, width: 64, height: 360, top: 8, right: 64,
@@ -141,11 +152,10 @@ async function loadRttViewerRuntime(
         x: 0, y: 0, width: 800, height: 400, top: 0, right: 800,
         bottom: 400, left: 0, toJSON: () => ({}),
       }
-    })
-  const widthSpy = vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get')
-    .mockReturnValue(800)
-  const heightSpy = vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get')
-    .mockReturnValue(400)
+    },
+  })
+  replaceProperty(HTMLCanvasElement.prototype, 'clientWidth', { get: () => 800 })
+  replaceProperty(HTMLCanvasElement.prototype, 'clientHeight', { get: () => 400 })
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   vi.stubGlobal('EventSource', class {
     static CLOSED = 2
@@ -180,6 +190,7 @@ async function loadRttViewerRuntime(
     'function updateWatchTable() { window.__watchTableUpdates++;',
   ) + `
 window.__rttTestProbe = {
+  timeGrid: timeGrid,
   fields: function() { return FIELDS; },
   metadata: function() { return CHANNEL_METADATA; },
   binary: function() { return {
@@ -229,10 +240,7 @@ window.__rttTestProbe = {
     cleanup() {
       wrapper.unmount()
       host.remove()
-      contextSpy.mockRestore()
-      rectSpy.mockRestore()
-      widthSpy.mockRestore()
-      heightSpy.mockRestore()
+      restore.reverse().forEach(restoreProperty => restoreProperty())
     },
   }
 }
@@ -254,17 +262,21 @@ vi.mock('../../lib/stream/renderScheduler', () => ({
   },
 }))
 
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.schedulerInstances.length = 0
+  mocks.binary.waveformBatch = shallowRef(null)
+  mocks.binary.envelope = shallowRef(null)
+  mocks.binary.telemetry = shallowRef(null)
+  mocks.binary.state = shallowRef({ phase: 'stopped' })
+  mocks.binary.error = shallowRef(null)
+  mocks.binary.superwatchMetadata = shallowRef(null)
+  mocks.useBinaryStream.mockReturnValue(mocks.binary)
+  ;(window as any).__waveformViewers = {}
+})
+
 describe('WaveformViewer VOFA binary transport', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.schedulerInstances.length = 0
-    mocks.binary.waveformBatch = shallowRef(null)
-    mocks.binary.envelope = shallowRef(null)
-    mocks.binary.telemetry = shallowRef(null)
-    mocks.binary.state = shallowRef({ phase: 'stopped' })
-    mocks.binary.error = shallowRef(null)
-    mocks.binary.superwatchMetadata = shallowRef(null)
-    mocks.useBinaryStream.mockReturnValue(mocks.binary)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -275,7 +287,6 @@ describe('WaveformViewer VOFA binary transport', () => {
         ],
       }),
     }))
-    ;(window as any).__waveformViewers = {}
   })
 
   it('enables the binary stream only for VOFA and disposes its 30 FPS scheduler', async () => {
@@ -360,6 +371,24 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
+  it('anchors readable time divisions while panning and adapts units on zoom', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      const grid = runtime.probe.timeGrid(2.5945, 2.6678, 800)
+      expect(grid.division).toBe('10 ms/div')
+      const major = grid.ticks.filter((t: any) => t.major)
+      expect(major.map((t: any) => grid.label(t.time))).toEqual(['2600','2610','2620','2630','2640','2650','2660'])
+      const pan = runtime.probe.timeGrid(2.5955, 2.6688, 800)
+      expect(pan.ticks.filter((t: any) => t.major).map((t: any) => t.time)).toEqual(major.map((t: any) => t.time))
+      expect(runtime.probe.timeGrid(0, 0.000073, 800).division).toBe('10 μs/div')
+      expect(runtime.probe.timeGrid(0, 73, 800).division).toBe('10 s/div')
+      expect(runtime.probe.timeGrid(0, 0, 800)).toBeNull()
+      expect(runtime.probe.timeGrid(0, Infinity, 800)).toBeNull()
+      expect(runtime.probe.timeGrid(0, 73, 100000).ticks.length).toBeLessThanOrEqual(100)
+      expect(runtime.probe.timeGrid(-0.03, 0.04, 800).label(0)).toBe('0')
+    } finally { runtime.cleanup() }
+  })
+
   it('labels a standalone array snapshot by index and counts its elements', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch')
     try {
@@ -379,7 +408,7 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
-  it('stops SuperWatch transport without clearing the retained viewer state', async () => {
+  it('keeps SuperWatch subscribed after stop so another GUI can restart it', async () => {
     const resetBinaryStream = vi.fn()
     ;(window as any).__waveformViewers.SuperWatch = { resetBinaryStream }
     const wrapper = mount(WaveformViewer, {
@@ -391,7 +420,7 @@ describe('WaveformViewer VOFA binary transport', () => {
 
     window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'stopped' }))
 
-    expect(mocks.binary.stop).toHaveBeenCalledOnce()
+    expect(mocks.binary.stop).not.toHaveBeenCalled()
     expect(mocks.binary.reset).not.toHaveBeenCalled()
     expect(resetBinaryStream).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -444,6 +473,12 @@ describe('WaveformViewer VOFA binary transport', () => {
 
         document.getElementById('btn-start')?.click()
         for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+        if (mode === 'VOFA') {
+          const calls = vi.mocked(fetch).mock.calls
+          const start = calls.find(([url]) => String(url).endsWith('/vofa/start'))
+          expect(start).toBeDefined()
+          expect(JSON.parse(String(start?.[1]?.body || '{}'))).not.toHaveProperty('channels')
+        }
         expect(states).toEqual(['running'])
         expect(mocks.binary.reset).toHaveBeenCalledTimes(1)
         expect(Object.values(runtime.probe.fields()).every(
@@ -494,6 +529,34 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
+  it('follows a shared stop and restart after this window paused its display', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      await flushPromises()
+      runtime.probe.syncStatus({ state: 'running' })
+      document.getElementById('btn-pause')!.click()
+      runtime.probe.syncStatus({ state: 'running' })
+      expect(runtime.probe.collectionState().state).toBe('paused')
+      runtime.probe.syncStatus({ state: 'stopped' })
+      expect(runtime.probe.collectionState().state).toBe('stopped')
+      runtime.probe.syncStatus({ state: 'running' })
+      expect(runtime.probe.collectionState()).toMatchObject({ state: 'running', paused: false })
+    } finally { runtime.cleanup() }
+  })
+
+  it('resumes a locally paused display without restarting shared acquisition', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      await flushPromises()
+      runtime.probe.syncStatus({ state: 'running' })
+      document.getElementById('btn-pause')!.click()
+      const calls = vi.mocked(fetch).mock.calls.length
+      document.getElementById('btn-start')!.click()
+      expect(runtime.probe.collectionState()).toMatchObject({ state: 'running', paused: false })
+      expect(vi.mocked(fetch).mock.calls.length).toBe(calls)
+    } finally { runtime.cleanup() }
+  })
+
   it('defaults SuperWatch to 1 ms and applies a new interval while running', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch')
     try {
@@ -502,7 +565,7 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(bufferInput.value).toBe('50000')
       expect(bufferInput.min).toBe('50000')
       expect(bufferInput.max).toBe('1000000')
-      expect(bufferInput.step).toBe('10000')
+      expect(bufferInput.step).toBe('1')
       expect(input.value).toBe('0.001')
       expect(input.min).toBe('0.000001')
       expect(input.step).toBe('0.000001')
@@ -537,6 +600,177 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(input.value).toBe('0.000001')
       expect(runtime.probe.collectionState().state).toBe('running')
     } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('accepts integer point boundaries without truncating fractional or invalid input', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      const buffer = document.getElementById('buffer-input') as HTMLInputElement
+      const pretrigger = document.getElementById('trigger-pretrig') as HTMLInputElement
+      expect(buffer.checkValidity()).toBe(true)
+      expect(pretrigger.checkValidity()).toBe(true)
+      const alert = vi.fn()
+      vi.stubGlobal('alert', alert)
+      for (const value of ['', '2.5', '-1', '1000001']) {
+        buffer.value = value
+        document.getElementById('btn-apply-buffer')?.click()
+        expect(alert).toHaveBeenCalled()
+        alert.mockClear()
+      }
+      for (const value of ['10', '1001', '50000']) {
+        pretrigger.value = value
+        pretrigger.dispatchEvent(new Event('input'))
+        expect(pretrigger.checkValidity()).toBe(true)
+        expect(runtime.probe.trigger.preTriggerSamples).toBe(Number(value))
+      }
+      for (const value of ['', '9', '1000.5', '50001', '-1']) {
+        pretrigger.value = value
+        pretrigger.dispatchEvent(new Event('input'))
+        expect(runtime.probe.trigger.preTriggerSamples).toBe(50000)
+      }
+      for (const value of [-1, 50001, 10.5, '1000', null]) {
+        expect(runtime.probe.deserializeState({ channels: [], triggerSettings: { preTrigger: value } })).toBe(true)
+        expect(runtime.probe.trigger.preTriggerSamples).toBe(1000)
+      }
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('keeps displayed capacity until worker confirmation and rolls back rejected input', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      const requester = vi.fn().mockResolvedValue(undefined)
+      runtime.viewer.setBinaryCapacityRequester(requester)
+      for (let i = 0; i < 8; i++) await Promise.resolve()
+      const previous = (window as any).MAX_POINTS
+      const input = document.getElementById('buffer-input') as HTMLInputElement
+      const button = document.getElementById('btn-apply-buffer') as HTMLButtonElement
+      requester.mockRejectedValueOnce(new Error('allocation failed'))
+      input.value = '2'
+      button.click()
+      expect(button.disabled).toBe(true)
+      expect((window as any).MAX_POINTS).toBe(previous)
+      await flushPromises()
+      expect(button.disabled).toBe(false)
+      expect(input.value).toBe(String(previous))
+      expect(document.getElementById('conn-status')?.textContent).toBe('allocation failed')
+      input.value = '2'
+      button.click()
+      for (let i = 0; i < 8; i++) await Promise.resolve()
+      expect((window as any).MAX_POINTS).toBe(2)
+    } finally { runtime.cleanup() }
+  })
+
+  it('preallocates all channels before requesting a Worker resize', async () => {
+    const runtime = await loadRttViewerRuntime('VOFA', 8)
+    const NativeArray = Float64Array
+    let allocation: ReturnType<typeof vi.spyOn> | undefined
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const requester = vi.fn().mockResolvedValue(undefined)
+      runtime.viewer.setBinaryCapacityRequester(requester)
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      requester.mockClear()
+      const fields = runtime.probe.fields()
+      const a = fields.A.ringBuf, b = fields.B.ringBuf
+      a.push(1, 11); b.push(1, 22)
+      let count = 0
+      allocation = vi.spyOn(globalThis, 'Float64Array').mockImplementation(function(length: number) {
+        if (++count === 6) throw new Error('second channel allocation failed')
+        return new NativeArray(length)
+      } as any)
+      expect(runtime.probe.setBufferCapacity(2)).toBe(false)
+      expect(requester).not.toHaveBeenCalled()
+      expect(fields.A.ringBuf).toBe(a)
+      expect(fields.B.ringBuf).toBe(b)
+      expect(a.latest()).toEqual({ t: 1, y: 11 })
+      expect(b.latest()).toEqual({ t: 1, y: 22 })
+      expect((window as any).MAX_POINTS).toBe(8)
+      expect(document.getElementById('conn-status')?.textContent).toBe('second channel allocation failed')
+    } finally { allocation?.mockRestore(); runtime.cleanup() }
+  })
+
+  it('includes samples arriving while a capacity acknowledgement is pending', async () => {
+    const runtime = await loadRttViewerRuntime('VOFA', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const requester = vi.fn().mockResolvedValue(undefined)
+      runtime.viewer.setBinaryCapacityRequester(requester)
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      let acknowledge!: () => void
+      requester.mockImplementationOnce(() => new Promise<void>(resolve => { acknowledge = resolve }))
+      const fields = runtime.probe.fields()
+      fields.A.ringBuf.push(1, 11); fields.B.ringBuf.push(1, 21)
+      expect(runtime.probe.setBufferCapacity(2)).toBe(true)
+      await Promise.resolve()
+      fields.A.ringBuf.push(2, 12); fields.A.ringBuf.push(3, 13)
+      fields.B.ringBuf.push(2, 22); fields.B.ringBuf.push(3, 23)
+      acknowledge()
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      expect(fields.A.ringBuf.toArray()).toEqual([{ t: 2, y: 12 }, { t: 3, y: 13 }])
+      expect(fields.B.ringBuf.toArray()).toEqual([{ t: 2, y: 22 }, { t: 3, y: 23 }])
+      expect((window as any).MAX_POINTS).toBe(2)
+    } finally { runtime.cleanup() }
+  })
+
+  it.each([false, true])('handles late-channel allocation failure with recovery failure=%s', async (failRecovery) => {
+    const runtime = await loadRttViewerRuntime('VOFA', 8)
+    let allocation: ReturnType<typeof vi.spyOn> | undefined
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      const requester = vi.fn().mockResolvedValue(undefined)
+      runtime.viewer.setBinaryCapacityRequester(requester)
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      requester.mockClear()
+      let acknowledge!: () => void
+      requester.mockImplementationOnce(() => new Promise<void>(resolve => { acknowledge = resolve }))
+      if (failRecovery) requester.mockRejectedValueOnce(new Error('worker unavailable'))
+      runtime.probe.setBufferCapacity(2)
+      await Promise.resolve()
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const fields = runtime.probe.fields()
+      const a = fields.A.ringBuf, b = fields.B.ringBuf
+      allocation = vi.spyOn(globalThis, 'Float64Array').mockImplementationOnce(function() {
+        throw new Error('late channel allocation failed')
+      } as any)
+      acknowledge()
+      for (let i = 0; i < 20; i++) await Promise.resolve()
+      allocation.mockRestore()
+      expect(requester.mock.calls.map(call => call[0])).toEqual([2, 8])
+      expect(fields.A.ringBuf).toBe(a)
+      expect(fields.B.ringBuf).toBe(b)
+      expect((window as any).MAX_POINTS).toBe(8)
+      const button = document.getElementById('btn-apply-buffer') as HTMLButtonElement
+      expect(button.disabled).toBe(failRecovery)
+      expect(document.getElementById('conn-status')?.textContent).toContain(
+        failRecovery ? 'Capacity recovery failed; reload this view' : 'late channel allocation failed',
+      )
+      if (failRecovery) expect(runtime.probe.setBufferCapacity(4)).toBe(false)
+    } finally { allocation?.mockRestore(); runtime.cleanup() }
+  })
+
+  it('keeps the transport failure reason visible while backend status remains running', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.viewer.updateBinaryHealth({ phase: 'error', error: 'Capacity confirmation timed out; reload this view' })
+      runtime.probe.syncStatus({ running: true, interval: .01, channels: [] })
+      expect(document.getElementById('transport-state-badge')?.textContent).toContain('reload this view')
+    } finally { runtime.cleanup() }
+  })
+
+  it('does not accumulate global listeners when resizing waveform history', async () => {
+    const runtime = await loadRttViewerRuntime()
+    const listener = vi.spyOn(window, 'addEventListener')
+    try {
+      for (let size = 10; size <= 100; size += 10) {
+        expect(runtime.probe.setBufferCapacity(size)).toBe(true)
+      }
+      expect(listener.mock.calls.filter(([event]) => event === 'mklink-theme-change')).toHaveLength(0)
+    } finally {
+      listener.mockRestore()
       runtime.cleanup()
     }
   })
@@ -643,7 +877,112 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
-  it('resets retained history when SuperWatch restarts after stop', async () => {
+  it('does not invent empty history around a subsecond high-rate buffer after pause and restart', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.probe.syncStatus({ state: 'running', interval: 0.000001, actual_rate: 200000, items: [] })
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 1_250_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, i) => i).buffer,
+        times: Float64Array.from({ length: 8 }, (_, i) => 1000 + i * 250 / 7).buffer,
+      })
+      expect(runtime.viewer.acceptBinarySummary({
+        sequence: 2n, timestampNs: 1_250_000_000n, collectedItemCount: 50000, bufferedItemCount: 50000,
+        channelCount: 1, latestTimeMs: 1250, bufferStartMs: 1000, bufferEndMs: 1250,
+        latestValues: Float32Array.of(7).buffer,
+      })).toBe(true)
+      expect(runtime.probe.fullTimeRange().tMax - runtime.probe.fullTimeRange().tMin).toBeCloseTo(.25)
+      const requestFrozenRange = vi.fn()
+      runtime.viewer.setBinaryVisibleRangeRequester(requestFrozenRange)
+      const snapshotEnvelope = {
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 4, pixelWidth: 800, channelCount: 1, pointCount: 2,
+        candidateSampleCount: 2, times: Float64Array.of(1050, 1250).buffer,
+        timeIndices: Uint32Array.of(0, 1).buffer, values: Float32Array.of(1, 7).buffer,
+        channelOffsets: Uint32Array.of(0, 2).buffer, frozenStartMs: 1050, frozenEndMs: 1300,
+      }
+      runtime.viewer.renderBinaryEnvelope(snapshotEnvelope)
+      document.getElementById('btn-pause')!.click()
+      runtime.viewer.renderBinaryEnvelope(snapshotEnvelope, true)
+      expect(requestFrozenRange).toHaveBeenCalledOnce()
+      expect(runtime.probe.fullTimeRange().tMin).toBeCloseTo(.05)
+      expect(runtime.probe.fullTimeRange().tMax).toBeCloseTo(.30)
+      runtime.viewer.renderBinaryEnvelope(snapshotEnvelope, true)
+      expect(requestFrozenRange).toHaveBeenCalledOnce()
+      const axis = document.getElementById('x-axis-hit')!
+      for (let i = 0; i < 12; i++) axis.dispatchEvent(wheelEvent({ deltaY: 100, clientX: 400, bubbles: true }))
+      const pausedRange = runtime.probe.visibleTimeRange()
+      expect(pausedRange.tMax - pausedRange.tMin).toBeLessThanOrEqual(.250001)
+      runtime.probe.syncStatus({ state: 'running', items: [] })
+      document.getElementById('btn-start')!.click()
+      await flushPromises()
+      runtime.viewer.acceptBinarySummary({
+        sequence: 3n, timestampNs: 1_550_000_000n, collectedItemCount: 50000, bufferedItemCount: 50000,
+        channelCount: 1, latestTimeMs: 1550, bufferStartMs: 1300, bufferEndMs: 1550,
+        latestValues: Float32Array.of(8).buffer,
+      })
+      const resumed = runtime.probe.visibleTimeRange()
+      expect(resumed.tMax - resumed.tMin).toBeCloseTo(pausedRange.tMax - pausedRange.tMin)
+      expect(resumed.tMin).toBeGreaterThanOrEqual(runtime.probe.fullTimeRange().tMin)
+    } finally { runtime.cleanup() }
+  })
+
+  it('does not replace a user zoom when the first complete buffer establishes the default span', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      runtime.probe.syncStatus({ state: 'running', interval: .001 })
+      runtime.probe.setBufferCapacity(16)
+      const summary = (count: number) => runtime.viewer.acceptBinarySummary({
+        sequence: BigInt(count), timestampNs: BigInt(count * 1000000000),
+        collectedItemCount: count, bufferedItemCount: count,
+        channelCount: 1, latestTimeMs: count * 1000, bufferStartMs: 1000, bufferEndMs: count * 1000,
+        latestValues: Float32Array.of(1).buffer,
+      })
+      summary(8)
+      document.getElementById('x-axis-hit')!.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 400, bubbles: true }))
+      const before = runtime.probe.visibleTimeRange()
+      const span = before.tMax - before.tMin
+      summary(16)
+      const after = runtime.probe.visibleTimeRange()
+      expect(after.tMax - after.tMin).toBeCloseTo(span, 6)
+    } finally { runtime.cleanup() }
+  })
+
+  it('keeps a paused zoom span after a fresh acquisition grows beyond that span', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 50000)
+    try {
+      const channels = [{ name: 'signal', addr: 0x20000100, size: 4, type: 'uint32' }]
+      runtime.viewer.configureBinaryChannels(channels)
+      runtime.probe.syncStatus({ state: 'running', interval: .001 })
+      const summary = (end: number) => runtime.viewer.acceptBinarySummary({
+        sequence: BigInt(end), timestampNs: BigInt(end * 1000000),
+        collectedItemCount: end, bufferedItemCount: end,
+        channelCount: 1, latestTimeMs: end, bufferStartMs: 0, bufferEndMs: end,
+        latestValues: Float32Array.of(1).buffer,
+      }, channels)
+      summary(18000)
+      document.getElementById('btn-pause')!.click()
+      const axis = document.getElementById('x-axis-hit')!
+      for (let i = 0; i < 2; i++) axis.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 400, bubbles: true }))
+      const frozen = runtime.probe.visibleTimeRange()
+      const span = frozen.tMax - frozen.tMin
+      expect(span).toBeLessThan(9)
+      document.getElementById('btn-start')!.click()
+      await flushPromises()
+      runtime.viewer.resetBinaryStream()
+      runtime.viewer.configureBinaryChannels(channels)
+      for (const end of [100, 9000, 24000]) {
+        summary(end)
+        const view = runtime.probe.visibleTimeRange()
+        expect(view.tMax - view.tMin).toBeCloseTo(Math.min(end / 1000, span), 6)
+        expect(view.tMax).toBeCloseTo(runtime.probe.fullTimeRange().tMax, 6)
+      }
+    } finally { runtime.cleanup() }
+  })
+
+  it('keeps the chosen X scale while restarting after stop with fresh data', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch', 8)
     try {
       runtime.probe.syncStatus({ state: 'running', interval: 0.25, actual_rate: 4, items: [] })
@@ -662,9 +1001,12 @@ describe('WaveformViewer VOFA binary transport', () => {
       }
       expect(runtime.probe.timeline()).toMatchObject({ zoom: 1, offset: 0 })
       expect(runtime.probe.fields().signal.ringBuf.count).toBe(8)
+      const range = runtime.probe.visibleTimeRange()
 
       runtime.probe.syncStatus({ state: 'running', items: [] })
-      expect(runtime.probe.timeline()).toMatchObject({ zoom: 2, offset: 1 })
+      const resumed = runtime.probe.visibleTimeRange()
+      expect(resumed.tMax - resumed.tMin).toBeCloseTo(range.tMax - range.tMin, 12)
+      expect(runtime.probe.timeline().offset).toBe(1)
       expect(runtime.probe.fields().signal.ringBuf.count).toBe(0)
       expect(runtime.probe.collectionState()).toMatchObject({
         state: 'running', paused: false, renderPaused: false,
@@ -1033,7 +1375,7 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(updateAcquisitionStatus).toHaveBeenLastCalledWith(
         expect.objectContaining({ actual_rate: 12_345 }),
       )
-      expect(mocks.binary.start).toHaveBeenCalledOnce()
+      expect(mocks.binary.start).toHaveBeenCalledTimes(2)
       expect(mocks.binary.configure).toHaveBeenCalledOnce()
 
       wrapper.unmount()
@@ -1163,10 +1505,10 @@ describe('VOFA viewer hot path source guard', () => {
 
   it('documents live and paused SuperWatch navigation accurately in both languages', () => {
     expect(i18nSource).toContain('后端采集不会停止')
-    expect(i18nSource).toContain('恢复时会清空冻结快照')
+    expect(i18nSource).toContain('恢复或重新开始时保留缩放比例')
     expect(i18nSource).toContain('保持与最新数据的固定时间差并继续前移')
     expect(i18nSource).toContain('backend acquisition continues')
-    expect(i18nSource).toContain('Resume clears the frozen snapshot')
+    expect(i18nSource).toContain('Resume or restart keeps your zoom scale')
     expect(i18nSource).toContain('keeps a fixed lag from the latest data and continues moving forward')
   })
 
@@ -2220,6 +2562,21 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('shows capture invalidation from status and permits an explicit restart', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.probe.syncStatus({ state: 'running' })
+      const error = 'DAP changed the target; restart capture after debugging.'
+      runtime.probe.syncStatus({ state: 'stopped', error })
+      expect(runtime.probe.collectionState().state).toBe('stopped')
+      expect(document.getElementById('conn-status')!.textContent).toBe(error)
+      expect((document.getElementById('btn-start') as HTMLButtonElement).disabled).toBe(false)
+      expect((document.getElementById('btn-pause') as HTMLButtonElement).disabled).toBe(true)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('freezes the SuperWatch viewport and envelope while render pause is active', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch', 8)
     try {
@@ -2885,6 +3242,14 @@ describe('VOFA viewer typed-ring runtime', () => {
         configurable: true, get: () => rawCountText,
         set: value => { rawDomWrites++; rawCountText = String(value) },
       })
+      // Do not include a growing canvas-label transcript in the memory gate.
+      ;(window as any).__canvasLabels = undefined
+      // The accelerated loop delivers 60 seconds without idle time. Collect
+      // before the baseline and once per simulated second so raw heap peaks
+      // do not depend on the host's V8 heap expansion/GC schedule. Keep sampling
+      // BEFORE collection and preserve the existing allocation limits.
+      if (!globalThis.gc) throw new Error('The memory gate requires --expose-gc')
+      globalThis.gc()
       const baseline = process.memoryUsage()
       let peakHeap = baseline.heapUsed
       let seed = 0x12345678
@@ -2914,6 +3279,7 @@ describe('VOFA viewer typed-ring runtime', () => {
           })
         }
         peakHeap = Math.max(peakHeap, process.memoryUsage().heapUsed)
+        if ((batch + 1) % (sampleRate / batchSamples) === 0) globalThis.gc()
       }
       const elapsedMs = performance.now() - started
       const finalMemory = process.memoryUsage()

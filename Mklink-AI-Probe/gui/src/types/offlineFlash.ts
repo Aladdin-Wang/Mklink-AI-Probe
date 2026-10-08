@@ -92,6 +92,8 @@ export interface OfflineDeployResult {
   model: 'V2' | 'V3' | 'V4'
   script_name: string
   files: string[]
+  file_count?: number
+  truncated?: boolean
 }
 
 export interface OfflineTriggerResult {

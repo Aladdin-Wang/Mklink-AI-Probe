@@ -48,7 +48,9 @@ def test_slow_client_drops_exactly_one_oldest_batch_when_full():
         client = hub.subscribe()
         hub.publish(b"one", item_count=1)
         hub.publish(b"two-two", item_count=2)
+        await asyncio.sleep(0)  # Fill the client queue, independently of ingress.
         hub.publish(b"three", item_count=3)
+        await asyncio.sleep(0)
 
         assert await client.get() == b"two-two"
         client.task_done()
@@ -111,6 +113,7 @@ def test_stats_and_status_frame_are_non_resetting_snapshots():
         hub = StreamHub(max_batches_per_client=1)
         client = hub.subscribe()
         hub.publish(b"first", item_count=2)
+        await asyncio.sleep(0)
         hub.publish(b"second", item_count=4)
         await asyncio.sleep(0)
 

@@ -6,133 +6,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MKLink AI Probe</title>
     <style>
-      html,
-      body,
-      #app {
-        width: 100%;
-        height: 100%;
-      }
-      body {
-        margin: 0;
-        overflow: hidden;
-        background: #020611;
-      }
-      #startup-splash {
-        position: fixed;
-        inset: 0;
-        z-index: 10000;
-        display: grid;
-        grid-template-rows: minmax(0, 1fr) auto;
-        justify-items: center;
-        gap: 18px;
-        padding: clamp(28px, 5vh, 64px) clamp(24px, 6vw, 96px);
-        box-sizing: border-box;
-        overflow: hidden;
-        background: #020611;
-        color: #f4f8ff;
-        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-        opacity: 1;
-        transition: opacity 240ms ease;
-      }
-      #startup-splash.is-complete {
-        pointer-events: none;
-        opacity: 0;
-      }
-      .startup-visual {
-        align-self: center;
-        width: min(72vh, 760px, 82vw);
-        aspect-ratio: 1;
-        min-height: 0;
-      }
-      .startup-image {
-        display: block;
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        animation: startup-image-enter 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
-      }
-      .startup-footer {
-        width: min(560px, 78vw);
-        padding-bottom: clamp(8px, 2vh, 24px);
-      }
-      .startup-heading {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 10px;
-      }
-      .startup-brand {
-        font-size: 16px;
-        font-weight: 650;
-        letter-spacing: 0;
-      }
-      #startup-progress-value {
-        color: #8bbcf7;
-        font: 600 12px/1 Consolas, monospace;
-      }
-      .startup-progress {
-        width: 100%;
-        height: 5px;
-        overflow: hidden;
-        background: #1b2a3d;
-      }
-      #startup-progress-fill {
-        width: 8%;
-        height: 100%;
-        background: #2e9df4;
-        box-shadow: 0 0 14px rgba(46, 157, 244, 0.55);
-        transition: width 180ms ease-out;
-      }
-      #startup-status {
-        min-height: 20px;
-        margin: 9px 0 0;
-        color: #9ca9bb;
-        font-size: 12px;
-        text-align: center;
-      }
-      @keyframes startup-image-enter {
-        from { opacity: 0; transform: scale(0.975); }
-        to { opacity: 1; transform: scale(1); }
-      }
-      @media (max-width: 720px) {
-        #startup-splash {
-          gap: 12px;
-          padding: 24px 18px;
-        }
-        .startup-visual {
-          width: min(64vh, 88vw);
-        }
-        .startup-footer {
-          width: min(520px, 88vw);
-        }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        #startup-splash,
-        #startup-progress-fill,
-        .startup-image {
-          animation: none;
-          transition: none;
-        }
-      }
+      html, body, #app { width:100%; height:100%; }
+      body { margin:0; overflow:hidden; background:#11151b; }
+      #startup-splash { position:fixed; inset:0; z-index:10000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:32px; box-sizing:border-box; padding:32px; overflow:hidden; background:radial-gradient(ellipse at 50% 44%,#222a35 0%,#11151b 58%); color:#edf1f7; font-family:'Segoe UI','Microsoft YaHei',system-ui,sans-serif; transition:opacity 240ms ease; }
+      #startup-splash::before { content:''; position:absolute; inset:0; opacity:.1; background-image:linear-gradient(#8193aa 1px,transparent 1px),linear-gradient(90deg,#8193aa 1px,transparent 1px); background-size:48px 48px; mask-image:radial-gradient(ellipse at center,#000,transparent 65%); pointer-events:none; }
+      #startup-splash.is-complete { opacity:0; pointer-events:none; }
+      #startup-splash.is-probe-switch { background:var(--bg,#11151b); gap:0; }
+      #startup-splash.is-probe-switch::before,
+      #startup-splash.is-probe-switch .startup-visual,
+      #startup-splash.is-probe-switch .startup-heading,
+      #startup-splash.is-probe-switch .startup-progress { display:none; }
+      .startup-visual { position:relative; width:min(440px,80vw); }
+      .startup-circuit { display:block; width:100%; height:auto; overflow:visible; }
+      .startup-track { fill:none; stroke:#3c4859; stroke-width:1.5; }
+      .startup-signal { fill:none; stroke:#ee9677; stroke-width:2; stroke-linecap:round; stroke-dasharray:18 210; animation:signal-travel 3s linear infinite; }
+      .startup-signal.second { animation-delay:-1.5s; }
+      .startup-core { fill:#1b222c; stroke:#ee9677; stroke-width:1.5; }
+      .startup-halo { fill:#ee9677; opacity:.07; transform-origin:center; animation:core-breathe 3s ease-in-out infinite; }
+      .startup-mark { fill:none; stroke:#f5ad91; stroke-width:5; stroke-linecap:round; stroke-linejoin:round; }
+      .startup-node { fill:#8394a9; }
+      .startup-caption { text-align:center; margin:18px 0 0; font-size:11px; letter-spacing:.25em; color:#98a7ba; }
+      .startup-footer { position:relative; width:min(320px,80vw); }
+      .startup-heading { display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin-bottom:20px; }
+      .startup-brand { font-size:22px; font-weight:650; letter-spacing:-.6px; }
+      .startup-brand small { font-size:12px; font-weight:400; color:#a8b4c4; letter-spacing:.02em; margin-left:8px; }
+      #startup-progress-value { font:500 11px/1 Consolas,monospace; color:#ee9677; }
+      .startup-progress { height:3px; overflow:hidden; background:#303947; border-radius:3px; }
+      #startup-progress-fill { width:8%; height:100%; background:#ee9677; transition:width 180ms ease-out; border-radius:inherit; }
+      #startup-status { min-height:20px; margin:14px 0 0; color:#a8b4c4; font-size:12px; text-align:center; }
+      @keyframes signal-travel { to { stroke-dashoffset:-228; } }
+      @keyframes core-breathe { 50% { opacity:.15; transform:scale(1.06); } }
+      @media(max-height:480px) { #startup-splash { gap:8px; padding:16px; } .startup-visual { width:260px; } .startup-caption { display:none; } }
+      @media(prefers-reduced-motion:reduce) { #startup-splash *, #startup-splash { animation:none!important; transition:none!important; } }
     </style>
-    <script type="module" crossorigin src="./assets/mime-v1/index-xyGX1dTP.js"></script>
+    <script type="module" crossorigin src="./assets/mime-v1/index-DSzw3I6v.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/mime-v1/core-tyXAVNRQ.js">
-    <link rel="stylesheet" crossorigin href="./assets/mime-v1/index-Dxp5NNFO.css">
+    <link rel="stylesheet" crossorigin href="./assets/mime-v1/index-D-AiI9Sm.css">
   </head>
   <body>
     <div id="app"></div>
     <div id="startup-splash" role="status" aria-live="polite">
-      <div class="startup-visual">
-        <img
-          class="startup-image"
-          src="./startup-probe.png"
-          alt="MKLink AI Probe 下载器"
-        />
+      <div class="startup-visual" aria-hidden="true">
+        <svg class="startup-circuit" viewBox="0 0 440 220">
+          <path class="startup-track" d="M10 62h80l42 48h38M10 158h80l42-48h38M270 110h38l42-48h80M270 110h38l42 48h80"/>
+          <path class="startup-signal" d="M10 62h80l42 48h38M270 110h38l42 48h80"/>
+          <path class="startup-signal second" d="M10 158h80l42-48h38M270 110h38l42-48h80"/>
+          <rect class="startup-halo" x="148" y="38" width="144" height="144" rx="36"/>
+          <rect class="startup-core" x="166" y="56" width="108" height="108" rx="24"/>
+          <path class="startup-mark" d="M189 92v36m23-36-23 18 23 18m17-36v36m23-36-23 18 23 18"/>
+          <g class="startup-node"><circle cx="10" cy="62" r="3"/><circle cx="10" cy="158" r="3"/><circle cx="430" cy="62" r="3"/><circle cx="430" cy="158" r="3"/></g>
+        </svg>
+        <p class="startup-caption">CONNECT · DEBUG · CREATE</p>
       </div>
       <div class="startup-footer">
         <div class="startup-heading">
-          <span class="startup-brand">MKLink AI Probe</span>
+          <span class="startup-brand">MKLink<small>AI Probe</small></span>
           <span id="startup-progress-value">8%</span>
         </div>
         <div
@@ -156,6 +84,15 @@
         const fill = document.getElementById('startup-progress-fill')
         const valueLabel = document.getElementById('startup-progress-value')
         const status = document.getElementById('startup-status')
+        const locationUrl = new URL(window.location.href)
+        const switching = locationUrl.searchParams.get('runtime_transition') === 'probe'
+        if (switching) {
+          splash.classList.add('is-probe-switch')
+          status.textContent = window.localStorage.getItem('mklink_lang') === 'en'
+            ? 'Switching probe…' : '正在切换下载器…'
+          locationUrl.searchParams.delete('runtime_transition')
+          history.replaceState(history.state, '', locationUrl.href)
+        }
         let value = 8
         let timer = 0
 
@@ -164,7 +101,7 @@
           fill.style.width = `${value}%`
           valueLabel.textContent = `${value}%`
           progress.setAttribute('aria-valuenow', String(value))
-          if (nextStatus) status.textContent = nextStatus
+          if (nextStatus && !switching) status.textContent = nextStatus
         }
 
         timer = window.setInterval(() => {

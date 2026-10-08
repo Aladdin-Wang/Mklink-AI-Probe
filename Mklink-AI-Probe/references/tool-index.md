@@ -5,20 +5,25 @@
 
 ## MCP tool 速查（按能力域）
 
+下表保留 0.2.x 工具名称。0.3.0 开发分支的共享入口及参数差异见
+[共享后台说明](shared-runtime.md)，实际可用工具以 MCP `tools/list` 为准。
+共享入口已提供离线 `systemview_decode`、`systemview_analyze_events` 和
+后台 `set_debug_speed`；其他旧名称不能据此视为全部兼容。
+
 | 域 | Tools | 备注 |
 |---|---|---|
 | 健康 | `ping` | 无需连接，首调确认 server 活着 |
 | 供电测量（0.2.3） | `get_power` | 只读 VCC 快照；V3 仅电压，V4 电压/电流/计算功率；需配套新固件，详见 [供电测量](power-telemetry.md) |
-| 项目配置 | `detect_mcu_profile` | 新 MCU 发现、FLM 候选选择、profile 固化 |
+| 器件检查（0.3） | `inspect_mcu` | 只读检查精确器件和统一算法目录，不写 profile/设备文件 |
 | 连接 | `discover_probes` · `connect` · `disconnect` · `device_status` | connect 传 `axf=` 才能读变量 |
 | Flash / 探针控制 | `flash` · `erase_chip` · `erase_sector` · `reset` · `set_power_on` · `reboot_probe` | `reset` 复位目标；VCC 任意电压均须逐次确认，5 V 另须耐压确认；`reboot_probe` 会断连 |
-| 安全保护 | `security_status` · `security_lock` · `security_unlock` | 先查精确型号能力；加锁前强制校验固件，解锁强制确认永久数据丢失，操作后按明确电压断电复位 |
+| 安全保护 | `security_status` · `security_lock` · `security_unlock` | 活动共享 MCP：先查精确型号；必须提供 request_id，返回后台任务后用 job_status 查询。加锁校验固件，解锁确认永久数据丢失，按明确电压复位；nRF54L15省略电压 |
 | 内存 | `read_memory` · `read_memory_regions` · `write_memory` · `flush_memory` | 快照 regions 最多 16 项/总计 4096B；flush 单批最多 12 KiB/8 项，超额由调用方串行分批 |
 | 变量/寄存器 | `read_variable` · `write_variable` · `read_register` | 变量需 AXF；外设字段使用项目所选目录，无需 AXF |
 | 外设目录/采集（0.2.1 开发） | `peripheral_targets` · `select_peripherals` · `list_peripherals` · `capture_peripherals` | 与 CLI/Web 共用项目选择，采集 ≤30 秒、≤15 区域 |
 | 调试 | `halt` · `resume` · `step` · `set_breakpoint` · `clear_breakpoint` · `clear_all_breakpoints` · `read_core_registers` | FPB 硬件断点 |
 | 符号 | `load_symbols` · `symbols_status` · `memory_map` | DWARF 段表 |
-| RTT | `rtt_start`(mode=auto/dynamic/static) · `rtt_read` · `rtt_write` · `rtt_stop` · `capture_rtt` | mode 决策见 [rtt-static-mode.md](rtt-static-mode.md) |
+| RTT（共享） | `rtt_start` · `rtt_read_channel` · `rtt_history` · `rtt_write` · `rtt_write_hex` · `rtt_stop` | 已运行时无参数 start 订阅；未运行传 addr/channels；逐通道保留 cursor/session。不得使用旧 RTTView 原始命令，见 [共享后台](shared-runtime.md) |
 | **SystemView** | `systemview_integrate` · `systemview_start` · `systemview_read` · `systemview_stop` · `capture_systemview` · `systemview_decode` · `systemview_analyze` · `systemview_analyze_events` · `systemview_report` | RTOS 跟踪（任务切换/ISR/CPU%）；集成见 [systemview-rtthread.md](systemview-rtthread.md)；先 rtt-integrate |
 | HardFault | `check_hardfault` · `decode_hardfault` | decode 自动 CFSR 展开 + 内置 DWARF 源码回溯 |
 | Modbus | `modbus_open` · `modbus_close` · `modbus_read` · `modbus_write` · `modbus_scan` | 独立串口（非探针） |
@@ -35,11 +40,11 @@
 | `web-entry` | 安装跨平台 URL Handler、自动生成 U 盘/桌面快速启动页、启动/停止其自有 Web 服务 |
 | `mcp` | 启动 MCP server（stdio，供 Claude Code / 其他 MCP client 调用；本 plugin 自动拉起） |
 | `remote` | 工程师侧直连 VPN/局域网站点：注册/选择、状态、能力、重连、原子上传与高风险操作 |
-| `project-init` | 初始化项目配置（自动检测 IAR/Keil、MCU、COM 口） |
-| `mcu-detect` | 发现/固化未知 MCU profile 与 FLM（多候选需选择） |
+| `project-init` | 离线解析 IAR/Keil 工程并初始化配置；不枚举或连接下载器 |
+| `mcu-detect` | 只读检查统一算法目录（多候选按算法 ID 选择） |
 | `project-info` | 显示项目配置状态 |
 | `flash` | 用户显式要求原生 MKLink 串口/FLM 路径时使用；自动下载先走 IDE，再走 pyOCD，最后脱机 API |
-| `security lock/unlock` | 与 MCP/WebGUI 共用安全白名单；要求精确型号、明确恢复电压和确认参数；加锁还须固件，解锁还须数据丢失确认 |
+| `security lock/unlock` | 经共享后台持久任务执行；`--probe` 选 ID/别名/命令口，`--request-id` 保留查询凭据；精确型号、恢复电压和确认参数仍必需，加锁须固件，解锁须数据丢失确认 |
 | `rtt` | 一站式 RTT 捕获（支持 `--visualize`） |
 | `read-ram` | 读取 RAM 数据（十六进制 dump） |
 | `read-reg` | 读取内存映射寄存器 |
@@ -49,7 +54,7 @@
 | `read-flash` | 读取 Flash 数据 |
 | `version` | 读取烧录器自身固件版本（`--all` 显示历史，`--raw` 原始输出） |
 | `power-read` | 只读 VCC 测量，支持 `--port`、`--json`；单位 mV/mA/mW，无需 AXF 或目标内存地址 |
-| `vofa` | VOFA+ 实时变量观测（快速连续 float 最多 16 路；精确离散地址/类型最多 15 路；Pika 命令最多 511 UTF-8 字节；支持 `--visualize`） |
+| `vofa` | 共享 VOFA 采集（最多 64 路、对齐合并后最多 15 组；连续 float 简写最多 16 路；支持 `--probe`，无独立 GUI 页面） |
 | `symbols` | 从 ELF/AXF 列出 RAM 变量（默认内置 pyelftools） |
 | `typeinfo` | 从 AXF DWARF 查询类型/结构体/枚举 |
 | `watch` | 按变量名读取快照（支持 `struct.field`） |
@@ -65,8 +70,27 @@
 | `rtt_storage_mode=1` | 静态 RTT 编译（详见 [references/rtt-static-mode.md](rtt-static-mode.md)） |
 | `copy-flm` | 拷贝 profile/工程指定的 FLM 到 MICROKEEN 磁盘 |
 | `keil-parse` / `iar-parse` | 解析 Keil/IAR 工程文件 |
-| `discover` | 发现 MKLink 端口 |
-| `test --port COM6` | 测试连接 |
+| `probes list` | 被动枚举下载器身份、别名与当前端口 |
+| `device-status --probe ID/别名` | 共享连接、目标 IDCODE 与符号状态 |
 | `modbus` | Modbus RTU 调试（scan/read/write/poll/monitor/dashboard/pointmap） |
 | `serial` | 通用 UART/RS485 串口调试；MKLink 仅隐藏 MI_04 命令口 |
 | `resources` / `resource` | 本地资源管理（释放 stale 串口/MKLink 锁；不需要 FastAPI） |
+
+### 0.3 安全操作的共享任务
+
+`security lock/unlock` 使用所选探针后台已有的在线烧录服务，无需先成功连接受保护目标。
+旧 `--probe-id` 参数已删除，使用 `--probe`（共享 USB ID、别名或命令端口），不传 CMSIS-DAP 序列号。
+操作仍须用户明确确认；加锁先校验固件，解锁会擦除受保护数据，非 nRF54L15 还须明确本次恢复电压。
+
+命令在提交前向标准错误输出 request_id；`--json` 标准输出保留 JSON。`--timeout` 只限制客户端观察，
+不停止后台作业，也不自动重发。响应丢失或超时后运行 `python -m mklink runtime jobs --probe <ID>`，
+按保存的 request_id 查原记录。unknown 或记录缺失均不能认定没有执行，不得据此重新操作。
+后台最多保留64条任务。安全操作可能关闭目标调试连接；加锁后不能假定已有 AI 会话仍能读取目标，
+也不会自动重连或解除保护。GUI 在线作业入口仍使用其原有查询方式，本次 CLI 迁移不代表该入口已获得持久去重。
+
+活动 MCP 的 `security_lock` / `security_unlock` 无需先调用 connect；用 `probe` 选择共享 ID、别名或命令端口。
+已连接时省略 probe 会使用当前探针，显式选择另一探针会被拒绝，须先 disconnect。
+`project_root` 仅用于启动新的后台，不切换已有后台工程。`request_id` 必填且调用前保存，
+返回的 running 仅代表任务已接收，必须用 `job_status` 确认终态。MCP退出或disconnect均不会取消任务；
+提交响应丢失后仍可查询原探针的任务列表，也可在新会话给 `job_status` 指定 probe。
+旧独占 MCP 的三个安全工具注册已移除，不保留第二套入口。

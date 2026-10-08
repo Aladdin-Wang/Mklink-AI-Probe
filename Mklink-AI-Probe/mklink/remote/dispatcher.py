@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import base64
 import threading
-import time
-import uuid
-from dataclasses import asdict, is_dataclass
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -23,8 +21,7 @@ from mklink.remote.protocol import (
     MethodNotFoundError,
     RequestValidationError,
 )
-from mklink.remote.resource_manager import ResourceError, ResourceGroup
-from mklink.remote.transfer import RemoteFile, TransferError, UploadManager
+from mklink.remote.transfer import TransferError, UploadManager
 
 
 def _integer(value: Any, field: str, *, minimum: int = 0) -> int:
@@ -103,25 +100,6 @@ def _bytes_result(data: bytes) -> dict[str, str]:
     return {"__bytes__": base64.b64encode(data).decode("ascii")}
 
 
-def _json_value(value: Any) -> Any:
-    if isinstance(value, bytes):
-        return _bytes_result(value)
-    if isinstance(value, RemoteFile):
-        return value.as_dict()
-    if is_dataclass(value):
-        return _json_value(asdict(value))
-    if isinstance(value, Mapping):
-        return {str(key): _json_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_value(item) for item in value]
-    if isinstance(value, Path):
-        # Paths are internal implementation details and never cross the wire.
-        return value.name
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    return str(value)
-
-
 class OperationDispatcher:
     """Stateful agent-side router with transfer and resource ownership."""
 
@@ -130,20 +108,57 @@ class OperationDispatcher:
         project_root: str | Path = ".",
         *,
         upload_manager: UploadManager | None = None,
+        runtime_probe: str | None = None,
+        runtime_info: dict | None = None,
     ):
         self.project_root = Path(project_root).expanduser().resolve()
+        self.runtime_probe = runtime_probe
+        self._bound_runtime_probe = None
+        self._runtime_probe_lock = threading.Lock()
         self._uploads = upload_manager or UploadManager(
             self.project_root / ".mklink" / "remote-uploads",
         )
-        self._target_lock = threading.RLock()
-        self._serial_lock = threading.RLock()
-        self._stream_owners: dict[str, str] = {}
+        from mklink.remote.shared_target import SharedTarget
+        self._target = SharedTarget(str(self.project_root), self._shared_probe, runtime_info=runtime_info)
 
     def capabilities(self):
-        return protocol_capabilities()
+        capabilities = protocol_capabilities()
+        capabilities['stream.rtt'] = replace(capabilities['stream.rtt'],
+            detail=capabilities['stream.rtt'].detail + '; shared terminal and per-channel raw cursor reads with loss diagnostics')
+        capabilities['stream.systemview'] = replace(capabilities['stream.systemview'],
+            detail='Shared capture; v2 bounded cursor pages and cached task names; stop detaches borrowers')
+        capabilities['target.memory'] = replace(capabilities['target.memory'],
+            detail='Shared backend; memory transfers limited to 4096 bytes per request')
+        return capabilities
+
+    def connect_target(self, *, port=None, axf=None):
+        return self._target.connect(port=port, axf=axf)
+
+    def client_closed(self, client_id):
+        self._target.client_closed(client_id)
 
     def close(self) -> None:
-        self._uploads.close()
+        try:
+            self._target.close()
+        finally:
+            self._uploads.close()
+
+    def _shared_probe(self):
+        from mklink.probes import select_probe
+        from mklink.runtime import RuntimeErrorResponse
+        # Only identity initialization is serialized, never UART I/O or target work.
+        with self._runtime_probe_lock:
+            if self._bound_runtime_probe is None:
+                try:
+                    selected = select_probe(self.runtime_probe, allow_lobby=True)
+                except RuntimeErrorResponse:
+                    raise CapabilityUnavailableError(data={'capability': 'uart',
+                        'reason': 'probe-identity-unavailable'}) from None
+                if selected['probe_id'] != 'lobby' and not selected['identity_stable']:
+                    raise CapabilityUnavailableError(data={'capability': 'uart',
+                        'reason': 'stable-probe-identity-required'})
+                self._bound_runtime_probe = selected['probe_id']
+            return self._bound_runtime_probe
 
     def __call__(
         self,
@@ -164,9 +179,10 @@ class OperationDispatcher:
             params,
             context=context,
             upload_manager=self._uploads,
-            target_lock=self._target_lock,
-            serial_lock=self._serial_lock,
-            stream_owners=self._stream_owners,
+            shared_target=self._target,
+            project_root=self.project_root,
+            runtime_probe=self._shared_probe() if operation in (
+                'modbus.read', 'modbus.write', 'modbus.scan', 'serial.list', 'serial.exchange') else None,
         )
 
 
@@ -176,9 +192,9 @@ def dispatch_capability(
     context: AgentDispatchContext | None = None,
     *,
     upload_manager: UploadManager | None = None,
-    target_lock: threading.RLock | None = None,
-    serial_lock: threading.RLock | None = None,
-    stream_owners: dict[str, str] | None = None,
+    shared_target=None,
+    project_root: str | Path = ".",
+    runtime_probe: str | None = None,
 ) -> Any:
     """Dispatch one declared operation through existing public domain APIs."""
 
@@ -256,510 +272,159 @@ def dispatch_capability(
             "script": generate_offline_script(config),
         }
 
-    if operation == "offline.deploy":
-        if upload_manager is None:
-            raise CapabilityUnavailableError(
-                data={"capability": "transfer.upload", "reason": "not-configured"},
-            )
-        from mklink.discovery import find_microkeen_disk
-        from mklink.offline_download import deploy_offline_bundle, parse_offline_config
-
-        config = parse_offline_config(_remote_offline_config(params.get("config")))
-        disk = find_microkeen_disk()
-        if not disk:
-            raise CapabilityUnavailableError(
-                data={"capability": "flash.offline", "reason": "probe-disk-unavailable"},
-            )
-        firmware_refs = _mapping(params.get("firmware_files"), "firmware_files")
-        algorithm_refs = _mapping(
-            params.get("algorithm_files", {}),
-            "algorithm_files",
-        )
-        firmware_sources = {
-            str(key): upload_manager.resolve(_text(value, "firmware_files"))
-            for key, value in firmware_refs.items()
-        }
-        algorithm_sources = {
-            str(key): upload_manager.resolve(_text(value, "algorithm_files"))
-            for key, value in algorithm_refs.items()
-        }
-        return deploy_offline_bundle(
-            config,
-            disk,
-            firmware_sources=firmware_sources,
-            algorithm_sources=algorithm_sources,
-        )
-
     if operation.startswith("serial."):
-        return _dispatch_serial(
-            operation,
-            params,
-            context,
-            serial_lock or threading.RLock(),
-        )
+        return _dispatch_serial(operation, params, context,
+                                project_root=project_root, probe=runtime_probe)
     if operation.startswith("modbus."):
-        return _dispatch_modbus(
-            operation,
-            params,
-            context,
-            serial_lock or threading.RLock(),
-        )
+        return _dispatch_modbus(operation, params, context,
+                                project_root=project_root, probe=runtime_probe)
 
-    device = context.device if context is not None else None
-    if device is None:
-        raise CapabilityUnavailableError(
-            data={"capability": schema.capability, "reason": "probe-disconnected"},
-        )
-
-    lock = target_lock or threading.RLock()
-    owners = stream_owners if stream_owners is not None else {}
-    with lock:
-        return _dispatch_device(
-            requested_operation,
-            operation,
-            params,
-            device,
-            context,
-            upload_manager,
-            owners,
-        )
+    from mklink.remote.shared_target import OPERATIONS
+    if operation in OPERATIONS and shared_target is not None:
+        if context is None or context.device is not shared_target:
+            raise CapabilityUnavailableError(data={'reason': 'call-agent.reconnect-first'})
+        return shared_target.dispatch(requested_operation, operation, params,
+                                      context.client_id, upload_manager)
+    raise CapabilityUnavailableError(data={'capability': schema.capability,
+        'reason': 'shared-target-required' if operation in OPERATIONS else 'shared-stream-migration-pending'})
 
 
-def _dispatch_device(
-    requested_operation: str,
-    operation: str,
-    params: Mapping[str, Any],
-    device: Any,
-    context: AgentDispatchContext | None,
-    uploads: UploadManager | None,
-    stream_owners: dict[str, str],
-) -> Any:
-    manager = context.resource_manager if context is not None else None
-    persistent = operation.startswith(("rtt.", "systemview."))
-    owner_key = "rtt" if operation.startswith("rtt.") else "systemview"
-    owner = stream_owners.get(owner_key)
-    release_owner = False
-
-    if manager is not None:
-        if operation.endswith(".start"):
-            owner = f"ai:remote:{owner_key}:{uuid.uuid4().hex}"
-            try:
-                manager.acquire(ResourceGroup.TARGET_DEBUG, owner)
-            except ResourceError:
-                raise CapabilityUnavailableError(
-                    data={"capability": "target.debug", "reason": "resource-busy"},
-                ) from None
-        elif persistent and owner:
-            pass
-        else:
-            owner = f"ai:remote:operation:{uuid.uuid4().hex}"
-            try:
-                manager.acquire(ResourceGroup.TARGET_DEBUG, owner)
-            except ResourceError:
-                raise CapabilityUnavailableError(
-                    data={"capability": "target.debug", "reason": "resource-busy"},
-                ) from None
-            release_owner = True
-
-    try:
-        if operation == "probe.info":
-            if requested_operation == "idcode":
-                return int(device.idcode)
-            if requested_operation == "mcu_name":
-                return str(device.mcu_name)
-            return {
-                "connected": bool(device.connected),
-                "idcode": int(device.idcode),
-                "mcu_name": str(device.mcu_name),
-            }
-        if operation == "flash.program":
-            if uploads is None:
-                raise CapabilityUnavailableError(
-                    data={"capability": "transfer.upload", "reason": "not-configured"},
-                )
-            firmware = uploads.resolve(_text(params.get("firmware"), "firmware"))
-            allowed = {
-                "target_part",
-                "base_address",
-                "board",
-                "hpm_flash_cfg",
-                "swd_clock",
-                "verify",
-                "reset_after",
-            }
-            options = {key: params[key] for key in allowed if key in params}
-            return _json_value(device.flash(str(firmware), **options))
-        if operation == "flash.erase_chip":
-            return bool(device.erase_chip())
-        if operation == "flash.erase_sector":
-            return bool(device.erase_sector(_integer(params.get("address"), "address")))
-        if operation == "target.reset":
-            device.reset()
-            return {"reset": True}
-        if operation == "target.halt":
-            return _json_value(device.halt())
-        if operation == "target.resume":
-            return _json_value(device.resume())
-        if operation == "target.step":
-            return _json_value(device.step())
-        if operation == "breakpoint.set":
-            slot = params.get("slot")
-            return {
-                "slot": int(
-                    device.set_breakpoint(
-                        _integer(params.get("address"), "address"),
-                        None if slot is None else _integer(slot, "slot"),
-                    )
-                )
-            }
-        if operation == "breakpoint.clear":
-            device.clear_breakpoint(_integer(params.get("slot"), "slot"))
-            return {"cleared": True}
-        if operation == "breakpoint.clear_all":
-            return {"cleared": int(device.clear_all_breakpoints())}
-        if operation == "registers.core":
-            return _json_value(device.read_core_registers())
-        if operation == "memory.read":
-            size = _integer(params.get("size"), "size", minimum=1)
-            if size > 1024 * 1024:
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "size"},
-                )
-            return _bytes_result(
-                device.read_memory(
-                    _integer(params.get("address"), "address"),
-                    size,
-                )
-            )
-        if operation == "memory.write":
-            encoded = _text(params.get("data_b64"), "data_b64")
-            try:
-                data = base64.b64decode(encoded, validate=True)
-            except (ValueError, TypeError):
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "data_b64"},
-                ) from None
-            if not data or len(data) > 1024 * 1024:
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "data_b64"},
-                )
-            device.write_memory(
-                _integer(params.get("address"), "address"),
-                data,
-            )
-            return {"written": len(data)}
-        if operation == "register.read":
-            return int(device.read_register(_text(params.get("name"), "name")))
-        if operation == "variable.read":
-            return _json_value(device.read_variable(_text(params.get("name"), "name")))
-        if operation == "variable.write":
-            device.write_variable(
-                _text(params.get("name"), "name"),
-                _integer(params.get("value"), "value"),
-            )
-            return {"written": True}
-        if operation == "symbols.status":
-            return _json_value(device.axf_status)
-        if operation == "symbols.parse":
-            if uploads is None:
-                raise CapabilityUnavailableError(
-                    data={"capability": "transfer.upload", "reason": "not-configured"},
-                )
-            source = uploads.resolve(_text(params.get("source"), "source"))
-            backend = params.get("elf_backend")
-            if backend not in (None, "builtin", "external"):
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "elf_backend"},
-                )
-            return _json_value(device.parse_axf(str(source), elf_backend=backend))
-        if operation in {"symbols.list", "symbols.search"}:
-            catalog = device.symbol_catalog
-            if catalog is None:
-                raise CapabilityUnavailableError(
-                    data={"capability": "target.symbols", "reason": "symbols-not-loaded"},
-                )
-            return catalog.to_page(
-                query=str(params.get("query", "")),
-                writable=bool(params.get("writable", False)),
-                offset=_integer(params.get("offset", 0), "offset"),
-                limit=_integer(params.get("limit", 200), "limit", minimum=1),
-            )
-        if operation == "symbols.memory_map":
-            return _json_value(device.memory_map())
-        if operation == "rtt.start":
-            result = _json_value(
-                device.rtt_start(
-                    params.get("addr"),
-                    channel=_integer(params.get("channel", 0), "channel"),
-                    search_size=_integer(params.get("search_size", 0), "search_size", minimum=0),
-                    mode=params.get("mode"),
-                )
-            )
-            if owner:
-                stream_owners[owner_key] = owner
-            return result
-        if operation == "rtt.read":
-            return str(device.rtt_read(float(params.get("duration", 2.0))))
-        if operation == "rtt.write":
-            return bool(device.rtt_write(_text(params.get("data"), "data", allow_empty=True)))
-        if operation == "rtt.stop":
-            return str(device.rtt_stop())
-        if operation == "systemview.start":
-            result = _json_value(
-                device.systemview_start(
-                    params.get("addr"),
-                    channel=_integer(params.get("channel", 1), "channel"),
-                    search_size=_integer(params.get("search_size", 0), "search_size", minimum=0),
-                    mode=params.get("mode"),
-                )
-            )
-            if owner:
-                stream_owners[owner_key] = owner
-            return result
-        if operation == "systemview.read":
-            return _json_value(device.systemview_read(float(params.get("duration", 2.0))))
-        if operation == "systemview.stop":
-            device.systemview_stop()
-            return {"stopped": True}
-        if operation == "systemview.resolve_task_names":
-            task_ids = params.get("task_ids")
-            if not isinstance(task_ids, list):
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "task_ids"},
-                )
-            return _json_value(
-                device.systemview_resolve_task_names(
-                    [_integer(item, "task_ids") for item in task_ids[:256]]
-                )
-            )
-        if operation == "hardfault.check":
-            return _json_value(device.check_hardfault())
-        if operation == "hardfault.decode":
-            registers = params.get("fault_regs")
-            if registers is not None:
-                registers = dict(_mapping(registers, "fault_regs"))
-            return _json_value(device.decode_hardfault(registers))
-        raise MethodNotFoundError(data={"method": requested_operation})
-    finally:
-        if manager is not None and owner:
-            if release_owner:
-                manager.release(owner)
-            elif operation.endswith(".stop"):
-                manager.release(owner)
-                stream_owners.pop(owner_key, None)
-            elif operation.endswith(".start") and owner_key not in stream_owners:
-                manager.release(owner)
-
-
-def _dispatch_serial(
-    operation: str,
-    params: Mapping[str, Any],
-    context: AgentDispatchContext | None,
-    lock: threading.RLock,
-) -> Any:
-    if operation == "serial.list":
-        from mklink.serial import list_uart_ports
-
-        return list_uart_ports()
-    from mklink.serial import SerialPort
-
-    encoded = _text(params.get("data_b64"), "data_b64", allow_empty=True)
-    try:
-        data = base64.b64decode(encoded, validate=True)
-    except (ValueError, TypeError):
-        raise RequestValidationError(
-            "Invalid operation parameters",
-            data={"field": "data_b64"},
-        ) from None
-    timeout = min(max(float(params.get("timeout", 0.1)), 0.0), 5.0)
-    manager = context.resource_manager if context is not None else None
-    owner = f"ai:remote:serial:{uuid.uuid4().hex}"
-    with lock:
-        if manager is not None:
-            try:
-                manager.acquire(ResourceGroup.SERIAL_PORT, owner)
-            except ResourceError:
-                raise CapabilityUnavailableError(
-                    data={"capability": "serial", "reason": "resource-busy"},
-                ) from None
-        port = None
-        try:
-            port = SerialPort(
-                _text(params.get("port"), "port"),
-                baudrate=_integer(
-                    params.get("baudrate", 115200),
-                    "baudrate",
-                    minimum=1,
-                ),
-                timeout=timeout,
-            )
-            if not port.open():
-                raise CapabilityUnavailableError(
-                    data={"capability": "serial", "reason": "port-unavailable"},
-                )
-            port.write(data)
-            if timeout:
-                time.sleep(timeout)
-            return _bytes_result(port.read_available())
-        finally:
-            try:
-                if port is not None:
-                    port.close()
-            finally:
-                if manager is not None:
-                    manager.release(owner)
-
-
-def _dispatch_modbus(
-    operation: str,
-    params: Mapping[str, Any],
-    context: AgentDispatchContext | None,
-    lock: threading.RLock,
-) -> Any:
+def _dispatch_serial(operation, params, context, *, project_root, probe):
     import math
-
-    from mklink.modbus import ModbusClient, scan_slaves
-
-    manager = context.resource_manager if context is not None else None
-    owner = f"ai:remote:modbus:{uuid.uuid4().hex}"
-    with lock:
-        if manager is not None:
-            try:
-                manager.acquire(ResourceGroup.MODBUS_PORT, owner)
-            except ResourceError:
-                raise CapabilityUnavailableError(
-                    data={"capability": "modbus", "reason": "resource-busy"},
-                ) from None
-        client = None
+    from mklink.runtime import RuntimeClient, RuntimeErrorResponse
+    from mklink.uart_session import uart_session, require_serial_connection
+    from mklink.usb_interfaces import canonical_serial_port
+    name = f"Agent Serial {(context.client_id or 'local') if context else 'local'}"
+    if operation == 'serial.list':
+        client = RuntimeClient(project_root=project_root, kind='sdk', name=name)
         try:
-            port = _text(params.get("port"), "port")
-            if not port.strip():
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "port"},
-                )
-            baudrate = _integer(
-                params.get("baudrate", 9600),
-                "baudrate",
-                minimum=1,
-            )
-            if operation == "modbus.read":
-                raw_timeout = params.get("timeout", 1.0)
-                if isinstance(raw_timeout, bool):
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "timeout"},
-                    )
-                try:
-                    timeout = float(raw_timeout)
-                except (TypeError, ValueError):
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "timeout"},
-                    ) from None
-                if not math.isfinite(timeout):
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "timeout"},
-                    )
-                timeout = min(max(timeout, 0.05), 10.0)
-
-                kind = _text(params.get("kind"), "kind")
-                if kind != "holding":
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "kind"},
-                    )
-                address = _integer(params.get("address"), "address")
-                count = _integer(params.get("count", 1), "count", minimum=1)
-                slave = _integer(params.get("slave", 1), "slave", minimum=1)
-                if address > 0xFFFF:
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "address"},
-                    )
-                if count > 125 or address + count > 0x10000:
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "count"},
-                    )
-                if slave > 247:
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "slave"},
-                    )
-            else:
-                timeout = min(
-                    max(float(params.get("timeout", 1.0)), 0.05),
-                    10.0,
-                )
-
-            client = ModbusClient(
-                port,
-                baudrate=baudrate,
-                timeout=timeout,
-            )
-            if not client.open():
-                raise CapabilityUnavailableError(
-                    data={"capability": "modbus", "reason": "port-unavailable"},
-                )
-            if operation == "modbus.scan":
-                start = _integer(params.get("start", 1), "start", minimum=1)
-                end = _integer(params.get("end", 247), "end", minimum=start)
-                if end > 247:
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "end"},
-                    )
-                return scan_slaves(
-                    client,
-                    start_addr=start,
-                    end_addr=end,
-                    probe_register=_integer(params.get("address", 0), "address"),
-                )
-            if operation == "modbus.read":
-                return client.read_holding_registers(address, count, slave)
-            kind = _text(params.get("kind"), "kind")
-            address = _integer(params.get("address"), "address")
-            slave = _integer(params.get("slave", 1), "slave", minimum=1)
-            value = params.get("value")
-            if kind == "register":
-                client.write_register(address, _integer(value, "value"), slave)
-            elif kind == "registers" and isinstance(value, list):
-                client.write_registers(
-                    address,
-                    [_integer(item, "value") for item in value],
-                    slave,
-                )
-            elif kind == "coil":
-                if not isinstance(value, bool):
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "value"},
-                    )
-                client.write_coil(address, value, slave)
-            elif kind == "coils" and isinstance(value, list) and all(
-                isinstance(item, bool) for item in value
-            ):
-                client.write_coils(address, value, slave)
-            else:
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "kind"},
-                )
-            return {"written": True}
+            client.connect(scope='uart', probe=probe)
+            return client.call('uart_ports')
         finally:
+            client.close()
+    encoded = _text(params.get('data_b64'), 'data_b64', allow_empty=True)
+    try:
+        if len(encoded) > 5464:
+            raise ValueError('payload too large')
+        data = base64.b64decode(encoded, validate=True)
+        if len(data) > 4096:
+            raise ValueError('payload too large')
+    except (ValueError, TypeError):
+        raise RequestValidationError('Invalid operation parameters', data={'field': 'data_b64'}) from None
+    timeout = params.get('timeout', .1)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 <= timeout <= 5:
+        raise RequestValidationError('Invalid operation parameters', data={'field': 'timeout'})
+    port = _text(params.get('port'), 'port').strip()
+    if not port:
+        raise RequestValidationError('Invalid operation parameters', data={'field': 'port'})
+    baud = _integer(params.get('baudrate', 115200), 'baudrate', minimum=1)
+    if baud > 4000000:
+        raise RequestValidationError('Invalid operation parameters', data={'field': 'baudrate'})
+    connection = {'port': canonical_serial_port(port), 'baudrate': baud,
+                  'databits': 8, 'stopbits': 1, 'parity': 'N'}
+    try:
+        with uart_session('serial', {'ports': [connection]}, project_root=project_root,
+                          probe=probe, kind='sdk', name=name) as client:
+            require_serial_connection(client.call('serial_status'), connection)
+            result = client.call('serial_exchange', {'port': connection['port'],
+                                 'data': data.hex(), 'timeout': timeout})
+            return _bytes_result(bytes.fromhex(result['data']))
+    except RuntimeErrorResponse as error:
+        raise AgentOperationError('Shared serial exchange failed; write result may be unknown; do not retry automatically',
+                                  data={'capability': 'serial', 'status': error.status_code}) from None
+
+
+def _dispatch_modbus(operation, params, context, *, project_root, probe):
+    import math
+    from mklink.modbus._scanner import scan_slaves, validate_scan_range
+    from mklink.modbus._session import validate_slave, validate_transaction
+    from mklink.uart_session import modbus_session
+    from mklink.usb_interfaces import canonical_serial_port
+    from mklink.runtime import RuntimeErrorResponse
+
+    def invalid(field):
+        raise RequestValidationError("Invalid operation parameters", data={"field": field})
+
+    port = _text(params.get('port'), 'port').strip()
+    if not port:
+        invalid('port')
+    connection = {'port': canonical_serial_port(port),
+                  'baudrate': _integer(params.get('baudrate', 9600), 'baudrate', minimum=1),
+                  'bytesize': 8, 'parity': 'N', 'stopbits': 1}
+    # Omitted timing borrows the current worker unchanged. Explicit timing must match.
+    if 'timeout' in params:
+        value = params['timeout']
+        if isinstance(value, bool):
+            invalid('timeout')
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            invalid('timeout')
+        if not math.isfinite(value):
+            invalid('timeout')
+        connection['timeout'] = min(max(value, .05), 10.0)
+    address = _integer(params.get('address', 0) if operation == 'modbus.scan'
+                       else params.get('address'), 'address')
+    if address > 65535:
+        invalid('address')
+    if operation == 'modbus.scan':
+        start = _integer(params.get('start', 1), 'start', minimum=1)
+        end = _integer(params.get('end', 247), 'end', minimum=start)
+        try:
+            validate_scan_range(start, end, address)
+        except ValueError:
+            invalid('range')
+    else:
+        slave = _integer(params.get('slave', 1), 'slave', minimum=1)
+        try:
+            validate_slave(slave)
+        except ValueError:
+            invalid('slave')
+        kind = _text(params.get('kind'), 'kind')
+        transaction = {'slave': slave, 'start': address}
+        if operation == 'modbus.read':
+            if kind != 'holding':
+                invalid('kind')
+            count = _integer(params.get('count', 1), 'count', minimum=1)
             try:
-                if client is not None:
-                    client.close()
-            finally:
-                if manager is not None:
-                    manager.release(owner)
+                validate_transaction(3, address, quantity=count)
+            except ValueError:
+                invalid('count')
+            transaction.update(fc=3, quantity=count)
+        else:
+            fc = {'register': 6, 'registers': 16, 'coil': 5, 'coils': 15}.get(kind)
+            if fc is None:
+                invalid('kind')
+            value = params.get('value')
+            values = value if fc in (15, 16) else [value]
+            if not isinstance(values, list):
+                invalid('value')
+            if fc in (5, 15):
+                if any(type(item) is not bool for item in values):
+                    invalid('value')
+            else:
+                values = [_integer(item, 'value') for item in values]
+            try:
+                _, _, _, values = validate_transaction(fc, address, values=values)
+            except ValueError:
+                invalid('value')
+            transaction.update(fc=fc, values=values)
+    name = f"Agent Modbus {(context.client_id or 'local') if context else 'local'}"
+    try:
+        with modbus_session(connection, scan=operation == 'modbus.scan',
+                            project_root=project_root, probe=probe, kind='sdk', name=name) as client:
+            if operation == 'modbus.scan':
+                return scan_slaves(lambda slave, register: client.call('modbus_probe',
+                    {'slave': slave, 'address': register}), start_addr=start,
+                    end_addr=end, probe_register=address)
+            result = client.call('modbus_transaction', transaction)
+            return result['values'] if operation == 'modbus.read' else {'written': True}
+    except RuntimeErrorResponse as exc:
+        message = 'Shared Modbus request failed'
+        if operation == 'modbus.write':
+            message += '; write result may be unknown'
+        raise AgentOperationError(message + '; do not retry automatically',
+                                  data={'capability': 'modbus', 'status': exc.status_code}) from None
 
 
 __all__ = ["OperationDispatcher", "dispatch_capability"]

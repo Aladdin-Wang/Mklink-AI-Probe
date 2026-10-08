@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import html
 from typing import Any
+from mklink.systemview_analyzer import task_intervals
 
 
 _PALETTE = [
@@ -41,36 +42,12 @@ def _filter_continuous(intervals: list[dict]) -> list[dict]:
     return _filter_continuous(cand)  # 递归处理多个缺口
 
 
-def _t(e: dict) -> float:
-    if isinstance(e.get("t_us"), (int, float)):
-        return float(e["t_us"])
-    return float(e.get("t_ticks") or 0)
-
-
 def compute_intervals(events: list[dict]) -> list[dict]:
     """从事件流算出任务执行区间 [{tid, name, start, end}]。
 
     key 用 ``tid``（与 svTimeline.js 的 SvTimeline.setData 一致；Vue 侧也产出 tid）。
     """
-    pending: dict[int, float] = {}
-    names: dict[int, str] = {}
-    intervals: list[dict] = []
-    for e in events:
-        k = e.get("kind")
-        t = _t(e)
-        if k == "task_start_exec" and isinstance(e.get("task_id"), int):
-            pending[e["task_id"]] = t
-            if e.get("task_name"):
-                names[e["task_id"]] = e["task_name"]
-        elif k == "task_stop_exec" and isinstance(e.get("task_id"), int):
-            st = pending.pop(e["task_id"], None)
-            if st is not None and t >= st:
-                intervals.append({
-                    "tid": e["task_id"],
-                    "name": names.get(e["task_id"], f"0x{e['task_id']:X}"),
-                    "start": st, "end": t,
-                })
-    return intervals
+    return task_intervals(events)
 
 
 def generate_html_report(
@@ -94,9 +71,8 @@ def generate_html_report(
     from pathlib import Path
     sv_js_path = Path(__file__).parent.parent / "gui" / "src" / "lib" / "svTimeline.js"
     sv_js = sv_js_path.read_text(encoding="utf-8") if sv_js_path.exists() else ""
-    # 内联进经典 <script> 时去掉 ES module 的 export 关键字（否则 SyntaxError）。
-    # Vue 侧以 ESM import 使用，保留 export；这里只在报告里剥离。
-    sv_js = sv_js.replace("export class SvTimeline", "class SvTimeline")
+    # Keep the shared renderer as an inline ES module, including its exports.
+    # Rewriting only the class export breaks when helper exports are added.
     # <script> 内容是字面文本（HTML 实体不被解码），故不能用 html.escape；
     # 只把 < 转义成 < 防 </script> 注入，JSON.parse 能正常还原。
     intervals_json = json.dumps({"intervals": intervals, "unit": unit}).replace("<", "\\u003c")
@@ -107,7 +83,7 @@ def generate_html_report(
         ("事件", str(s.get("event_count", 0))),
         ("任务", str(s.get("task_count", 0))),
         ("切换", str(s.get("switch_count", 0))),
-        ("空闲率", f"{s.get('idle_pct', 0)}%"),
+        ("空闲率", '未知' if s.get('idle_pct') is None else f"{s['idle_pct']}%"),
         ("ISR 占用", f"{s.get('isr_cpu_pct', 0)}%"),
     ]
     if unit == "us":
@@ -224,7 +200,7 @@ th{{color:#5e5d59;font-weight:600;font-size:12px}}td{{color:#141413}}
 <div class="tl-canvas-wrap"><canvas id="sv-canvas"></canvas></div>
 <div class="tl-tip" id="sv-tip"></div>
 <script id="sv-data" type="application/json">{intervals_json}</script>
-<script>{sv_js}
+<script type="module">{sv_js}
 (function(){{try{{var d=JSON.parse(document.getElementById('sv-data').textContent);
 new SvTimeline({{canvas:document.getElementById('sv-canvas'),tooltip:document.getElementById('sv-tip'),
 legend:document.getElementById('sv-legend'),

@@ -44,3 +44,29 @@ def test_shared_hpm_id_rejects_cortex_named_register(monkeypatch):
     with pytest.raises(ValueError, match='HPM peripheral catalog'):
         Device.read_register(device, 'SCB.CFSR')
     device.read_memory.assert_not_called()
+
+@pytest.mark.parametrize('method,path,body', [
+    ('GET','/api/device/hardfault',None),
+    ('GET','/api/device/hardfault-detail',None),
+    ('POST','/api/device/hardfault-detail',{'fault_regs':{'SCB.CFSR':0,'SCB.HFSR':0}}),
+    ('POST','/api/device/hardfault-detail',{'fault_regs':{'SCB.CFSR':65536}}),
+])
+def test_hpm_fault_http_returns_actionable_rejection(monkeypatch,tmp_path,method,path,body):
+    from fastapi.testclient import TestClient
+    from mklink.remote.api import create_app
+    managers={name:SimpleNamespace(running=False) for name in ('rtt','superwatch','systemview','vofa','serial','modbus')}
+    monkeypatch.setattr('mklink.remote.dashboards.get_managers',lambda:managers)
+    app=create_app(project_root=str(tmp_path))
+    device=Device(project_root=str(tmp_path))
+    device._connected=True
+    device._bridge=SimpleNamespace(current_mcu='Unknown',idcode=0x1000563D)
+    device.read_memory=Mock()
+    device.halt=Mock()
+    device.close=Mock()
+    app.state.mklink_state['device']=device
+    with TestClient(app,raise_server_exceptions=False) as client:
+        response=client.request(method,path,json=body)
+        assert response.status_code==422,response.text
+        assert 'Cortex-M' in response.json()['detail']
+    device.read_memory.assert_not_called()
+    device.halt.assert_not_called()

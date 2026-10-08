@@ -52,29 +52,29 @@ impl SiteAgentConfig {
         stcp_credentials_configured: bool,
     ) -> Result<(), String> {
         if self.schema != CONFIG_SCHEMA {
-            return Err("Unsupported Site Agent configuration schema".into());
+            return Err("Unsupported Remote service configuration schema".into());
         }
         if self.transport != "direct" && self.transport != "lan-stcp" {
             return Err("Transport must be direct or lan-stcp".into());
         }
         if self.bind_host.trim() != self.bind_host || self.bind_host.is_empty() {
-            return Err("The Site Agent bind address is invalid".into());
+            return Err("The Remote service bind address is invalid".into());
         }
         let address: IpAddr = self
             .bind_host
             .parse()
-            .map_err(|_| "The Site Agent bind address must be a local IP address".to_string())?;
+            .map_err(|_| "The Remote service bind address must be a local IP address".to_string())?;
         if address.is_unspecified() || address.is_multicast() {
             return Err("Wildcard, unspecified, and multicast listeners are forbidden".into());
         }
         if self.port == 0 {
-            return Err("The Site Agent port must be in 1..65535".into());
+            return Err("The Remote service port must be in 1..65535".into());
         }
         if !self.enabled {
             return Ok(());
         }
         if !token_configured {
-            return Err("Generate a Site Agent access token before enabling the service".into());
+            return Err("Generate a Remote service access token before enabling the service".into());
         }
         if self.transport == "direct" {
             if !address.is_loopback() && !self.allow_lan {
@@ -83,7 +83,7 @@ impl SiteAgentConfig {
             return Ok(());
         }
         if !address.is_loopback() || self.allow_lan {
-            return Err("LAN STCP requires a loopback Site Agent listener".into());
+            return Err("LAN STCP requires a loopback Remote service listener".into());
         }
         if !stcp_credentials_configured {
             return Err("LAN STCP credentials are not configured".into());
@@ -117,7 +117,7 @@ pub fn path(root: &Path) -> PathBuf {
 }
 
 pub fn ensure_root(root: &Path) -> Result<(), String> {
-    fs::create_dir_all(root).map_err(|_| "Unable to create the Site Agent data directory".into())
+    fs::create_dir_all(root).map_err(|_| "Unable to create the Remote service data directory".into())
 }
 
 pub fn load(root: &Path) -> Result<SiteAgentConfig, String> {
@@ -126,8 +126,8 @@ pub fn load(root: &Path) -> Result<SiteAgentConfig, String> {
         return Ok(SiteAgentConfig::default());
     }
     let raw = fs::read_to_string(source)
-        .map_err(|_| "Unable to read the Site Agent configuration".to_string())?;
-    serde_json::from_str(&raw).map_err(|_| "The Site Agent configuration is invalid".to_string())
+        .map_err(|_| "Unable to read the Remote service configuration".to_string())?;
+    serde_json::from_str(&raw).map_err(|_| "The Remote service configuration is invalid".to_string())
 }
 
 pub fn save(root: &Path, config: &SiteAgentConfig) -> Result<(), String> {
@@ -135,9 +135,9 @@ pub fn save(root: &Path, config: &SiteAgentConfig) -> Result<(), String> {
     let destination = path(root);
     let temporary = destination.with_extension(format!("tmp-{}", std::process::id()));
     let payload = serde_json::to_vec_pretty(config)
-        .map_err(|_| "Unable to encode the Site Agent configuration".to_string())?;
+        .map_err(|_| "Unable to encode the Remote service configuration".to_string())?;
     fs::write(&temporary, payload)
-        .map_err(|_| "Unable to stage the Site Agent configuration".to_string())?;
+        .map_err(|_| "Unable to stage the Remote service configuration".to_string())?;
     replace_file(&temporary, &destination)
 }
 
@@ -162,7 +162,7 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     } == 0
     {
         let _ = fs::remove_file(source);
-        return Err("Unable to save the Site Agent configuration".into());
+        return Err("Unable to save the Remote service configuration".into());
     }
     Ok(())
 }
@@ -171,10 +171,10 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     if destination.exists() {
         fs::remove_file(destination)
-            .map_err(|_| "Unable to replace the Site Agent configuration".to_string())?;
+            .map_err(|_| "Unable to replace the Remote service configuration".to_string())?;
     }
     fs::rename(source, destination)
-        .map_err(|_| "Unable to save the Site Agent configuration".to_string())
+        .map_err(|_| "Unable to save the Remote service configuration".to_string())
 }
 
 #[cfg(test)]

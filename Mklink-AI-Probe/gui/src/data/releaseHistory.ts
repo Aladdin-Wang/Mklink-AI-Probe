@@ -9,6 +9,23 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.3.0', date: '2026-10-08',
+    summary: '共享连接、多通道 RTT 与高速采集',
+    summaryEn: 'Shared connections, multichannel RTT and high-speed capture',
+    changes: [
+      'GUI、AI、CLI、MCP 共享连接，支持多下载器独立运行与远程仪表盘。',
+      '配套 V3/V4 新固件支持八通道 RTT，与 SuperWatch 并行采集。',
+      '优化高速采样、波形缩放和调试共存，AI 可按需切换 GUI 展示调试结果。',
+      '修复 Web AXF 加载与多客户端启停，完善 HPM BIN/HEX 烧录。',
+    ],
+    changesEn: [
+      'Share connections across GUI, AI, CLI and MCP, with independent probes and a remote dashboard.',
+      'Companion V3/V4 firmware supports eight RTT channels alongside SuperWatch.',
+      'Improve high-speed sampling, plot zoom and debugger coexistence; AI can present results in the GUI on demand.',
+      'Fix Web AXF loading and shared start/stop; improve HPM BIN/HEX flashing.',
+    ],
+  },
+  {
     version: '0.2.3', date: '2026-10-03',
     summary: '优化 SuperWatch，完善烧录与采集稳定性',
     summaryEn: 'Improve SuperWatch, flashing and capture reliability',

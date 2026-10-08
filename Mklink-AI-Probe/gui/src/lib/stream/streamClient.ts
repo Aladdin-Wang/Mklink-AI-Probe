@@ -6,6 +6,7 @@ export interface StreamClientState {
   readonly phase: StreamClientPhase
   readonly reconnectDelayMs?: number
   readonly error?: string
+  readonly fatal?: boolean
 }
 
 export interface StreamClientOptions {
@@ -112,6 +113,10 @@ export class StreamClient {
       }
       options.onWorkerMessage?.(message)
     }
+    this.worker.onerror = () => {
+      this.dispose()
+      this.emitState({ phase: 'error', fatal: true, error: 'Stream worker failed; reload this view' })
+    }
     this.worker.postMessage({
       type: 'configure',
       capacity: options.capacity,
@@ -146,6 +151,10 @@ export class StreamClient {
     this.emitState({ phase: 'stopped' })
   }
 
+  selectSerialPort(port: string): void {
+    if (!this.disposed) this.worker.postMessage({ type: 'serial-port', port } satisfies WorkerInput)
+  }
+
   reset(): void {
     if (this.disposed) return
     this.worker.postMessage({ type: 'reset' } satisfies WorkerInput)
@@ -162,6 +171,12 @@ export class StreamClient {
     } satisfies WorkerInput)
   }
 
+  resizeWaveform(capacity: number, requestId?: number): void {
+    if (this.disposed) return
+    requirePositiveInteger('capacity', capacity)
+    this.worker.postMessage({ type: 'waveform-capacity', capacity, requestId } satisfies WorkerInput)
+  }
+
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void {
     if (this.disposed) return
     this.worker.postMessage({
@@ -174,6 +189,11 @@ export class StreamClient {
     this.worker.postMessage({ type: 'waveform-detail', enabled } satisfies WorkerInput)
   }
 
+  setWaveformFrozen(frozen: boolean): void {
+    if (this.disposed) return
+    this.worker.postMessage({ type: 'waveform-freeze', frozen } satisfies WorkerInput)
+  }
+
   requestHistorySnapshot(requestId: number): void {
     if (this.disposed) return
     this.worker.postMessage({ type: 'history-snapshot', requestId } satisfies WorkerInput)
@@ -184,6 +204,7 @@ export class StreamClient {
     this.stop()
     this.disposed = true
     this.worker.onmessage = null
+    this.worker.onerror = null
     this.worker.terminate()
   }
 

@@ -4,15 +4,9 @@ Extends the existing DeviceDispatcher with a proper REST API for configuration,
 device discovery, and lifecycle management. Keeps WebSocket JSON-RPC for
 low-level device operations.
 
-Usage (CLI)::
-
-    mklink serve --port 8765 --token my-secret --backend fastapi
-
-Usage (Python)::
-
-    from mklink.remote.api import create_app, run_server
-    app = create_app()
-    run_server(app, port=8765)
+Internal application factory installed by mklink.runtime. Start the shared
+backend using ``mklink gui`` or ``mklink runtime start``; LAN operations use
+the Remote Service page or the standalone Agent.
 """
 
 from __future__ import annotations
@@ -36,14 +30,22 @@ import time
 from typing import Annotated, Any
 import weakref
 
-from mklink.symbol_catalog import SymbolCatalogError
+from mklink.symbol_catalog import SymbolCatalogError, SymbolSourceChangedError
 
 logger = logging.getLogger(__name__)
 
 _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
 _FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
-_YMODEM_UPLOAD_LIMIT = 32 * 1024 * 1024
-_YMODEM_FILENAME_LIMIT = 31
+
+
+async def read_bounded_body(request, limit: int, detail: str) -> bytes:
+    """Accept raw chunks without invoking multipart parsing or disk spooling."""
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > limit:
+            raise HTTPException(413, detail)
+        content.extend(chunk)
+    return bytes(content)
 
 
 class BrowserSessionLease:
@@ -282,6 +284,9 @@ class DashboardStopPending(Exception):
 
 
 def _dashboard_worker_alive(manager) -> bool:
+    workers = getattr(manager, "worker_alive", None)
+    if workers is not None:
+        return bool(workers)
     thread = getattr(manager, "_thread", None)
     if thread is not None:
         return bool(thread.is_alive())
@@ -425,11 +430,11 @@ def target_debug_lease(state: dict[str, Any], operation: str):
         nested = bool(stack and stack[-1][0] is manager)
         lease_owner = stack[-1][1] if nested else owner
         if not nested:
-            manager.acquire(
-                ResourceGroup.TARGET_DEBUG,
+            manager.acquire_many(
+                _target_resources(operation),
                 owner,
-                preempt=True,
-                preempt_user_dashboard=True,
+                preempt=not state.get("shared_runtime", False),
+                preempt_user_dashboard=not state.get("shared_runtime", False),
             )
         stack.append((manager, lease_owner, not nested))
         try:
@@ -482,11 +487,11 @@ async def async_target_debug_lease(state: dict[str, Any], operation: str):
         acquired_async_lock = True
     _NATIVE_TARGET_COORDINATOR.acquire()
     try:
-        manager.acquire(
-            ResourceGroup.TARGET_DEBUG,
+        manager.acquire_many(
+            _target_resources(operation),
             owner,
-            preempt=True,
-            preempt_user_dashboard=True,
+            preempt=not state.get("shared_runtime", False),
+            preempt_user_dashboard=not state.get("shared_runtime", False),
         )
     except Exception:
         _NATIVE_TARGET_COORDINATOR.release()
@@ -505,35 +510,69 @@ async def async_target_debug_lease(state: dict[str, Any], operation: str):
             async_lock.release()
 
 
+def _multiplex_device(state):
+    bridge = getattr(state.get('device'), '_bridge', None)
+    support = getattr(bridge, 'supports_multiplex', None)
+    return callable(support) and support() is True
+
+
+def _target_resources(operation):
+    from mklink.remote.resource_manager import ResourceGroup
+    resources = [ResourceGroup.TARGET_DEBUG]
+    from mklink.runtime_capabilities import MUX_MEMORY_CAPABILITIES
+    if operation.replace('-', '_') not in MUX_MEMORY_CAPABILITIES:
+        resources += [ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH]
+    return resources
+
+
 def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[str]:
     """Lease a stream without implicitly stopping another user's capture."""
     from mklink.remote.resource_manager import ResourceGroup
 
     owner = f"user:dashboard:{dashboard}"
     manager = state["resource_manager"]
+    multiplex = dashboard in ('rtt', 'superwatch') and _multiplex_device(state)
+    resources = {
+        "rtt": [ResourceGroup.MUX_RTT] if multiplex else [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH],
+        "superwatch": [ResourceGroup.MUX_WATCH] if multiplex else [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH],
+        "serial": [ResourceGroup.SERIAL_PORT],
+        "modbus": [ResourceGroup.MODBUS_PORT],
+    }.get(dashboard, [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH])
     manager.acquire_many(
-        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+        resources,
         owner,
         preempt=True,
     )
     return []
 
 
-def _dashboard_start_lock(state: dict[str, Any]) -> asyncio.Lock:
-    lock = state.get("_dashboard_start_lock")
+def _dashboard_start_lock(state: dict[str, Any], dashboard: str | None = None) -> asyncio.Lock:
+    # CDC dashboards share a bridge; UART managers own independent ports.
+    group = dashboard if dashboard in ('serial', 'modbus') else 'bridge'
+    locks = state.setdefault('_dashboard_start_locks', {})
+    lock = locks.get(group)
     if lock is None:
         lock = asyncio.Lock()
-        state["_dashboard_start_lock"] = lock
+        locks[group] = lock
     return lock
 
 
 async def start_dashboard_manager(
     state: dict[str, Any], dashboard: str, manager, start_call
 ) -> tuple[str, list[str]]:
-    async with _dashboard_start_lock(state):
-        return await _start_dashboard_manager_transaction(
+    async with _dashboard_start_lock(state, dashboard):
+        from mklink.runtime_api import active_operation
+        shared = active_operation.get()
+        if shared and shared[1]:
+            shared[0].validate_session(shared[1], target=dashboard not in ('serial', 'modbus'))
+            if manager.running:
+                raise HTTPException(409, 'Acquisition already runs; subscribe without reconfiguring it')
+        result = await _start_dashboard_manager_transaction(
             state, dashboard, manager, start_call,
         )
+        if shared and result[0] == 'started':
+            shared[0].acquisition_started(dashboard, shared[1])
+        return result
 
 
 async def _start_dashboard_manager_transaction(
@@ -665,10 +704,16 @@ async def stop_dashboard_manager_transaction(
     state: dict[str, Any], dashboard: str, manager,
 ) -> None:
     """Serialize stop with start and keep blocking joins off the event loop."""
-    async with _dashboard_start_lock(state):
+    async with _dashboard_start_lock(state, dashboard):
+        from mklink.runtime_api import active_operation
+        shared = active_operation.get()
+        if shared:
+            shared[0].require_acquisition_control(dashboard, shared[1])
         await asyncio.to_thread(
             stop_dashboard_manager, state, dashboard, manager,
         )
+        if shared:
+            shared[0].acquisition_stopped(dashboard)
 
 # Eager-import FastAPI types so that typing.get_type_hints() can resolve
 # annotations in closures (e.g. the /ws handler).  The module can still be
@@ -679,7 +724,69 @@ try:
         HTTPException, Query, Body, Request, File, UploadFile,
     )
     from fastapi.middleware.cors import CORSMiddleware  # noqa: F401
-    from pydantic import BaseModel, StrictInt         # noqa: F401
+    from pydantic import BaseModel, Field, StrictInt, StrictBool  # noqa: F401
+
+    class ModbusTransactionRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        fc: StrictInt
+        start: StrictInt | None = None
+        quantity: StrictInt | None = None
+        values: list[StrictInt | StrictBool] | None = None
+        slave: StrictInt | None = None
+        and_mask: StrictInt | None = None
+        or_mask: StrictInt | None = None
+        write_start: StrictInt | None = None
+
+    class SerialSequenceCommand(BaseModel):
+        model_config = {'extra': 'forbid'}
+        data: str
+        hex: StrictBool = False
+
+    class SerialSequenceRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str
+        commands: list[SerialSequenceCommand]
+        interval_ms: StrictInt = 1000
+        repeat: StrictInt = 1
+
+    class SerialYModemFileRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str
+        path: str = Field(min_length=1, max_length=4096)
+
+    class SerialExchangeRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str = Field(min_length=1, max_length=255)
+        data: str = Field(max_length=8192)
+        timeout: float = Field(default=.1, ge=0, le=5, strict=True, allow_inf_nan=False)
+
+    class SerialFileRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str
+        path: str
+        hex: StrictBool = False
+
+    class SerialSequenceStopRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str
+
+    class SerialRecordingRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        path: str
+        format: str = 'txt'
+        max_size: StrictInt = 0
+        ports: list[str] | None = None
+
+    class StreamHistoryRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        session: str | None = None
+        after: StrictInt | None = None
+        limit: StrictInt = 256
+
+    class ModbusProbeRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        slave: StrictInt
+        address: StrictInt = 0
 except ImportError:
     pass
 
@@ -727,7 +834,7 @@ def create_app(
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel, StrictInt
 
-    from mklink.remote.server import DeviceDispatcher, make_response, make_error
+    from mklink.remote.device_rpc import DeviceDispatcher, make_response, make_error
     from mklink.project_config import (
         load_config, save_config, check_project_config, format_config_status,
         load_project_info, load_rtt_config, save_rtt_config, save_project_info,
@@ -763,9 +870,8 @@ def create_app(
     _state["resource_manager"].on_preempt(
         lambda lease, _new_owner: release_resource_owner(_state, lease.owner)
     )
-    # Expose shared state on the app so out-of-closure callers (e.g.
-    # run_server(auto_connect=True)) can populate it without rebuilding the
-    # closure. Route handlers keep using the same ``_state`` dict directly.
+    # The runtime installs lifecycle and admission hooks on this shared state.
+    # Route handlers keep using the same ``_state`` dict directly.
     app.state.mklink_state = _state
 
     browser_sessions = (
@@ -814,46 +920,18 @@ def create_app(
         EmbeddedSiteAgentController,
     )
 
-    def reconnect_shared_device(config):
-        """Reconnect the one GUI-owned device for a remote lifecycle request."""
-        import mklink
-
-        previous = _state.get("last_device_connection") or {}
-        port = config.device_port or previous.get("port")
-        axf = config.axf or previous.get("axf")
-        mcu = previous.get("mcu")
-        elf_backend = previous.get("elf_backend")
-        with target_debug_lease(_state, "site-agent-reconnect"):
-            current = _state.get("device")
-            if current is not None:
-                remember_device_connection(_state, current, mcu=mcu)
-                current.close()
-                _state["device"] = None
-                _state["dispatcher"] = None
-            device = mklink.connect(
-                port=port,
-                axf=axf,
-                mcu=mcu,
-                project_root=_state["project_root"],
-                elf_backend=elf_backend,
-            )
-            _state["device"] = device
-            _state["dispatcher"] = DeviceDispatcher(device)
-            remember_device_connection(_state, device, mcu=mcu)
-            return device
-
     site_agent = EmbeddedSiteAgentController(
         EmbeddedAgentSettings.from_environment(),
         project_root=project_root,
-        resource_manager=_state["resource_manager"],
-        device_getter=lambda: _state.get("device"),
-        device_reconnector=reconnect_shared_device,
     )
     app.state.site_agent = site_agent
 
     async def startup_site_agent() -> None:
         site_agent.project_root = _state["project_root"]
-        await site_agent.start()
+        try:
+            await site_agent.start()
+        except Exception:
+            await site_agent.stop()  # Listener failure must not kill the local backend.
 
     async def shutdown_site_agent() -> None:
         await site_agent.stop()
@@ -888,6 +966,9 @@ def create_app(
     )
     if callable(rtt_terminal_setter):
         rtt_terminal_setter(stream_registry["rtt-terminal"])
+    channel_setter = getattr(dashboard_managers["rtt"], "set_channel_stream_hubs", None)
+    if callable(channel_setter):
+        channel_setter(stream_registry)
     app.include_router(stream_api.create_stream_router(
         stream_registry, stream_types, auth_token,
     ))
@@ -903,6 +984,9 @@ def create_app(
         *,
         error_status: int = 500,
     ) -> dict:
+        runtime = getattr(app.state, 'shared_runtime', None)
+        if runtime is not None:
+            runtime.require_symbol_change()
         device = _state.get("device")
         if not device or not device.connected:
             raise HTTPException(status_code=400, detail="Device not connected")
@@ -956,6 +1040,8 @@ def create_app(
         prepare_connect=lambda request: prepare_online_flash_connect(_state, request),
     )
     app.state.online_flash = online_flash
+    from mklink.remote.debug_api import create_debug_router
+    app.include_router(create_debug_router(_state, async_target_debug_lease))
     app.include_router(online_flash_api.create_online_flash_router(online_flash))
     from mklink.remote import offline_download_api
     app.include_router(
@@ -1006,17 +1092,28 @@ def create_app(
             _state["file_source_change"] = None
         project = load_project_info(_state["project_root"]) or {}
         changed = await run_in_threadpool(source_monitor.changed, device, project)
-        if not changed or device is not _state.get("device"):
+        pending = dict(source_monitor.pending)
+        if not pending or device is not _state.get("device"):
             return
-        event = {"sequence": time.time_ns(), "files": [Path(path).name for path in changed]}
-        _state["file_source_change"] = event
-        try:
+        previous = _state['file_source_change'] or {}
+        # A failed parse is not retried every second against identical content.
+        # New content or a newly selected device permits another attempt.
+        if not changed and previous.get('state') == 'failed':
+            return
+        event = {'sequence': previous.get('sequence', time.time_ns()),
+                 'files': [Path(path).name for path in pending], 'pending': True}
+
+        async def reload_sources():
+            event['state'] = 'reloading'
             async with _exclusive_probe_control("reload-file-sources") as (active, stopped):
                 if active is not device:
                     return
                 event["stopped"] = stopped
                 if getattr(device, "_axf", None):
-                    await _reparse_active_symbols()
+                    catalog = getattr(device, 'symbol_catalog', None)
+                    # An explicit GUI parse may already have loaded the new content.
+                    if catalog is None or await run_in_threadpool(catalog.is_stale):
+                        await _reparse_active_symbols()
                 from mklink.project_config import ensure_rtt_config_updated
                 rtt = await run_in_threadpool(
                     ensure_rtt_config_updated, _state["project_root"],
@@ -1024,9 +1121,28 @@ def create_app(
                 )
                 event["rtt_addr"] = (rtt or {}).get("rtt_addr")
                 event["message"] = "AXF/MAP 内容已变化并重载；采集已停止，请确认目标固件后重新启动"
+                source_monitor.acknowledge(device, pending)
+                event.update(pending=False, state='applied')
+
+        try:
+            runtime = getattr(app.state, 'shared_runtime', None)
+            if runtime is not None:
+                await runtime.run_operation('reload-file-sources', reload_sources, configuration=True)
+            else:
+                await reload_sources()
+        except HTTPException as error:
+            if error.status_code != 409 or event.get('state') == 'reloading':
+                event.update(state='failed', error=str(error.detail))
+            else:
+                event.update(state='deferred', message='符号文件已变化，等待停止采集、结束客户端会话及当前任务后重载')
         except Exception as error:
-            event["error"] = str(error)
+            event.update(state='failed', error=str(error))
             logger.warning("File source reload failed: %s", error)
+        if device is not _state.get('device'):
+            return
+        if changed or previous.get('state') != event.get('state'):
+            event['sequence'] = time.time_ns()
+        _state['file_source_change'] = event
 
     app.state.check_file_sources = check_file_sources
 
@@ -1100,6 +1216,8 @@ def create_app(
         return JSONResponse(status_code=409, content={"detail": error.detail})
 
     async def dispatch_rpc(dispatcher, method: str, params: dict, req_id):
+        if _state.get("shared_runtime") and method not in {"idcode", "mcu_name"}:
+            return make_error(-32009, "Use shared runtime capabilities for hardware operations", req_id)
         loop = asyncio.get_event_loop()
         if method not in _TARGET_DEBUG_RPC_METHODS:
             return await loop.run_in_executor(
@@ -1144,19 +1262,6 @@ def create_app(
     @app.get("/api/project-root")
     async def get_project_root():
         return {"project_root": _state["project_root"]}
-
-    @app.put("/api/project-root")
-    async def set_project_root(path: str = Body(..., embed=True)):
-        import os
-        p = os.path.abspath(path)
-        if not os.path.isdir(p):
-            raise HTTPException(status_code=400, detail=f"目录不存在: {p}")
-        _state["project_root"] = p
-        if site_agent.settings.enabled and site_agent.project_root != p:
-            await site_agent.stop()
-            site_agent.project_root = p
-            await site_agent.start()
-        return {"project_root": p}
 
     @app.get("/api/project-root/browse")
     async def browse_project_root(path: str = ""):
@@ -1203,7 +1308,14 @@ def create_app(
 
     @app.get("/api/config")
     async def get_config():
-        config = load_config(_state["project_root"])
+        config = load_config(_state["project_root"]) or {}
+        if _state.get("shared_runtime"):
+            from mklink.probes import select_probe
+            from mklink.runtime import RuntimeErrorResponse
+            try:
+                config["com_port"] = select_probe(_state.get("shared_probe_id"))["port"]
+            except RuntimeErrorResponse:
+                config["com_port"] = ""
         return config or {}
 
     @app.put("/api/config")
@@ -1307,6 +1419,13 @@ def create_app(
             load_rtt_config, load_keil_project,
         )
         from mklink.rtt_addr import diagnose_rtt_addr
+
+        if not source_path:
+            device = _state.get("device")
+            if device is not None and device.connected:
+                active_symbols = device.axf_status
+                if active_symbols.get("loaded"):
+                    source_path = active_symbols.get("axf_path")
 
         if source_path:
             result = await asyncio.to_thread(diagnose_rtt_addr, source_path)
@@ -1444,30 +1563,38 @@ def create_app(
 
     @app.post("/api/mcu-detect")
     async def mcu_detect(body: dict = Body(default={})):
-        """Detect/create an MCU profile and resolve/copy its FLM file."""
-        from mklink.mcu_detect import detect_mcu_profile
+        """Inspect catalog algorithms without changing profiles or copying files."""
+        from mklink.mcu_detect import inspect_mcu
 
         loop = asyncio.get_event_loop()
         project_root = _state["project_root"]
         device = body.get("device")
         flm = body.get("flm")
         port = body.get("port")
-        write_profile = bool(body.get("write_profile", True))
-        copy_flm = bool(body.get("copy_flm", True))
+        if set(body) - {'device', 'flm', 'port', 'read_idcode'}:
+            raise HTTPException(422, 'MCU inspection is read-only; use shared deployment for file copies')
         read_idcode = bool(body.get("read_idcode", bool(port)))
+        shared_reader = None
+        if read_idcode and _state.get('shared_runtime'):
+            from mklink.probes import select_probe
+            from mklink.runtime_probe import _query
+            selected = select_probe(_state['shared_probe_id'])
+            if port and str(port).casefold() != selected['port'].casefold():
+                raise HTTPException(409, 'MCU discovery port does not match this backend probe')
+            shared_reader = lambda _port: _query(_state, 'probe_idcode')['idcode']
 
         def _detect():
-            return detect_mcu_profile(
+            return inspect_mcu(
                 project_root=project_root,
                 device=device,
                 flm=flm,
                 port=port,
-                write_profile=write_profile,
-                copy_flm=copy_flm,
                 read_idcode=read_idcode,
+                idcode_reader=shared_reader,
+                paths=online_flash.paths,
             )
 
-        if port and read_idcode:
+        if port and read_idcode and not _state.get('shared_runtime'):
             async with async_target_debug_lease(_state, "mcu-detect"):
                 return await loop.run_in_executor(None, _detect)
         return await loop.run_in_executor(None, _detect)
@@ -1479,10 +1606,63 @@ def create_app(
     @app.get("/api/ports")
     async def list_ports():
         from mklink.discovery import list_available_ports
+        if _state.get("shared_runtime"):
+            from mklink.probes import inventory
+            return [{**probe, "device": probe["port"], "manufacturer": "MicroKeen",
+                     "vid": 0x0D28, "pid": 0x0202} for probe in inventory()]
         return list_available_ports()
+
+    @app.get("/api/ports/uart")
+    async def list_uart_ports():
+        from mklink.serial._port import list_uart_ports as enumerate_uart
+        return await run_in_threadpool(enumerate_uart)
+
+    @app.post("/api/runtime/alias")
+    async def runtime_alias(body: dict):
+        from mklink.probes import set_alias
+        from mklink.runtime import RuntimeErrorResponse
+        if not isinstance(body.get("probe"), str) or not isinstance(body.get("alias"), str):
+            raise HTTPException(422, "probe and alias must be strings")
+        try:
+            return await run_in_threadpool(set_alias, body["probe"], body["alias"])
+        except RuntimeErrorResponse as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/runtime/select")
+    async def runtime_select(body: dict):
+        if not _state.get("shared_runtime"):
+            return {"same_runtime": True}
+        from mklink.probes import select_probe
+        from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime, connect_gui_target
+        selector = body.get("probe") or body.get("port")
+        if "connect" in body and not isinstance(body["connect"], dict):
+            raise HTTPException(422, "connect must be an object")
+        if selector is not None and not isinstance(selector, str):
+            raise HTTPException(422, "probe must be a string")
+        if not selector and _state.get("shared_probe_id") != "lobby":
+            return {"same_runtime": True}
+        try:
+            selected = select_probe(selector)
+            if selected["probe_id"] == _state.get("shared_probe_id") and not body.get("open_browser"):
+                return {"same_runtime": True}
+            target = await run_in_threadpool(ensure_runtime, project_root=_state["project_root"], probe=selected["probe_id"])
+            if "connect" in body:
+                await run_in_threadpool(connect_gui_target, target, body["connect"])
+            if body.get("open_browser") is True:
+                import webbrowser
+                await run_in_threadpool(webbrowser.open, browser_url(target))
+                return {"opened": True, "probe_id": selected["probe_id"]}
+            return {"same_runtime": False, "probe_id": selected["probe_id"], "runtime_url": browser_url(target)}
+        except RuntimeErrorResponse as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/ports/discover")
     async def discover_mklink_port():
+        if _state.get("shared_runtime"):
+            from mklink.probes import inventory
+            candidates = inventory()
+            return {"port": candidates[0]["port"] if len(candidates) == 1 else None,
+                    "selection_required": len(candidates) > 1}
         from mklink.discovery import find_mklink_cdc_port
         loop = asyncio.get_running_loop()
         port = await loop.run_in_executor(None, find_mklink_cdc_port)
@@ -1500,8 +1680,8 @@ def create_app(
     @app.get("/api/microkeen")
     async def get_microkeen_info():
         from mklink.discovery import find_microkeen_disk, get_microkeen_flm_path
-        disk = find_microkeen_disk()
-        flm_dir = get_microkeen_flm_path()
+        disk = await run_in_threadpool(find_microkeen_disk)
+        flm_dir = await run_in_threadpool(get_microkeen_flm_path)
         return {
             "disk_path": disk,
             "flm_dir": flm_dir,
@@ -1521,6 +1701,12 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"无法保存上传文件到工作区 {_state['project_root']}：{exc}。"
+                       "请检查目录权限和剩余空间；Web 快捷入口请更新后重新打开。",
+            ) from exc
         finally:
             await file.close()
 
@@ -1574,6 +1760,28 @@ def create_app(
         elf_backend: str | None = Body(default=None),
         restore_last: bool = Body(default=False),
     ):
+        runtime = getattr(app.state, "shared_runtime", None)
+        if runtime is not None:
+            from mklink.probes import select_probe
+            from mklink.runtime import RuntimeErrorResponse
+            try:
+                selected = select_probe(port or _state["shared_probe_id"])
+                if selected["probe_id"] != _state["shared_probe_id"]:
+                    raise RuntimeErrorResponse("Select this probe in its own runtime window before connecting")
+                port = selected["port"]
+                # The resolved port stays authoritative; only non-port settings may be restored.
+            except RuntimeErrorResponse as exc:
+                raise HTTPException(409, str(exc)) from exc
+            runtime.prune()
+            current = _state.get("device")
+            if current and current.connected:
+                restore_last = False  # Reuse live symbols; never reparse on an implicit reconnect.
+            if current and runtime.target_sessions and not current.connected:
+                raise HTTPException(409, 'Detach stale clients before explicitly reconnecting the probe')
+            if current and current.connected and current.port.casefold() != port.casefold():
+                raise HTTPException(409, 'Probe port changed; release the old connection first')
+            if runtime.target_sessions and current and current.connected and any(value is not None for value in (axf, mcu, elf_backend)):
+                raise HTTPException(status_code=409, detail="Detach shared clients before changing device configuration or symbols")
         preferred_port = None
         if restore_last:
             previous = _state.get("last_device_connection") or {}
@@ -1718,10 +1926,11 @@ def create_app(
             if dev is not None and getattr(dev, "port", None):
                 port = dev.port
             root = _fc._resolve_firmware_root()
-            loop = asyncio.get_event_loop()
-            check = await loop.run_in_executor(
-                None, _fc.check_probe_firmware, port, root
-            )
+            if _state.get('shared_runtime'):
+                from mklink.runtime_probe import check_firmware
+                check = await run_in_threadpool(check_firmware, _state, root)
+            else:
+                check = await run_in_threadpool(_fc.check_probe_firmware, port, root)
             return check.to_dict()
         except Exception as e:
             return {"status": "skipped", "error": str(e)}
@@ -1853,17 +2062,13 @@ def create_app(
         async with _exclusive_probe_control("reload-symbol-source"):
             return await _reparse_active_symbols(axf, elf_backend)
 
-    class FlashRequest(BaseModel):
-        firmware: str
-        verify: bool = True
-        reset_after: bool = True
-
     @app.post("/api/device/flash")
-    async def flash_device(
-        firmware: str = Body(...),
-        verify: bool = Body(default=True),
-        reset_after: bool = Body(default=True),
-    ):
+    async def flash_device(body: dict = Body(...)):
+        from mklink.flash_request import validate_flash_request
+        try:
+            arguments = validate_flash_request(body)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         async with _exclusive_probe_control("flash") as (device, _stopped):
@@ -1871,13 +2076,21 @@ def create_app(
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
                     None,
-                    lambda: device.flash(
-                        firmware, verify=verify, reset_after=reset_after
-                    ),
+                    lambda: device.flash(**arguments),
                 )
                 return result
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/device/security")
+    async def security_operation(body: dict = Body(...)):
+        if not _state.get('shared_runtime'):
+            raise HTTPException(409, 'Security requires the shared runtime job API')
+        from mklink.security_operations import start_security_operation
+        from mklink.probes import select_probe
+        selected = select_probe(_state['shared_probe_id'])
+        return await online_flash_api._blocking(
+            start_security_operation, online_flash, body, probe_id=selected['serial_number'])
 
     @app.post("/api/device/reset")
     async def reset_device():
@@ -1886,7 +2099,7 @@ def create_app(
         return {"status": "ok", "stopped": stopped}
 
     @app.post("/api/device/debug-speed")
-    async def set_debug_speed(profile: str = Body(..., embed=True)):
+    async def set_debug_speed(profile: str = Body(..., embed=True), save: bool = Body(True, strict=True)):
         from mklink.debug_speed import profile_clock
         try:
             profile_clock(profile)
@@ -1894,10 +2107,11 @@ def create_app(
                 result = await run_in_threadpool(device.set_debug_speed, profile)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-        config = load_config(_state["project_root"]) or {}
-        config["debug_speed"] = profile
-        save_config(_state["project_root"], config)
-        return {**result, "stopped": stopped}
+        if save:
+            config = load_config(_state["project_root"]) or {}
+            config["debug_speed"] = profile
+            save_config(_state["project_root"], config)
+        return {**result, "stopped": stopped, "saved": save}
 
     @app.get("/api/device/debug-speed")
     async def get_debug_speed():
@@ -1915,22 +2129,29 @@ def create_app(
     async def _exclusive_probe_control(operation: str):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        from mklink.remote.dashboards import stop_bridge_dashboards
+        from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES, stop_bridge_dashboards
 
         async with _dashboard_start_lock(_state):
-            try:
-                stopped = await run_in_threadpool(
-                    stop_bridge_dashboards,
-                    resource_manager=_state["resource_manager"],
-                )
-            except Exception as error:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "DASHBOARD_STOP_FAILED",
-                        "message": str(error),
-                    },
-                ) from error
+            if _state.get("shared_runtime"):
+                active = [name for name in BRIDGE_DASHBOARD_TYPES
+                          if _dashboard_worker_alive(get_managers().get(name))]
+                if active:
+                    raise HTTPException(409, {"busy": active, "hint": "Stop acquisition explicitly before changing probe configuration"})
+                stopped = []
+            else:
+                try:
+                    stopped = await run_in_threadpool(
+                        stop_bridge_dashboards,
+                        resource_manager=_state["resource_manager"],
+                    )
+                except Exception as error:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "DASHBOARD_STOP_FAILED",
+                            "message": str(error),
+                        },
+                    ) from error
             async with async_target_debug_lease(_state, operation):
                 yield _state["device"], stopped
 
@@ -1969,39 +2190,69 @@ def create_app(
                 _state["dispatcher"] = None
         return {"status": "rebooted", "connected": False, "stopped": stopped}
 
-    @app.post("/api/device/erase")
-    async def erase_device():
+    async def _erase_device(body, *, sector=False):
+        from mklink.native_erase import validate_erase_request
+        from mklink.device import DeviceError
+        try:
+            arguments = validate_erase_request(body, sector=sector)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "erase"):
+        async with _exclusive_probe_control("erase") as (device, _stopped):
             try:
-                ok = _state["device"].erase_chip()
+                if sector:
+                    address = arguments.pop('address')
+                    ok = await run_in_threadpool(device.erase_sector, address, **arguments)
+                else:
+                    ok = await run_in_threadpool(device.erase_chip, **arguments)
                 return {"success": ok}
+            except (ValueError, DeviceError) as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/device/erase")
+    async def erase_device(body: dict = Body(default={})):
+        return await _erase_device(body)
+
+    @app.post("/api/device/erase-sector")
+    async def erase_sector_device(body: dict = Body(...)):
+        return await _erase_device(body, sector=True)
 
     @app.post("/api/device/halt")
     async def halt_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "halt"):
-            s = _state["device"].halt()
+        async with async_target_debug_lease(_state, "halt"):
+            s = await run_in_threadpool(_state["device"].halt)
         return {"halted": s.halted}
 
     @app.post("/api/device/resume")
     async def resume_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "resume"):
-            s = _state["device"].resume()
+        async with async_target_debug_lease(_state, "resume"):
+            s = await run_in_threadpool(_state["device"].resume)
+        return {"halted": s.halted}
+
+    @app.post("/api/device/step")
+    async def step_device():
+        if not _state["device"] or not _state["device"].connected:
+            raise HTTPException(status_code=400, detail="Device not connected")
+        async with async_target_debug_lease(_state, "step"):
+            s = await run_in_threadpool(_state["device"].step)
         return {"halted": s.halted}
 
     @app.get("/api/device/hardfault")
     async def check_hardfault():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "hardfault"):
-            return _state["device"].check_hardfault()
+        async with async_target_debug_lease(_state, "hardfault"):
+            try:
+                return await run_in_threadpool(_state["device"].check_hardfault)
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
 
     # ===================================================================
     # WebSocket — JSON-RPC (reuses DeviceDispatcher)
@@ -2092,7 +2343,9 @@ def create_app(
             n for n in BRIDGE_DASHBOARD_TYPES
             if n != type and managers.get(n) and managers[n].running
         ]
-        return {"conflicts": running, "running": running}
+        from mklink.runtime_capabilities import multiplex_enabled
+        conflicts = [name for name in running if not (multiplex_enabled(_state) and {type, name} <= {'rtt', 'superwatch'})]
+        return {"conflicts": conflicts, "running": running}
 
     @app.get("/api/dash/rtt/stream")
     async def rtt_sse_stream():
@@ -2112,12 +2365,16 @@ def create_app(
     async def rtt_start(
         addr: str | None = Body(default=None),
         channel: Annotated[StrictInt, Body()] = 0,
+        channels: list[StrictInt] | None = Body(default=None),
         mode: Annotated[StrictInt, Body()] = 0,
         search_size: Annotated[StrictInt, Body()] = 0,
         encoding: str = Body(default="utf-8"),
     ):
         from mklink.remote.dashboards import normalize_rtt_encoding
 
+        if channels is not None and (not channels or len(channels) > 8 or len(set(channels)) != len(channels)
+                                     or any(c < 0 or c > 7 for c in channels) or channel not in channels):
+            raise HTTPException(422, "channels must be unique 0..7 and include the primary channel")
         if mode not in (0, 1):
             raise HTTPException(
                 status_code=400,
@@ -2163,15 +2420,16 @@ def create_app(
                 mode=mode,
                 search_size=search_size,
                 encoding=encoding,
+                channels=channels,
             ),
         )
         return {"status": status, "stopped": stopped}
 
     @app.post("/api/dash/rtt/encoding")
-    async def rtt_encoding(encoding: str = Body(..., embed=True)):
+    async def rtt_encoding(encoding: str = Body(..., embed=True), channel: int | None = Body(None, ge=0, le=7)):
         managers = get_managers()
         try:
-            selected = managers["rtt"].set_encoding(encoding)
+            selected = managers["rtt"].set_encoding(encoding, channel=channel) if channel is not None else managers["rtt"].set_encoding(encoding)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"encoding": selected}
@@ -2187,6 +2445,7 @@ def create_app(
     @app.post("/api/dash/rtt/write")
     async def rtt_write(
         data_hex: str = Body(..., embed=True),
+        channel: StrictInt | None = Body(default=None),
     ):
         if len(data_hex) > 65536 * 2:
             raise HTTPException(
@@ -2205,7 +2464,7 @@ def create_app(
         data = bytes.fromhex(data_hex)
         managers = get_managers()
         try:
-            sent_bytes = await asyncio.to_thread(managers["rtt"].write, data)
+            sent_bytes = await asyncio.to_thread(managers["rtt"].write, data, channel=channel)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"sent_bytes": sent_bytes}
@@ -2226,6 +2485,13 @@ def create_app(
     async def rtt_status():
         managers = get_managers()
         return {**managers["rtt"].get_status(), "file_source_change": _state["file_source_change"]}
+
+    @app.get("/api/dash/rtt/channels/read")
+    async def rtt_read_channel(channel: int = 0, cursor: int = 0, session: str | None = None):
+        try:
+            return get_managers()["rtt"].read_channel(channel, cursor, session)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/dash/rtt/history")
     async def rtt_history():
@@ -2340,6 +2606,18 @@ def create_app(
     async def systemview_history():
         managers = get_managers()
         return {"points": managers["systemview"].get_history()}
+
+    @app.get("/api/dash/systemview/history/cursor")
+    async def systemview_history_cursor(
+        session: str | None = Query(None), after: int | None = Query(None, ge=0),
+        limit: int = Query(500, ge=1, le=500),
+    ):
+        try:
+            return get_managers()["systemview"].read_history(session, after, limit)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/dash/systemview/logs")
     async def systemview_logs():
@@ -2462,8 +2740,8 @@ def create_app(
             raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
 
     @app.get("/api/dash/superwatch/peripherals")
-    async def superwatch_peripherals():
-        return await run_in_threadpool(get_managers()["superwatch"].peripheral_catalog)
+    async def superwatch_peripherals(q: str = ""):
+        return await run_in_threadpool(get_managers()["superwatch"].peripheral_catalog, q)
 
     _svd_targets = {}
     _svd_target_lock = asyncio.Lock()
@@ -2480,16 +2758,17 @@ def create_app(
         return {"targets": matches[:200], "total": len(matches)}
 
     @app.post("/api/dash/superwatch/peripherals/select")
-    async def peripheral_select(target_id: str = Body(..., embed=True)):
+    async def peripheral_select(target_id: str | None = Body(None), chip: str | None = Body(None),
+                                svd: str | None = Body(None)):
         device = _state.get("device")
         if not device or not device.connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        target = _svd_targets.get(target_id)
-        if target is None:
-            raise HTTPException(status_code=404, detail="Select a chip from the installed Pack list")
+        if sum(bool(value) for value in (target_id, chip, svd)) != 1:
+            raise HTTPException(422, "Select exactly one target_id, chip or SVD")
         try:
             async with _dashboard_start_lock(_state):
-                return await run_in_threadpool(get_managers()["superwatch"].select_peripherals, device, target)
+                return await run_in_threadpool(get_managers()["superwatch"].select_peripherals, device,
+                                              target_id=target_id, chip=chip, svd=svd)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
@@ -2639,6 +2918,10 @@ def create_app(
         managers = get_managers()
         return await run_in_threadpool(managers["superwatch"].get_status)
 
+    @app.get("/api/dash/superwatch/latest")
+    async def superwatch_latest():
+        return await run_in_threadpool(get_managers()["superwatch"].get_latest_sample)
+
     # ===================================================================
     # Integrated Dashboard SSE — Serial Monitor
     # ===================================================================
@@ -2663,6 +2946,8 @@ def create_app(
         databits: int = Body(default=8),
         stopbits: int = Body(default=1),
         parity: str = Body(default="N"),
+        profile: dict | None = Body(default=None),
+        auto_reply_rules: list[dict] | None = Body(default=None),
     ):
         """Start serial monitoring on one or more ports.
 
@@ -2671,14 +2956,6 @@ def create_app(
         """
         managers = get_managers()
         sm = managers["serial"]
-        if sm.running:
-            _state["resource_manager"].acquire(
-                ResourceGroup.SERIAL_PORT,
-                "user:dashboard:serial",
-                preempt=True,
-            )
-            return {"status": "already_running"}
-
         # Normalize port configs
         port_configs = []
         for p in ports:
@@ -2699,33 +2976,30 @@ def create_app(
         if not port_configs:
             raise HTTPException(status_code=400, detail="No ports specified")
 
-        rm = _state["resource_manager"]
-        owner = "user:dashboard:serial"
         try:
-            rm.acquire(ResourceGroup.SERIAL_PORT, owner, preempt=True)
-        except Exception as e:
-            resource = getattr(e, "resource", ResourceGroup.SERIAL_PORT)
-            conflict_owner = getattr(e, "conflict_owner", str(e))
-            raise HTTPException(
-                status_code=409,
-                detail={"conflict": conflict_owner, "resource": resource.value},
+            from mklink.serial._profile import validate_profile
+            from mklink.serial._autoreply import normalize_rules
+            if profile is not None:
+                errors = validate_profile(profile)
+                if errors:
+                    raise ValueError('; '.join(errors))
+            rules = normalize_rules(auto_reply_rules or [])
+            status, _ = await start_dashboard_manager(
+                _state, "serial", sm, lambda: sm.start(port_configs, profile=profile, auto_reply_rules=rules),
             )
-
-        loop = asyncio.get_event_loop()
-        try:
-            await loop.run_in_executor(None, lambda: sm.start(port_configs))
-        except Exception:
-            release_resource_owner(_state, owner, stop_active=True)
-            raise
-        return {"status": "started"}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"status": status}
 
     @app.post("/api/dash/serial/stop")
     async def serial_stop():
-        result = release_resource_owner(_state, "user:dashboard:serial")
-        return {"status": "stopped", **result}
+        await stop_dashboard_manager_transaction(_state, "serial", get_managers()["serial"])
+        return {"status": "stopped"}
 
     @app.post("/api/dash/serial/send")
-    async def serial_send(
+    def serial_send(
         port: str = Body(...),
         data: str = Body(...),
         hex: bool = Body(default=False),
@@ -2734,7 +3008,7 @@ def create_app(
         sm = managers["serial"]
         if not sm.running:
             raise HTTPException(status_code=400, detail="Serial monitor not running")
-        if sm.get_ymodem_status()["active"]:
+        if sm.ymodem_owns_port(port):
             raise HTTPException(
                 status_code=409,
                 detail="Serial input is locked by an active YMODEM transfer",
@@ -2749,80 +3023,144 @@ def create_app(
         success = sm.send(port, data_bytes)
         if success:
             return {"ok": True}
-        if sm.get_ymodem_status()["active"]:
+        if sm.ymodem_owns_port(port):
             raise HTTPException(
                 status_code=409,
                 detail="Serial input is locked by an active YMODEM transfer",
             )
         raise HTTPException(status_code=500, detail=f"Failed to send to {port}")
 
-    @app.post("/api/dash/serial/ymodem/start")
-    async def serial_ymodem_start(
-        port: str = Query(...),
-        file: UploadFile = File(...),
-    ):
-        """Upload one bounded file and transfer it over the already-open port."""
-        managers = get_managers()
-        sm = managers["serial"]
+    @app.post('/api/dash/serial/exchange')
+    async def serial_exchange(body: SerialExchangeRequest):
         try:
-            if not sm.running:
-                raise HTTPException(status_code=400, detail="Serial monitor not running")
-            if sm.get_ymodem_status()["active"]:
-                raise HTTPException(
-                    status_code=409,
-                    detail="a YMODEM transfer is already active",
-                )
-            filename = str(file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
-            if not filename:
-                raise HTTPException(status_code=400, detail="YMODEM filename is required")
-            if any(ord(character) < 0x20 or ord(character) == 0x7F for character in filename):
-                raise HTTPException(
-                    status_code=400,
-                    detail="YMODEM filename contains control characters",
-                )
-            content = await file.read(_YMODEM_UPLOAD_LIMIT + 1)
-        finally:
-            await file.close()
-        if not content:
-            raise HTTPException(status_code=400, detail="YMODEM file is empty")
-        if len(content) > _YMODEM_UPLOAD_LIMIT:
-            raise HTTPException(
-                status_code=413,
-                detail="YMODEM file exceeds the 32 MiB upload limit",
-            )
-        filename_size = len(filename.encode("utf-8"))
-        if filename_size > _YMODEM_FILENAME_LIMIT:
-            raise HTTPException(
-                status_code=400,
-                detail="YMODEM filename exceeds the safe 31-byte limit",
-            )
-        header_size = filename_size + 1 + len(str(len(content))) + 1
-        if header_size > 128:
-            raise HTTPException(
-                status_code=400,
-                detail="YMODEM filename is too long for the protocol header",
-            )
-        try:
-            return sm.start_ymodem(port, content, filename)
+            data = bytes.fromhex(body.data)
+            result = await asyncio.to_thread(get_managers()['serial'].exchange,
+                                             body.port, data, body.timeout)
+            return {'data': result.hex(), 'bytes': len(result)}
         except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error))
+            raise HTTPException(400, str(error)) from error
+        except (OSError, BufferError) as error:
+            raise HTTPException(502, f'{error}; write result may be unknown, no retry') from error
         except RuntimeError as error:
-            raise HTTPException(status_code=409, detail=str(error))
+            raise HTTPException(409, str(error)) from error
+
+    @app.post("/api/dash/serial/ymodem/start")
+    async def serial_ymodem_start(request: Request, port: str = Query(...), filename: str = Query(...)):
+        """Receive one bounded raw file before starting the shared transfer."""
+        from mklink.serial._ymodem import YMODEM_FILE_LIMIT, validate_transfer
+        if request.headers.get('content-type', '').split(';', 1)[0].strip().lower() != 'application/octet-stream':
+            raise HTTPException(415, 'YMODEM requires an application/octet-stream file body')
+        sm = get_managers()['serial']
+        if not sm.running:
+            raise HTTPException(400, 'Serial monitor not running')
+        if (await run_in_threadpool(sm.get_ymodem_status))['active']:
+            raise HTTPException(409, 'a YMODEM transfer is already active')
+        content = await read_bounded_body(request, YMODEM_FILE_LIMIT,
+                                          'YMODEM file exceeds the 32 MiB upload limit')
+        try:
+            filename = validate_transfer(filename, len(content))
+            return await run_in_threadpool(sm.start_ymodem, port, content, filename)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/ymodem/file')
+    async def serial_ymodem_file(body: SerialYModemFileRequest):
+        from mklink.serial._ymodem import YModemFileTooLarge
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].start_ymodem_file, body.port, body.path)
+        except YModemFileTooLarge as error:
+            raise HTTPException(413, str(error)) from error
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
 
     @app.get("/api/dash/serial/ymodem/status")
-    async def serial_ymodem_status():
+    def serial_ymodem_status():
         return get_managers()["serial"].get_ymodem_status()
 
     @app.get("/api/dash/serial/ymodem/trace")
-    async def serial_ymodem_trace(after: int = 0, limit: int = 128):
+    def serial_ymodem_trace(after: int = 0, limit: int = 128):
         return get_managers()["serial"].get_ymodem_trace(after, limit)
 
     @app.post("/api/dash/serial/ymodem/cancel")
-    async def serial_ymodem_cancel():
+    def serial_ymodem_cancel():
         return get_managers()["serial"].cancel_ymodem()
 
+    @app.post('/api/dash/serial/history')
+    async def serial_history(body: StreamHistoryRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].get_history, **body.model_dump())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/broadcast')
+    async def serial_broadcast(body: SerialSequenceCommand):
+        try:
+            data = bytes.fromhex(body.data) if body.hex else body.data.encode('utf-8')
+            return await asyncio.to_thread(get_managers()['serial'].send_all, data)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/file')
+    async def serial_file(body: SerialFileRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].send_file, **body.model_dump())
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/file/upload')
+    async def serial_file_upload(request: Request, port: str = Query(...), hex: bool = Query(False)):
+        from mklink.serial._sequence import SERIAL_FILE_INPUT_BYTES
+        content = await read_bounded_body(request, SERIAL_FILE_INPUT_BYTES, 'Input file exceeds 256 KiB')
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].start_file_data, port, content, hex)
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/sequence/start')
+    async def serial_sequence_start(body: SerialSequenceRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].start_sequence, **body.model_dump())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/sequence/stop')
+    async def serial_sequence_stop(body: SerialSequenceStopRequest):
+        return await asyncio.to_thread(get_managers()['serial'].stop_sequence, body.port)
+
+    @app.post('/api/dash/serial/recording/start')
+    async def serial_recording_start(body: SerialRecordingRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].start_recording, **body.model_dump())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except (RuntimeError, FileExistsError) as error:
+            raise HTTPException(409, str(error)) from error
+        except OSError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post('/api/dash/serial/recording/stop')
+    async def serial_recording_stop():
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].stop_recording)
+        except (RuntimeError, TimeoutError) as error:
+            raise HTTPException(409, str(error)) from error
+
     @app.get("/api/dash/serial/status")
-    async def serial_status():
+    def serial_status():
         managers = get_managers()
         return managers["serial"].get_status()
 
@@ -2859,107 +3197,27 @@ def create_app(
     ):
         managers = get_managers()
         mm = managers["modbus"]
-        if mm.running:
-            _state["resource_manager"].acquire(
-                ResourceGroup.MODBUS_PORT,
-                "user:dashboard:modbus",
-                preempt=True,
-            )
-            return {"status": "already_running"}
-
-        rm = _state["resource_manager"]
-        owner = "user:dashboard:modbus"
+        connection = {
+            "port": port, "baudrate": baudrate, "bytesize": bytesize,
+            "parity": parity, "stopbits": stopbits, "timeout": timeout,
+            "retries": retries, "local_echo": local_echo,
+        }
         try:
-            rm.acquire(ResourceGroup.MODBUS_PORT, owner, preempt=True)
-        except Exception as e:
-            resource = getattr(e, "resource", ResourceGroup.MODBUS_PORT)
-            conflict_owner = getattr(e, "conflict_owner", str(e))
-            raise HTTPException(
-                status_code=409,
-                detail={"conflict": conflict_owner, "resource": resource.value},
+            status, _ = await start_dashboard_manager(
+                _state, "modbus", mm, lambda: mm.start(connection, slave, registers, interval),
             )
-
-        try:
-            port = str(port).strip()
-            parity = str(parity).strip().upper()
-            if not port:
-                raise ValueError("Serial port is required")
-            if isinstance(slave, bool) or not 1 <= int(slave) <= 247:
-                raise ValueError("Slave address must be in the range 1..247")
-            if isinstance(baudrate, bool) or not 300 <= int(baudrate) <= 4000000:
-                raise ValueError("Baud rate must be in the range 300..4000000")
-            if bytesize not in (7, 8):
-                raise ValueError("Data bits must be 7 or 8")
-            if parity not in ("N", "E", "O"):
-                raise ValueError("Parity must be N, E or O")
-            if stopbits not in (1, 2):
-                raise ValueError("Stop bits must be 1 or 2")
-            if not 0.05 <= float(timeout) <= 10.0:
-                raise ValueError("Timeout must be in the range 0.05..10 seconds")
-            if isinstance(retries, bool) or not 0 <= int(retries) <= 5:
-                raise ValueError("Retries must be in the range 0..5")
-            if not 0.02 <= float(interval) <= 3600.0:
-                raise ValueError("Polling interval must be in the range 0.02..3600 seconds")
-            from mklink.modbus._client import ModbusClient
-            client = ModbusClient(
-                port=port,
-                baudrate=int(baudrate),
-                bytesize=int(bytesize),
-                parity=parity,
-                stopbits=int(stopbits),
-                timeout=float(timeout),
-                retries=int(retries),
-                handle_local_echo=bool(local_echo),
-                trace_packet=mm.trace_packet,
-            )
-            if not client.open():
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "conflict": f"serial port {port} is busy or unavailable",
-                        "resource": ResourceGroup.MODBUS_PORT.value,
-                    },
-                )
-        except HTTPException:
-            release_resource_owner(_state, owner, stop_active=False)
-            raise
-        except ValueError as e:
-            release_resource_owner(_state, owner, stop_active=False)
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            release_resource_owner(_state, owner, stop_active=False)
-            raise HTTPException(status_code=500, detail=f"Modbus connect failed: {e}")
-
-        loop = asyncio.get_event_loop()
-        try:
-            await loop.run_in_executor(
-                None,
-                lambda: mm.start(
-                    client,
-                    int(slave),
-                    registers,
-                    float(interval),
-                    {
-                        "port": port,
-                        "baudrate": int(baudrate),
-                        "bytesize": int(bytesize),
-                        "parity": parity,
-                        "stopbits": int(stopbits),
-                        "timeout": float(timeout),
-                        "retries": int(retries),
-                        "local_echo": bool(local_echo),
-                    },
-                ),
-            )
-        except Exception:
-            release_resource_owner(_state, owner, stop_active=True)
-            raise
-        return {"status": "started"}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=409, detail={
+                "conflict": str(exc), "resource": ResourceGroup.MODBUS_PORT.value,
+            }) from exc
+        return {"status": status}
 
     @app.post("/api/dash/modbus/stop")
     async def modbus_stop():
-        result = release_resource_owner(_state, "user:dashboard:modbus")
-        return {"status": "stopped", **result}
+        await stop_dashboard_manager_transaction(_state, "modbus", get_managers()["modbus"])
+        return {"status": "stopped"}
 
     @app.post("/api/dash/modbus/write")
     async def modbus_write(
@@ -2998,13 +3256,26 @@ def create_app(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post('/api/dash/modbus/history')
+    async def modbus_history(body: StreamHistoryRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['modbus'].get_history, **body.model_dump())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/modbus/probe')
+    async def modbus_probe(body: ModbusProbeRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['modbus'].probe_slave, body.slave, body.address)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except Exception as error:
+            raise HTTPException(502, str(error)) from error
+
     @app.post("/api/dash/modbus/transaction")
-    async def modbus_transaction(
-        fc: int = Body(...),
-        start: int = Body(...),
-        quantity: int | None = Body(default=None),
-        values: list[int | bool] | None = Body(default=None),
-    ):
+    async def modbus_transaction(body: ModbusTransactionRequest):
         mm = get_managers()["modbus"]
         if not mm.running:
             raise HTTPException(status_code=400, detail="Modbus not connected")
@@ -3012,9 +3283,7 @@ def create_app(
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(
                 None,
-                lambda: mm.transaction(
-                    fc, start, quantity=quantity, values=values
-                ),
+                lambda: mm.transaction(**body.model_dump()),
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
@@ -3022,7 +3291,7 @@ def create_app(
             raise HTTPException(status_code=502, detail=str(error))
 
     @app.post("/api/dash/modbus/loop/start")
-    async def modbus_loop_start(
+    def modbus_loop_start(
         fc: int = Body(...),
         start: int = Body(...),
         quantity: int | None = Body(default=None),
@@ -3034,12 +3303,6 @@ def create_app(
         if not mm.running:
             raise HTTPException(status_code=400, detail="Modbus not connected")
         try:
-            # Validate before starting the background loop so callers get an
-            # immediate 400 response instead of a delayed SSE error.
-            from mklink.modbus._session import validate_transaction
-            validate_transaction(
-                fc, start, quantity=quantity, values=values
-            )
             return mm.start_loop(
                 fc,
                 start,
@@ -3055,15 +3318,19 @@ def create_app(
 
     @app.post("/api/dash/modbus/loop/stop")
     async def modbus_loop_stop():
-        return get_managers()["modbus"].stop_loop()
+        try:
+            return await asyncio.to_thread(get_managers()["modbus"].stop_loop)
+        except TimeoutError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/dash/modbus/status")
     async def modbus_status():
         managers = get_managers()
-        return managers["modbus"].get_status()
+        # Startup/stop holds the manager's lifecycle lock in an I/O thread.
+        return await asyncio.to_thread(managers["modbus"].get_status)
 
     # ===================================================================
-    # Integrated Dashboard SSE — VOFA+ JustFloat
+    # Integrated Dashboard — shared VOFA waveform
     # ===================================================================
 
     @app.get("/api/dash/vofa/stream")
@@ -3084,9 +3351,9 @@ def create_app(
         channels: list[dict] | None = Body(default=None),
         interval: float = Body(default=0.1),
     ):
-        """Start VOFA JustFloat streaming.
+        """Start a shared dump-memory waveform producer.
 
-        channels: list of {name, addr, type?, size?} dicts.
+        channels: catalog {path, name?, type?} or raw {addr, type?, size?, name?}.
         addr can be hex string or int. type defaults to "float", size to 4.
         """
         if not _state["device"] or not _state["device"].connected:
@@ -3098,32 +3365,43 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         managers = get_managers()
         vm = managers["vofa"]
-        if not channels:
-            channels = list(getattr(vm, "_channels", []) or [])
+        if channels is None:
+            channels = list(getattr(vm, "_channel_specs", []) or [])
         if not channels:
             raise HTTPException(
                 status_code=400,
                 detail="VOFA channels are required before starting",
             )
-        from mklink.vofa_viewer import normalize_vofa_channels
+        from mklink.vofa_viewer import resolve_vofa_channels, validate_vofa_groups
+        from mklink.symbol_catalog import SymbolSourceChangedError
+        requested_channels = channels
         try:
-            channels = normalize_vofa_channels(channels)
+            channels = resolve_vofa_channels(_state["device"], channels)
+            validate_vofa_groups(channels, interval)
+        except SymbolSourceChangedError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        status, stopped = await start_dashboard_manager(
-            _state,
-            "vofa",
-            vm,
-            lambda: vm.start(_state["device"], channels, interval),
-        )
+        try:
+            status, stopped = await start_dashboard_manager(
+                _state, "vofa", vm,
+                lambda: vm.start(_state["device"], requested_channels, interval),
+            )
+        except SymbolSourceChangedError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except (RuntimeError, OSError) as exc:
+            raise HTTPException(500, str(exc)) from exc
         return {"status": status, "stopped": stopped, "channels": channels}
 
     @app.post("/api/dash/vofa/stop")
     async def vofa_stop():
         managers = get_managers()
-        await stop_dashboard_manager_transaction(
-            _state, "vofa", managers["vofa"],
-        )
+        try:
+            await stop_dashboard_manager_transaction(_state, "vofa", managers["vofa"])
+        except (RuntimeError, OSError) as exc:
+            raise HTTPException(500, str(exc)) from exc
         return {"status": "stopped"}
 
     @app.post("/api/dash/vofa/pause")
@@ -3142,6 +3420,11 @@ def create_app(
     async def vofa_status():
         managers = get_managers()
         return managers["vofa"].get_status()
+
+    @app.get("/api/dash/vofa/history")
+    async def vofa_history():
+        manager = get_managers()['vofa']
+        return {'points': manager.get_history(), **manager.get_status()}
 
     @app.post("/api/dash/vofa/interval")
     async def vofa_interval(interval: float = Body(..., embed=True)):
@@ -3184,6 +3467,7 @@ def create_app(
     async def write_memory(
         address: str = Body(...),
         data_hex: str = Body(...),
+        verify: bool = Body(default=False),
     ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
@@ -3195,7 +3479,11 @@ def create_app(
                 await loop.run_in_executor(
                     None, lambda: _state["device"].write_memory(addr, data)
                 )
-                return {"status": "ok", "address": hex(addr), "bytes_written": len(data)}
+                result = {"status": "ok", "address": hex(addr), "bytes_written": len(data)}
+                if verify:
+                    actual = await loop.run_in_executor(None, lambda: _state["device"].read_memory(addr, len(data)))
+                    result['verified'] = actual == data
+                return result
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -3210,6 +3498,10 @@ def create_app(
                     None, lambda: _state["device"].read_variable(name)
                 )
                 return {"name": name, "value": value}
+            except SymbolSourceChangedError as e:
+                raise HTTPException(status_code=409, detail=str(e)) from e
+            except SymbolCatalogError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -3227,6 +3519,10 @@ def create_app(
                     None, lambda: _state["device"].write_variable(name, value)
                 )
                 return {"status": "ok", "name": name, "value": value}
+            except SymbolSourceChangedError as e:
+                raise HTTPException(status_code=409, detail=str(e)) from e
+            except SymbolCatalogError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -3310,14 +3606,18 @@ def create_app(
                 raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/device/hardfault-detail")
-    async def hardfault_detail():
+    @app.post("/api/device/hardfault-detail")
+    async def hardfault_detail(fault_regs: dict | None = Body(None, embed=True)):
+        if fault_regs is not None and any(not isinstance(k, str) or type(v) is not int or not 0 <= v <= 0xFFFFFFFF for k, v in fault_regs.items()):
+            raise HTTPException(status_code=422, detail="Fault registers must be unsigned 32-bit integers")
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         async with async_target_debug_lease(_state, "hardfault-detail"):
             try:
                 loop = asyncio.get_event_loop()
                 report = await loop.run_in_executor(
-                    None, _state["device"].decode_hardfault
+                    None, lambda: (_state["device"].decode_hardfault() if fault_regs is None
+                                   else _state["device"].decode_hardfault(fault_regs))
                 )
                 if report is None:
                     return {"fault": None, "summary": "No HardFault detected"}
@@ -3336,6 +3636,8 @@ def create_app(
                     "call_stack": report.call_stack,
                     "core_registers": report.core_registers,
                 }
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -3502,6 +3804,7 @@ def create_app(
         payload = {
             "status": "ok",
             "device_connected": dev.connected if dev else False,
+            "shared_runtime": bool(_state.get("shared_runtime")),
             **elf_status(project_root=_state["project_root"]),
         }
         backend_port = _state.get("backend_port")
@@ -3532,7 +3835,7 @@ def create_app(
     # Static frontend (Vue 3 dist) — catch-all, lowest priority
     # Registered AFTER all /api/* and /ws routes so they take precedence.
     # ===================================================================
-    # AI Session Management
+    # Resource management and browser-owned server lifecycle
     # ===================================================================
 
     @app.get("/api/resources/status")
@@ -3633,60 +3936,12 @@ def create_app(
         finally:
             browser_sessions.release(client_id)
 
-    @app.post("/api/session/acquire")
-    async def session_acquire(
-        session_id: str = Body(...),
-        resources: list[str] = Body(default=["mklink_bridge"]),
-        ttl: float = Body(default=60.0),
-    ):
-        """AI agent acquires resource lease(s)."""
-        from mklink.remote.resource_manager import ResourceGroup, ResourceError as RErr
-        rm = _state["resource_manager"]
-        group_map = {
-            "mklink_bridge": ResourceGroup.MKLINK_BRIDGE,
-            "target_debug": ResourceGroup.TARGET_DEBUG,
-            "serial_port": ResourceGroup.SERIAL_PORT,
-            "modbus_port": ResourceGroup.MODBUS_PORT,
-        }
-        owner = f"ai:session:{session_id}"
-        requested = [(name, group_map[name]) for name in resources if name in group_map]
-        try:
-            rm.acquire_many(
-                [group for _name, group in requested],
-                owner,
-                ttl=ttl,
-                preempt=False,
-            )
-            return {
-                "status": "acquired",
-                "owner": owner,
-                "resources": [name for name, _group in requested],
-            }
-        except RErr as e:
-            raise HTTPException(
-                status_code=409,
-                detail={"conflict": e.conflict_owner, "resource": e.resource.value},
-            )
-
-    @app.post("/api/session/release")
-    async def session_release(session_id: str = Body(...)):
-        """AI agent releases its lease(s)."""
-        rm = _state["resource_manager"]
-        released = rm.release(f"ai:session:{session_id}")
-        return {"status": "released", "resources": [r.value for r in released]}
-
-    @app.get("/api/session/status")
-    async def session_status():
-        """Current resource allocation status."""
-        rm = _state["resource_manager"]
-        return rm.get_status()
-
     # ===================================================================
 
     from fastapi.responses import FileResponse
     from pathlib import Path as _Path
 
-    _gui_dist = _Path(__file__).resolve().parent.parent.parent / "gui" / "dist"
+    _gui_dist = _Path(os.environ["MKLINK_GUI_DIST"]).resolve() if os.environ.get("MKLINK_GUI_DIST") else _Path(__file__).resolve().parent.parent.parent / "gui" / "dist"
 
     if _gui_dist.is_dir():
         import mimetypes
@@ -3751,147 +4006,3 @@ def create_app(
             )
 
     return app
-
-
-def run_server(
-    app=None,
-    *,
-    host: str = "127.0.0.1",
-    port: int = 8765,
-    auth_token: str | None = None,
-    device_port: str | None = None,
-    axf: str | None = None,
-    project_root: str = ".",
-    auto_connect: bool = False,
-    desktop_port_end: int | None = None,
-    desktop_runtime_info: str | None = None,
-    desktop_instance_id: str | None = None,
-):
-    """Start the FastAPI server.
-
-    Args:
-        app: Pre-created FastAPI app (created if not provided).
-        host: Bind address.
-        port: Bind port.
-        auth_token: Required token for authentication.
-        device_port: MKLink COM port (auto-detect if None).
-        axf: AXF/ELF file for symbol resolution.
-        project_root: Project root for .mklink/ config lookup.
-        auto_connect: Automatically connect to device on startup.
-        desktop_port_end: Last packaged-desktop fallback port.
-        desktop_runtime_info: Atomic runtime endpoint handshake file.
-        desktop_instance_id: Owning Tauri instance identifier.
-    """
-    import uvicorn
-
-    if app is None:
-        app = create_app(
-            auth_token=auth_token,
-            project_root=project_root,
-            desktop_instance_id=desktop_instance_id,
-            backend_port=port,
-        )
-
-    def set_backend_port(value: int) -> None:
-        state = getattr(app.state, "mklink_state", None)
-        if isinstance(state, dict):
-            state["backend_port"] = value
-
-    if auto_connect:
-        import mklink
-        from mklink.remote.resource_manager import ResourceManager
-
-        mks = getattr(app.state, "mklink_state", None)
-        if mks is None:
-            mks = {
-                "device": None,
-                "dispatcher": None,
-                "last_device_connection": None,
-                "resource_manager": ResourceManager(),
-            }
-            app.state.mklink_state = mks
-        elif "resource_manager" not in mks:
-            mks["resource_manager"] = ResourceManager()
-        try:
-            with target_debug_lease(mks, "auto-connect"):
-                device = mklink.connect(
-                    port=device_port,
-                    axf=axf,
-                    project_root=project_root,
-                )
-            # mklink.connect() now initializes idcode/MCU inside Device._connect,
-            # so device.idcode is valid here. Store the device in the app's shared
-            # state so the API endpoints actually serve it (previously this
-            # connected then orphaned the device via a dead loop).
-            from mklink.remote.server import DeviceDispatcher
-            mks["device"] = device
-            mks["dispatcher"] = DeviceDispatcher(device)
-            remember_device_connection(mks, device)
-            logger.info("Auto-connected device: MCU=%s IDCODE=0x%08X",
-                        device.mcu_name, device.idcode)
-        except Exception as e:
-            logger.warning("Auto-connect failed: %s", e)
-
-    from mklink.observe_bridge import configure_stream_observation
-
-    mklink_state = getattr(app.state, "mklink_state", {})
-    observation_token = (
-        auth_token
-        if auth_token is not None
-        else mklink_state.get("auth_token")
-    )
-    observation_correlation = (
-        desktop_instance_id
-        or mklink_state.get("desktop_instance_id")
-    )
-
-    # SansIO avoids legacy concurrent-drain failures between heartbeat and
-    # binary sends under backpressure. Keep heartbeat liveness checks enabled.
-    # Binary sample streams are already compact. Per-client deflate can block
-    # fanout at high sample rates and overflow otherwise healthy consumers.
-    if desktop_port_end is None:
-        configure_stream_observation(
-            app,
-            host=host,
-            port=port,
-            auth_token=observation_token,
-            private_correlation=observation_correlation,
-        )
-        set_backend_port(port)
-        browser_sessions = getattr(app.state, "browser_sessions", None)
-        if browser_sessions is None:
-            uvicorn.run(app, host=host, port=port, log_level="info", ws_per_message_deflate=False, ws="websockets-sansio")
-            return
-        config = uvicorn.Config(app, host=host, port=port, log_level="info", ws_per_message_deflate=False, ws="websockets-sansio")
-        server = uvicorn.Server(config)
-        app.state.request_browser_session_exit = lambda: setattr(
-            server, "should_exit", True
-        )
-        server.run()
-        return
-
-    if not desktop_runtime_info or not desktop_instance_id:
-        raise ValueError("desktop runtime info and instance id are required")
-    listener, selected_port = _bind_desktop_server_socket(
-        host, port, desktop_port_end,
-    )
-    try:
-        configure_stream_observation(
-            app,
-            host=host,
-            port=selected_port,
-            auth_token=observation_token,
-            private_correlation=observation_correlation,
-        )
-        set_backend_port(selected_port)
-        _write_desktop_runtime_info(
-            desktop_runtime_info,
-            port=selected_port,
-            instance_id=desktop_instance_id,
-        )
-        config = uvicorn.Config(app, log_level="info", ws_per_message_deflate=False, ws="websockets-sansio")
-        server = uvicorn.Server(config)
-        app.state.request_desktop_exit = lambda: setattr(server, "should_exit", True)
-        server.run(sockets=[listener])
-    finally:
-        listener.close()

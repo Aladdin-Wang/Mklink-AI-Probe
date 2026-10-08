@@ -13,6 +13,11 @@ async function api(path: string, options?: RequestInit) {
   if (!res.ok) {
     const err = await res.json().catch(() => null)
     const detail = err?.detail
+    if (Array.isArray(detail?.busy) && detail.busy.length) {
+      const labels: Record<string, string> = { rtt: 'RTT View', superwatch: 'SuperWatch', systemview: 'RTOS Trace', vofa: 'VOFA+' }
+      const names = detail.busy.map((name: string) => labels[name] || name).join(', ')
+      throw new Error(tr(`${names} 正在采集，请先在后台管理中停止采集，再执行此操作。`, `${names} is capturing. Stop acquisition in Shared backend before this operation.`))
+    }
     if (detail?.code === 'PROBE_BUSY') {
       const owner = String(detail.conflict_owner ?? '').split(':').at(-1)
       const name = ({ rtt: 'RTT View', superwatch: 'SuperWatch', systemview: 'RTOS Trace', vofa: 'VOFA+' } as Record<string, string>)[owner ?? ''] ?? owner

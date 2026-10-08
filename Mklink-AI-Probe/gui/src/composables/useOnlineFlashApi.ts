@@ -100,13 +100,13 @@ export class OnlineFlashApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, base = ONLINE_FLASH_BASE): Promise<T> {
   const isMultipart = options.body instanceof FormData
   const headers = new Headers(options.headers)
   if (!isMultipart && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(`${API_BASE}${ONLINE_FLASH_BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${base}${path}`, {
     ...options,
     headers,
   })
@@ -369,12 +369,26 @@ export function useOnlineFlashApi() {
     }, onProgress)
   }
 
-  function createJob(job: JobRequest): Promise<JobCreateResult> {
-    return request('/jobs', { method: 'POST', body: JSON.stringify(job) })
+  async function createJob(job: JobRequest, requestId: string = crypto.randomUUID()): Promise<JobCreateResult> {
+    try {
+      return await request('/jobs', { method: 'POST', body: JSON.stringify(job),
+        headers: { 'X-MKLink-Request-Id': requestId } })
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; request_id=${requestId}`)
+    }
   }
 
   function getActiveJob(): Promise<JobSnapshot | null> {
     return request('/jobs/active')
+  }
+
+  async function retainedJob(requestId: string) {
+    const payload = await request<{ jobs: Array<{
+      request_id: string; action: string; state: string; online_job_id?: string;
+      result: { job?: JobSnapshot } | null; error: string | null;
+    }> }>('/jobs/', {}, '/api/runtime')
+    const job = payload.jobs.find(item => item.request_id === requestId && item.action === 'online_flash')
+    return job ?? null
   }
 
   function getJob(jobId: string): Promise<JobSnapshot> {
@@ -479,6 +493,7 @@ export function useOnlineFlashApi() {
     readMemoryStream,
     createJob,
     getActiveJob,
+    retainedJob,
     getJob,
     stopJob,
     subscribeJob,

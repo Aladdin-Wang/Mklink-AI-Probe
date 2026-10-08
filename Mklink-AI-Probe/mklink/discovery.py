@@ -15,7 +15,6 @@ from serial.tools import list_ports
 
 from mklink._types import (
     DEFAULT_BAUDRATE,
-    KNOWN_MKLINK_VID_PIDS,
     MKLINK_IDENTITY_COMMAND,
     MKLINK_IDENTITY_TOKEN,
     PROMPT,
@@ -89,128 +88,29 @@ def _probe_port(port_device: str) -> bool:
                 pass
 
 
-def find_mklink_cdc_port(
-    serial_number: object = None,
-    *,
-    exclude_ports: set[str] | None = None,
-) -> str | None:
-    """自动扫描并识别 MicroLink 的 USB CDC 虚拟串口。
-
-    新版 V2/V3/V4 固件固定使用 MI_04 作为命令接口，因此有完整 USB
-    接口元数据时直接返回该端口。旧固件或元数据缺失时仍逐端口执行
-    唯一身份命令，不并发探测。
-    """
-    excluded = {str(port).strip().casefold() for port in (exclude_ports or set())}
-    ports = [
-        port_info
-        for port_info in list_ports.comports()
-        if str(port_info.device).strip().casefold() not in excluded
-    ]
-    requested_serial = str(serial_number or "").strip().casefold()
-    if requested_serial:
-        matching_ports = [
-            port_info for port_info in ports
-            if str(getattr(port_info, "serial_number", "") or "").strip().casefold()
-            == requested_serial
-        ]
-        if matching_ports:
-            ports = matching_ports
-
-    command_ports = [
-        port_info for port_info in ports
-        if is_mklink_usb_port(port_info)
-        and usb_interface_number(port_info) == MKLINK_COMMAND_INTERFACE
-    ]
-    if command_ports:
-        return command_ports[0].device
-
-    # 单轮扫描，每端口执行残留行清理和身份确认
-    # Probe physical USB serial ports first. Bluetooth RFCOMM opens can block
-    # for tens of seconds and cannot be an MKLink CDC interface.
-    probe_candidates = [
-        port_info for port_info in ports
-        if not str(getattr(port_info, "hwid", "") or "").upper().startswith("BTHENUM")
-    ]
-    def probe_priority(port_info: object) -> int:
-        mfr = str(getattr(port_info, "manufacturer", "") or "").lower()
-        if any(name in mfr for name in ("microkeen", "microlink", "mklink")):
-            return 0
-        if (
-            getattr(port_info, "vid", None),
-            getattr(port_info, "pid", None),
-        ) in KNOWN_MKLINK_VID_PIDS:
-            return 0
-        if (
-            getattr(port_info, "vid", None) is not None
-            or str(getattr(port_info, "hwid", "") or "").upper().startswith("USB")
-        ):
-            return 1
-        return 2
-
-    probe_candidates.sort(key=probe_priority)
-
-    for port_info in probe_candidates:
-        if _probe_port(port_info.device):
-            return port_info.device
-
-    return None
-
-
 def discover_mklink_command_ports() -> list[object]:
-    """Return every MKLink command interface without probing unrelated ports.
+    """Passively enumerate supported USB command interfaces; never open ports.
 
-    Composite V3/V4 probes expose MI_02/MI_04/MI_06.  Only MI_04 accepts the
-    Python command protocol.  Older firmware may lack interface metadata, so
-    those physical serial candidates still use the identity handshake.  A
-    Bluetooth RFCOMM open can block for tens of seconds and can never be an
-    MKLink USB CDC command interface, therefore it is excluded entirely.
+    Missing interface metadata is not permission to send commands to arbitrary
+    UARTs. Such devices require an explicitly selected port for connection.
     """
-    ports = list(list_ports.comports())
-    results: list[object] = []
-    fallback: list[object] = []
+    return [port for port in list_ports.comports()
+            if is_mklink_usb_port(port)
+            and usb_interface_number(port) == MKLINK_COMMAND_INTERFACE]
 
-    for port_info in ports:
-        interface_number = usb_interface_number(port_info)
-        if is_mklink_usb_port(port_info):
-            if interface_number == MKLINK_COMMAND_INTERFACE:
-                results.append(port_info)
-            elif interface_number is None:
-                fallback.append(port_info)
-            continue
 
-        hwid = str(getattr(port_info, "hwid", "") or "").upper()
-        if hwid.startswith("BTHENUM"):
-            continue
-        fallback.append(port_info)
+def find_mklink_cdc_port(serial_number: object = None) -> str | None:
+    """Return a unique command port, optionally matching an exact USB serial.
 
-    def probe_priority(port_info: object) -> int:
-        mfr = str(getattr(port_info, "manufacturer", "") or "").lower()
-        desc = str(getattr(port_info, "description", "") or "").lower()
-        if any(
-            name in (mfr + " " + desc)
-            for name in ("microkeen", "microlink", "mklink")
-        ):
-            return 0
-        if (
-            getattr(port_info, "vid", None),
-            getattr(port_info, "pid", None),
-        ) in KNOWN_MKLINK_VID_PIDS:
-            return 0
-        if (
-            getattr(port_info, "vid", None) is not None
-            or str(getattr(port_info, "hwid", "") or "").upper().startswith("USB")
-        ):
-            return 1
-        return 2
-
-    fallback.sort(key=probe_priority)
-    seen = {str(item.device).strip().casefold() for item in results}
-    for port_info in fallback:
-        key = str(port_info.device).strip().casefold()
-        if key not in seen and _probe_port(port_info.device):
-            results.append(port_info)
-            seen.add(key)
-    return results
+    Missing or ambiguous identities return None. Never choose the first device,
+    probe unrelated ports, or replace a missing selection with another probe.
+    """
+    ports = discover_mklink_command_ports()
+    requested_serial = str(serial_number or '').strip().casefold()
+    if requested_serial:
+        ports = [port for port in ports
+                 if str(port.serial_number or '').strip().casefold() == requested_serial]
+    return ports[0].device if len(ports) == 1 else None
 
 
 def list_available_ports() -> list[dict]:
@@ -280,64 +180,20 @@ def _find_posix_microkeen_disk() -> str | None:
 
 
 def find_microkeen_disk() -> str | None:
-    """查找 MICROKEEN 磁盘路径。
+    """Resolve the bound probe's volume; unbound Windows callers require one probe.
 
-    在 Windows 上查找名为 [MICROKEEN] 的可移动磁盘。
-    返回磁盘根路径，如 'D:\\'，未找到返回 None。
+    Windows drive letters, volume labels and environment overrides are not
+    device identities. The legacy POSIX mount lookup remains independent.
     """
-    if os.name != "nt":
-        return _find_posix_microkeen_disk()
+    from mklink.probes import bound_probe, select_probe
+    from mklink.probe_volumes import resolve_volume
 
-    # Service and scheduled-task sessions can enumerate removable volumes
-    # differently from an interactive shell.  An operator may provide a
-    # concrete root, but it is accepted only after the same MICROKEEN label
-    # verification used by automatic discovery.
-    configured_root = os.environ.get("MKLINK_MICROKEEN_DISK", "").strip()
-    if configured_root:
-        root = configured_root.rstrip("\\/") + "\\"
-        try:
-            if os.path.isdir(root) and (
-                (_windows_volume_label(root) or "").casefold()
-                == _MICROKEEN_DISK_NAME.casefold()
-            ):
-                return root
-        except Exception:
-            pass
-        return None
-
-    # 尝试通过 drivedddata 注册表查找
-    try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                            r"SYSTEM\\MountedDevices") as key:
-            i = 0
-            while True:
-                try:
-                    name, value, _ = winreg.EnumValue(key, i)
-                    i += 1
-                    # 检查名称是否包含 MICROKEEN
-                    if isinstance(name, str) and "microkeen" in name.lower():
-                        # 从注册表值提取盘符（如 \\?\Volume{...}\ -> D:）
-                        if "\\??\\" in value:
-                            drive_letter = value.split("\\??\\")[1].split(":")[0]
-                            return f"{drive_letter}:\\"
-                except OSError:
-                    break
-    except Exception:
-        pass
-
-    # 后备方案：检查常见盘符
-    import string
-    for letter in string.ascii_uppercase:
-        path = f"{letter}:\\"
-        try:
-            if os.path.exists(path):
-                if (_windows_volume_label(path) or "").casefold() == _MICROKEEN_DISK_NAME.casefold():
-                    return path
-        except Exception:
-            continue
-
-    return None
+    probe_id = bound_probe()
+    if probe_id is None:
+        if os.name != "nt":
+            return _find_posix_microkeen_disk()
+        probe_id = select_probe()['probe_id']
+    return resolve_volume(probe_id)['root']
 
 
 def get_microkeen_flm_path() -> str | None:
@@ -476,44 +332,3 @@ def resolve_keil_flm_path(flm_name: str) -> str | None:
                     return os.path.join(root, flm_name)
 
     return None
-
-
-def copy_flm_to_microkeen(flm_name: str) -> tuple[bool, str | None]:
-    """将 FLM 文件拷贝到 MICROKEEN 磁盘的 FLM 目录。
-
-    Args:
-        flm_name: FLM 文件名（如 'N32G43x.FLM' 或 'N32G43x'）
-
-    Returns:
-        (success, dest_path): 是否成功，以及目标路径
-    """
-    import shutil
-
-    flm_name_with_ext = _normalize_flm_name(flm_name)
-    if not flm_name_with_ext:
-        print("[FAIL] 未找到 FLM 配置")
-        return False, None
-
-    # 获取 MICROKEEN FLM 目录
-    flm_dir = get_microkeen_flm_path()
-    if flm_dir is None:
-        print("[FAIL] 未找到 MICROKEEN 磁盘")
-        return False, None
-
-    # 解析源 FLM 路径（自动处理无后缀情况）
-    src_path = resolve_keil_flm_path(flm_name_with_ext)
-    if src_path is None:
-        print(f"[FAIL] 未在 Keil 安装目录中找到 '{flm_name_with_ext}'")
-        return False, None
-
-    # 目标路径（设备上使用带扩展名的文件名）
-    dest_path = os.path.join(flm_dir, flm_name_with_ext)
-
-    try:
-        from mklink.file_content import copy_verified
-        changed = copy_verified(src_path, dest_path)
-        print(f"[OK] FLM {'已拷贝' if changed else '内容相同'}: {dest_path}")
-        return True, dest_path
-    except Exception as e:
-        print(f"[FAIL] 拷贝失败: {e}")
-        return False, None

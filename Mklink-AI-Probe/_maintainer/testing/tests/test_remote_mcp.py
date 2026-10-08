@@ -147,3 +147,10 @@ def test_dedicated_flash_and_memory_write_tools_gate_high_risk_calls():
             {"address": 0x20000000, "data_b64": "AP8=", "confirm": True},
         )
     ]
+
+
+def test_explicit_target_connect_uses_nonforcing_agent_connect():
+    tools, registry = _tools()
+    assert tools['remote_connect']('field-bench') == {'ok': True}
+    assert registry.sites == ['field-bench']
+    assert registry.client_instance.calls == [('agent.connect', {})]

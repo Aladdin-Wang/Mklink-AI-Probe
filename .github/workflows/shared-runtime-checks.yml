@@ -1,0 +1,131 @@
+name: Shared runtime checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shared-runtime-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  shared-runtime-contract:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install shared runtime dependencies
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('-m', 'pip', 'install', '.[mcp]', 'pytest==8.4.2')
+      - name: Check admission, jobs, identity, adapters and process locks
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: |
+          $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
+          $tests = @('test_shared_runtime', 'test_shared_device', 'test_shared_debug', 'test_hardfault', 'test_hpm_debug_guard', 'test_runtime_jobs', 'test_runtime_security', 'test_shared_flash_options', 'test_native_erase', 'test_runtime_mcp', 'test_runtime_cli', 'test_runtime_probe', 'test_runtime_peripherals', 'test_runtime_memory', 'test_shared_watch', 'test_shared_vofa', 'test_uart_lifecycle', 'test_usb_interfaces', 'test_serial_streaming', 'test_serial_byte_batcher', 'test_serial_autoreply', 'test_serial_history', 'test_modbus_session', 'test_modbus_lifecycle', 'test_modbus_port_lock', 'test_elf_backend', 'test_watch_map_fallback', 'test_runtime_flush', 'test_runtime_dump', 'test_runtime_benchmark', 'test_dump_benchmark', 'test_superwatch_live_write', 'test_rtt_superwatch_streaming', 'test_vofa_streaming', 'test_dump_memory_session', 'test_power_telemetry', 'test_bridge_port_lock', 'test_bridge_identity', 'test_isolated_serial', 'test_probe_volumes', 'test_probe_identity', 'test_discovery', 'test_runtime_discovery', 'test_target_init', 'test_port_lock_process', 'test_runtime_proxy', 'test_runtime_logging', 'test_runtime_shutdown', 'test_runtime_idle', 'test_stream_api', 'test_remote_api', 'test_symbol_catalog', 'test_device_configuration', 'test_peripheral_watch', 'test_peripheral_unified')
+          $tests += 'test_remote_client_sessions'
+          $tests += 'test_remote_cli'
+          $tests += 'test_uart_session'
+          $tests += 'test_mux'
+          $tests += 'test_remote_shared_modbus'
+          $tests += 'test_remote_shared_serial'
+          $tests += 'test_remote_shared_target'
+          $tests += 'test_remote_shared_systemview'
+          $tests += 'test_remote_shared_rtt'
+          $tests += 'test_remote_rtt_subscription'
+          $tests += 'test_desktop_presence'
+          $tests += 'test_desktop_runtime'
+          $tests += 'test_legacy_server_removed'
+          $tests += 'test_runtime_spawn'
+          $tests += 'test_internal_process_entry'
+          $tests += 'test_remote_service'
+          $tests += 'test_remote_gui_sessions'
+          $tests += 'test_remote_gui_bridge'
+          $tests += 'test_remote_agent'
+          $tests += 'test_remote_embedded_agent'
+          $tests += 'test_remote_capabilities'
+          $tests += 'test_remote_upstream_integration'
+          $tests += 'test_serial_protocol_buffer'
+          $tests += 'test_serial_exchange'
+          $tests += 'test_remote_offline_identity'
+          $tests += 'test_offline_deployment_jobs'
+          $tests += 'test_systemview_history'
+          $tests += 'test_cli_systemview'
+          $tests += 'test_systemview_streaming'
+          $tests += 'test_runtime_uart'
+          $tests += 'test_web_entry'
+          $tests += 'test_shared_modbus_scan'
+          $tests += 'test_modbus_cli_defaults'
+          $tests += 'test_shared_modbus_cli'
+          $tests += 'test_shared_modbus_poll'
+          $tests += 'test_shared_modbus_dashboard'
+          $tests += 'test_shared_modbus_diag'
+          $tests += 'test_shared_modbus_monitor'
+          $tests += 'test_shared_serial_send'
+          $tests += 'test_shared_serial_log'
+          $tests += 'test_shared_serial_monitor'
+          $tests += 'test_shared_serial_open'
+          $tests += 'test_serial_automation'
+          $tests += 'test_serial_idle'
+          $tests += 'test_serial_recording'
+          $tests += 'test_serial_sequence'
+          $tests += 'test_shared_serial_dashboard'
+          $tests += 'test_stream_delivery'
+          $tests += 'test_stream_hub'
+          $tests += 'test_stream_tcp_backpressure'
+          $tests += 'test_atomic_export'
+          $tests += 'test_superwatch_alignment'
+          $tests += 'test_gui_connect_handoff'
+          $arguments = @('-m', 'pytest', '-q', '--tb=short', "--junitxml=$($paths.reports)/shared-runtime.xml")
+          $arguments += $tests | ForEach-Object { "_maintainer/testing/tests/$_.py" }
+          ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList $arguments
+      - name: Attach contract report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shared-runtime-report
+          path: .build/reports/shared-runtime.xml
+          if-no-files-found: warn
+          retention-days: 14
+  shared-gui-contract:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install locked GUI dependencies
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('ci')
+      - name: Check shared windows, recovery and runtime management
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: |
+          $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
+          ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('test', '--', 'src/App.test.ts', 'src/views/DashboardView.test.ts', 'src/views/RemoteDashboardReuse.test.ts', 'src/lib/remoteRuntimeEndpoint.test.ts', 'src/components/dash/WaveformViewer.test.ts', 'src/components/dash/SerialMonitorTab.test.ts', 'src/components/dash/SerialAutomationPanel.test.ts', 'src/components/dash/SerialRecordingPanel.test.ts', 'src/components/dash/SerialSequencePanel.test.ts', 'src/components/dash/SerialSendExtras.test.ts', 'src/components/dash/ModbusTab.test.ts', 'src/lib/sharedRuntimeView.test.ts', 'src/lib/runtimeEndpoint.test.ts', 'src/composables/useBackendHealth.test.ts', 'src/composables/useResourceStatus.test.ts', 'src/components/config/RuntimePanel.test.ts', 'src/views/ConfigView.test.ts', 'src/views/SiteAgentView.test.ts', 'src/components/config/RemoteConnectPanel.test.ts', 'src/composables/useMklinkApi.test.ts', 'src/components/dash/PeripheralWatchPanel.test.ts', 'src/components/dash/SuperWatchTab.test.ts', 'src/components/dash/RttViewTab.test.ts', 'src/components/dash/RttRawView.test.ts', '--reporter=default', '--reporter=junit', "--outputFile.junit=$($paths.reports)/shared-gui.xml")
+      - name: Check types and production bundle
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: |
+          $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
+          ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('run', 'build', '--', '--outDir', "$($paths.artifacts)/shared-runtime-web")
+      - name: Attach GUI contract report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shared-gui-report
+          path: .build/reports/shared-gui.xml
+          if-no-files-found: warn
+          retention-days: 14

@@ -4,7 +4,7 @@
 > 返回索引：[SKILL.md](../SKILL.md)
 
 VPN/局域网站点、独立 Site Agent、工程师侧 remote CLI/SDK/MCP 请改读
-[直连远程调试](commands-remote.md)；本页只描述本地 FastAPI、GUI 和 Tauri。
+[直连远程调试](commands-remote.md)；本页描述本地 FastAPI、GUI、Tauri 和远程仪表盘。
 
 ## 依赖安装
 
@@ -19,16 +19,24 @@ RTT、SystemView、VOFA 和 SuperWatch 的图表暂停或页面隐藏只减少�
 要释放探针或串口需明确停止对应会话；传输丢帧与设备端丢样分开报告，不把图表
 抽样显示当作原始数据丢失。
 
-### serve — 远程调试服务器
+### 共享后台
 
-```powershell
-python -m mklink serve --host 127.0.0.1 --port 8765
-# 启动 FastAPI 服务器，访问 http://127.0.0.1:8765/docs 查看 API 文档
-```
+旧 `serve`、`mklink.serve()` 和 `mklink.remote.serve_fastapi()` 已移除。
+本机 GUI/AI 统一使用 `mklink gui` / `mklink runtime`，无需启动第二个服务器。
+只启动共享后台、不打开浏览器时使用 `python -m mklink gui --no-browser`。
+局域网设备操作使用“远程服务”页面或独立 Agent，参见[直连远程调试](commands-remote.md)。
+桌面内部 `desktop-proxy` 仅转发共享后台，不直接连接下载器。
 
-选项：
-- `--backend {legacy,fastapi}` — 选择后端（默认 fastapi）
-- `--project-root <dir>` — 指定项目根目录
+配置页依次为本地设备、文件来源、固件升级和后台管理；本机别名在后台管理中修改，仅影响本机，不写下载器固件。
+远程功能统一在顶部“远程服务”，包含本机提供服务和连接远端下载器。
+
+1. 下载器所在电脑选择目标下载器，在“远程服务”启动局域网监听，取得服务地址和访问令牌。
+2. 操作电脑打开“远程服务 > 连接远端下载器”，输入地址和令牌，点击“连接并打开远程仪表盘”。两端均需支持本功能的新版服务。
+3. 默认浏览器打开同一套 GUI 仪表盘，顶部显示固定的远端地址与探针身份。原本地窗口保持本地目标；远程窗口的“返回本地 / 更换设备”会结束本窗口远程会话并返回连接页。
+4. 远程模式复用 RTT View、Memory、SuperWatch、HardFault、符号表与 RTOS Trace 原有面板及数据流。符号文件需先在目标电脑加载。烧录、串口/Modbus、VOFA、文件上传/目标机录制文件及主机管理本阶段未开放；对应入口禁用或隐藏。
+5. 每次新连接创建独立会话；关闭窗口释放本窗口远程连接；与本地GUI一样，后台采集继续运行，需要停止时先点击采集停止。断线后保留数据显示并禁用操作，需显式重新连接，不自动切到本地或重放命令。
+
+令牌不持久化到浏览器。每个本机后台最多8个远程窗口；无请求90秒后会话可过期。使用原GUI有界流缓冲和丢失计数，不保证无损。窗口刷新也需重新连接。旧配置页仅建立 WebSocket 的连接框已移除。
 
 ### gui — 一键启动 Web GUI
 
@@ -43,7 +51,8 @@ python -m mklink gui --port 8765 --device-port COM6
 python -m mklink gui --no-browser
 ```
 
-GUI 启动后在浏览器中提供三个主页面：
+GUI 启动后在浏览器中提供以下主页面：
+- **远程服务页** (`/remote-service`) — LAN/VPN 监听、认证令牌、启动/停止及连接说明
 - **配置页** (`/config`) — COM 口选择、MCU 配置、项目初始化
 - **仪表盘页** (`/dashboard`) — RTT View、烧录、调试控制、串口、Modbus、SuperWatch
 - **在线烧录页** (`/online-flash`) — MKLink-only 探针、目标/Pack、HEX/BIN 检查与预览、烧录任务和 SSE 日志
@@ -75,7 +84,7 @@ File 是快照，编译后需要重新选择；自动加载新固件不会自动
 python -m mklink web-entry install --html "/path/to/usb/启动 Mklink Web.html"
 ```
 
-入口会复用现有 Web 服务；只停止自己启动的进程，不改变 `serve`、MCP 或 Tauri
+入口会复用现有 Web 服务；只停止自己启动的进程，不改变共享后台、MCP 或 Tauri
 sidecar 的所有权。平台安装位置、权限和故障排查见
 [跨平台 U 盘 Web 启动入口](web-entry.md)。
 
@@ -95,7 +104,7 @@ Windows 标准 NSIS 安装包采用 per-machine 安装，在安装结束后以�
 
 | 用途 | 端点 |
 |------|------|
-| 列出 MKLink 探针 | `GET /probes` |
+| 列出当前后台绑定的 MKLink 探针；未选择或设备缺失时为空 | `GET /probes` |
 | 搜索目标 | `GET /targets?q=...&vendor=...&installed=...` |
 | Pack 状态/更新索引 | `GET /packs/status`、`POST /packs/index/update` |
 | 安装/导入/取消/删除 Pack | `POST /packs/install`、`POST /packs/import`、`POST /packs/cancel`、`DELETE /packs/{pack_id}/{version}` |
@@ -109,19 +118,13 @@ Pack 索引、已安装 Pack 和临时上传均位于用户数据根目录，Win
 
 ## Dashboard 生命周期
 
-GUI 仪表盘中 RTT / Serial / Modbus / SuperWatch 均以独立子进程启动，通过 iframe 嵌入：
+主 GUI 的 RTT / Serial / Modbus / SuperWatch 通过所选共享后台的 manager 运行，
+不为每个面板另开 CDC 或固定 808x 端口。串口助手使用 `mklink serial dashboard`
+打开主 GUI 对应页面，命令退出/关页面保留连接；在面板中显式停止。
 
-| Dashboard | 端口 | CLI 命令 |
-|-----------|------|----------|
-| RTT View | 8081 | `mklink rtt --visualize` |
-| Serial | 8084 | `mklink serial dashboard` |
-| Modbus | 8085 | `mklink modbus dashboard` |
-| SuperWatch | 8086 | `mklink superwatch --visualize` |
-
-API 端点：
-- `POST /api/dashboard/start` — 启动 Dashboard（body: `{"type": "rtt|serial|modbus|superwatch"}`）
-- `POST /api/dashboard/stop` — 停止 Dashboard
-- `GET /api/dashboard/status` — 查询所有 Dashboard 运行状态
+串口启停/状态为 `/api/dash/serial/start`、`stop`、`status`；记录与命令序列共用该
+后台，GUI/CLI/MCP 查看同源状态。广播给出逐端口结果，文件发送受大小限制并复用
+命令序列。API 必须使用当前共享后台认证，不应向旧独立 Dashboard 路径发送请求。
 
 ## 资源管理 API
 
@@ -148,3 +151,5 @@ curl http://127.0.0.1:8765/api/resources/status
 curl -X POST http://127.0.0.1:8765/api/resources/release-serial -H "Content-Type: application/json" -d "{}"
 curl -X POST http://127.0.0.1:8765/api/resources/release -H "Content-Type: application/json" -d "{\"resource\":\"serial_port\"}"
 ```
+
+远程 GUI 两端需支持 `gui.bridge` 版本1，共享后台协议44；HTTP/SSE和二进制WebSocket复用原数据格式。转发固定于握手时的后台实例，服务重启需显式重连，不提供通用网络代理或本机管理隧道。

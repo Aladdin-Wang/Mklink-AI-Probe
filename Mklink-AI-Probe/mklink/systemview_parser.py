@@ -178,7 +178,8 @@ class SystemViewParser:
         self._ts_mask = (1 << timestamp_bits) - 1 if timestamp_bits < 32 else 0xFFFFFFFF
         self._ram_base = 0                 # INIT 带出
         self._id_shift = 2                 # INIT 带出（SEGGER 默认 2）
-        self._cpu_freq = 0                 # INIT 带出，用于 µs 换算
+        self._cpu_freq = 0                 # INIT CPU clock / runtime hint
+        self._timestamp_freq = 0           # Independent timestamp source, if declared
         self._cpu_freq_override: int | None = None
         self._task_names: dict[int, str] = {}
         self._isr_names: dict[int, str] = {}
@@ -205,6 +206,10 @@ class SystemViewParser:
     @property
     def cpu_freq(self) -> int:
         return self._cpu_freq
+
+    @property
+    def timestamp_freq(self) -> int:
+        return self._timestamp_freq or self._cpu_freq
 
     def set_cpu_freq(self, freq: int, *, lock: bool = False) -> None:
         """Set a host-side CPU frequency hint.
@@ -414,6 +419,13 @@ class SystemViewParser:
             # SEGGER RecordSystime sends low/high U32 varints before delta.
             ev["systime"] = ev["systime_low"] | (ev["systime_high"] << 32)
         elif kind == "init":
+            # SysFreq describes timestamp ticks; CPUFreq is only equivalent
+            # for a core-clock timebase. Preserve runtime CPU correction for
+            # that case, without applying it to a separate timer source.
+            sys_freq = ev.get("sys_freq", 0)
+            self._timestamp_freq = (
+                sys_freq if sys_freq and sys_freq != ev.get("cpu_freq", 0) else 0
+            )
             if self._cpu_freq_override is None:
                 self._cpu_freq = ev.get("cpu_freq", 0) or self._cpu_freq
             else:
@@ -456,10 +468,11 @@ class SystemViewParser:
         if "isr_id" in ev:
             ev["isr_name"] = self._isr_names.get(ev["isr_id"])
 
-        # µs 换算放在最后——INIT 自身的 cpu_freq 已更新，故 INIT 也能换算
-        if self._cpu_freq:
-            ev["cpu_delta_us"] = ev["delta_ticks"] * 1_000_000.0 / self._cpu_freq
-            ev["t_us"] = ev["t_ticks"] * 1_000_000.0 / self._cpu_freq
+        # Keep the existing event field name: it is elapsed time, not CPU cycles.
+        frequency = self.timestamp_freq
+        if frequency:
+            ev["cpu_delta_us"] = ev["delta_ticks"] * 1_000_000.0 / frequency
+            ev["t_us"] = ev["t_ticks"] * 1_000_000.0 / frequency
 
     # -- 原语读取 --------------------------------------------------------
     def _peek(self, pos: int) -> int:

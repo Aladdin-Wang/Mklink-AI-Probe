@@ -10,6 +10,7 @@ import time
 from dataclasses import asdict
 from typing import Dict, Mapping, Optional
 
+import anyio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from mklink.remote.stream_hub import StreamHub
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL_SECONDS = 1.0
 AUTH_TIMEOUT_SECONDS = 5.0
 MAX_BATCHES_PER_CLIENT = 64
-# Serial batches are capped at 4096 bytes: at most 1 MiB per subscriber.
+# Serial batches: <=4096 data bytes + <=272 source bytes; <=1.067 MiB per subscriber.
 SERIAL_BATCHES_PER_CLIENT = 256
 
 STREAM_TYPES: Mapping[str, StreamType] = {
@@ -28,6 +29,8 @@ STREAM_TYPES: Mapping[str, StreamType] = {
     "vofa": StreamType.WAVEFORM,
     "rtt": StreamType.RTT_RAW,
     "rtt-terminal": StreamType.RTT_RAW,
+    **{f"rtt-{ch}": StreamType.RTT_RAW for ch in range(8)},
+    **{f"rtt-terminal-{ch}": StreamType.RTT_RAW for ch in range(8)},
     "serial": StreamType.SERIAL,
     "superwatch": StreamType.SUPERWATCH,
 }
@@ -130,8 +133,9 @@ async def stream_websocket(
         logger.debug("Binary stream WebSocket closed before subscribe: %s", exc)
         return
     queue = hub.subscribe()
-    next_status = time.monotonic() + HEARTBEAT_INTERVAL_SECONDS
-    try:
+
+    async def send_batches():
+        next_status = time.monotonic() + HEARTBEAT_INTERVAL_SECONDS
         while True:
             try:
                 batch = await asyncio.wait_for(
@@ -152,6 +156,22 @@ async def stream_websocket(
                 )
             finally:
                 queue.task_done()
+
+    async def receive_disconnect():
+        # ASGI servers need not raise on send after a peer reset. Consume the
+        # disconnect event even while this subscriber is idle or backpressured.
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+
+    try:
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(send_batches)
+            try:
+                await receive_disconnect()
+            finally:
+                tasks.cancel_scope.cancel()
     except WebSocketDisconnect:
         pass
     except Exception as exc:

@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 import binascii
+import copy
+import math
 import struct
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def json_fields(fields: dict) -> dict:
+    """Copy decoded fields for JSON, retaining non-finite readings as strings."""
+    result = copy.deepcopy(fields)
+    for name, value in result.items():
+        if not isinstance(value, dict):
+            value = result[name] = {'value': value, 'raw': value}
+        for key in ('value', 'raw'):
+            if isinstance(value.get(key), float) and not math.isfinite(value[key]):
+                value[key] = str(value[key])
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -104,13 +118,13 @@ class ParsedFrame:
 
 
 class FrameParser:
-    def __init__(self, profile: dict | None = None):
+    def __init__(self, profile: dict | None = None, *, max_buffer_bytes: int | None = None):
         """Initialize with optional profile dict (the 'frame' and 'fields' sections).
-        If profile is None, operates in line-based mode (split on \\n or timeout).
+        Without a frame section, operates in line-based mode (split on \\n or idle).
         """
-        self._profile = profile
+        self._max_buffer_bytes = max_buffer_bytes
         self._buffer = bytearray()
-        self._last_feed_time: float = 0.0
+        self._last_feed_time: float | None = None
 
         if profile and "frame" in profile:
             frame_cfg = profile["frame"]
@@ -129,24 +143,37 @@ class FrameParser:
         if profile and profile.get("frame", {}).get("endian") == "big":
             self._endian = ">"
 
-    def feed(self, data: bytes) -> list[ParsedFrame]:
-        """Feed raw bytes, return list of complete parsed frames (may be empty)."""
-        now = time.time()
-        frames: list[ParsedFrame] = []
+    def feed(self, data: bytes, *, monotonic_time: float | None = None,
+             end_time: float | None = None) -> list[ParsedFrame]:
+        """Parse bytes using receive time; empty feeds check the existing idle boundary.
 
-        if self._profile is None:
-            frames = self._feed_line_mode(data, now)
+        A retained batch may span several reads. Its first/last monotonic times
+        preserve gaps independently of when a history consumer processes it.
+        """
+        now = time.monotonic() if monotonic_time is None else monotonic_time
+        frames: list[ParsedFrame] = []
+        if self._buffer and self._last_feed_time is not None and now - self._last_feed_time >= _TIMEOUT_MS / 1000:
+            if not self._tail and not self._length_field:
+                if not self._header or self._buffer.startswith(self._header):
+                    frames.append(self._parse_frame(bytes(self._buffer), time.time()))
+                self._buffer.clear()
+        if not data:
+            return frames
+        if self._max_buffer_bytes is not None and len(self._buffer) + len(data) > self._max_buffer_bytes:
+            raise ValueError("Serial Profile frame exceeds the capture buffer limit")
+        if not self._header:
+            frames.extend(self._feed_line_mode(data, time.time()))
         else:
             self._buffer.extend(data)
-            frames = self._feed_protocol_mode(now)
+            frames.extend(self._feed_protocol_mode(time.time()))
 
-        self._last_feed_time = now
+        self._last_feed_time = now if end_time is None else end_time
         return frames
 
     def reset(self) -> None:
         """Clear internal buffer."""
         self._buffer.clear()
-        self._last_feed_time = 0.0
+        self._last_feed_time = None
 
     # ------------------------------------------------------------------
     # Line-based mode
@@ -154,20 +181,6 @@ class FrameParser:
 
     def _feed_line_mode(self, data: bytes, now: float) -> list[ParsedFrame]:
         frames: list[ParsedFrame] = []
-
-        # Timeout flush: if gap > 50ms and buffer has content, emit it
-        if (
-            self._buffer
-            and self._last_feed_time > 0
-            and (now - self._last_feed_time) * 1000 >= _TIMEOUT_MS
-        ):
-            frames.append(ParsedFrame(
-                raw=bytes(self._buffer),
-                fields={},
-                crc_valid=None,
-                timestamp=now,
-            ))
-            self._buffer.clear()
 
         self._buffer.extend(data)
 
@@ -184,12 +197,7 @@ class FrameParser:
             if line.endswith(b"\r"):
                 line = line[:-1]
 
-            frames.append(ParsedFrame(
-                raw=line,
-                fields={},
-                crc_valid=None,
-                timestamp=now,
-            ))
+            frames.append(self._parse_frame(line, now))
 
         return frames
 
@@ -216,8 +224,11 @@ class FrameParser:
         header_idx = self._buffer.find(self._header)
         if header_idx == -1:
             # Discard bytes before any potential partial header
-            if len(self._buffer) > len(self._header):
-                self._buffer = self._buffer[-(len(self._header) - 1):]
+            keep = len(self._header) - 1
+            if keep:
+                self._buffer = self._buffer[-keep:]
+            else:
+                self._buffer.clear()
             return None
 
         # Discard garbage before header
@@ -231,7 +242,7 @@ class FrameParser:
         elif self._tail:
             return self._extract_by_tail(header_len)
         else:
-            return self._extract_by_timeout(now)
+            return None  # Idle frames are emitted before appending the next read.
 
     def _extract_by_length(self, header_len: int) -> bytes | None:
         lf = self._length_field
@@ -252,6 +263,11 @@ class FrameParser:
             total_len = frame_len
         else:
             total_len = frame_len + header_len
+
+        # A length that cannot contain its own header/length field is corrupt.
+        # In particular, an empty extraction never advances the parser loop.
+        if total_len < max(header_len, offset + size):
+            raise ValueError('Serial Profile frame length is smaller than its header/length field')
 
         # Account for CRC bytes at end if configured
         if self._crc_cfg:
@@ -279,17 +295,6 @@ class FrameParser:
         frame = bytes(self._buffer[:end])
         self._buffer = self._buffer[end:]
         return frame
-
-    def _extract_by_timeout(self, now: float) -> bytes | None:
-        if (
-            self._last_feed_time > 0
-            and (now - self._last_feed_time) * 1000 >= _TIMEOUT_MS
-            and len(self._buffer) > 0
-        ):
-            frame = bytes(self._buffer)
-            self._buffer.clear()
-            return frame
-        return None
 
     # ------------------------------------------------------------------
     # Frame parsing & field decoding
@@ -385,7 +390,7 @@ class FrameParser:
             if enum_map:
                 hex_key = f"0x{raw_value:02X}" if raw_value < 256 else f"0x{raw_value:04X}"
                 value = enum_map.get(hex_key, enum_map.get(str(raw_value), raw_value))
-            elif scale:
+            elif scale is not None:
                 value = round(raw_value * scale, 6)
             else:
                 value = raw_value

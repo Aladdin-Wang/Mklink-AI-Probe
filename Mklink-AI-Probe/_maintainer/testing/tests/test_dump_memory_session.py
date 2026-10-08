@@ -9,6 +9,8 @@ import pytest
 from mklink._types import DeviceContext, DeviceState
 from mklink.bridge import MKLinkSerialBridge
 from mklink.dump_memory import (
+    DumpMemoryParser,
+    DumpSampleAssembler,
     DumpMemoryBusyError,
     DumpMemoryReadError,
     DumpMemoryStreamSession,
@@ -16,10 +18,21 @@ from mklink.dump_memory import (
     MAGIC,
     MAX_SAFE_REPL_REGIONS,
     build_dump_mem_command,
-    read_dump_memory_once,
     read_dump_memory_range_once,
     read_dump_memory_regions_once,
 )
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_dap_terminal_frame_rejects_capture_before_block_coverage(partial):
+    assembler = DumpSampleAssembler([4096], ordered=True)
+    parser = DumpMemoryParser()
+    if partial:
+        block = _b1_frame(1, bytes(2048), block_index=0, block_count=2, total_size=4096)
+        assert assembler.feed(parser.feed(block)[0]) is None
+    terminal = parser.feed(_old_frame(2, b"", flags=0x10))[0]
+    with pytest.raises(DumpMemoryReadError, match="invalidated by DAP"):
+        assembler.feed(terminal)
 
 
 def _old_frame(timestamp_us, payload, *, flags=0):
@@ -107,6 +120,12 @@ class FakeBridge:
         self.calls.append(("exit",))
         return ""
 
+    def _stop_stream_and_sync(self, command):
+        self._write_raw(command)
+        self.drain_stream_bytes()
+        self._exit_stream()
+        return True
+
 
 def test_dump_command_rejects_unsafe_pika_argument_boundary_before_io():
     pairs = [(0x20000000 + index * 4, 4) for index in range(MAX_SAFE_REPL_REGIONS)]
@@ -122,25 +141,6 @@ def test_dump_command_rejects_unsafe_pika_argument_boundary_before_io():
         build_dump_mem_command([(0x20000000, 4)], float("inf"))
 
 
-def test_cli_rejects_unsafe_dump_and_direct_read_before_port_access(monkeypatch, capsys):
-    from mklink import cli
-
-    def unexpected_port(_port):
-        raise AssertionError("unsafe request reached port discovery")
-
-    monkeypatch.setattr(cli, "_resolve_port", unexpected_port)
-    exit_code = cli._cli_dump_memory(
-        None,
-        [f"0x{0x20000000 + index * 4:08X}:4" for index in range(16)],
-    )
-    cli._cli_read_ram(None, "0x20000000", 4097, None)
-
-    output = capsys.readouterr().out
-    assert exit_code == 2
-    assert "safe Pika API boundary" in output
-    assert "use dump-memory for larger reads" in output
-
-
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
@@ -154,7 +154,7 @@ def test_cli_rejects_unsafe_dump_and_direct_read_before_port_access(monkeypatch,
             + [
                 value
                 for index in range(16)
-                for value in (f"0x{0x20000000 + index * 4:08X}", "float")
+                for value in (f"0x{0x20000000 + index * 4096:08X}", "float")
             ],
             "at most 15",
         ),
@@ -166,93 +166,23 @@ def test_cli_main_reports_unsafe_stream_request_as_failure(
     from mklink import cli
 
     monkeypatch.setattr(sys, "argv", ["mklink", *arguments])
-    exit_code = cli.main()
-    output = capsys.readouterr().out
-
-    assert exit_code == 2
-    assert "[FAIL]" in output
-    assert message in output
-    assert "Connecting" not in output
-    assert "[*] 连接" not in output
+    from mklink import runtime_cli
+    monkeypatch.setattr(runtime_cli, 'RuntimeClient', lambda **kw: pytest.fail('invalid stream input connected'))
+    with pytest.raises(SystemExit, match=message):
+        cli.main()
 
 
-def test_cli_dump_stream_finally_sends_explicit_stop_not_one_shot(monkeypatch):
-    from mklink import bridge as bridge_module, cli
-    from unittest.mock import Mock
-    speed = Mock(return_value={'profile': 'medium', 'clock_hz': 10000000})
-    monkeypatch.setattr('mklink.debug_speed.apply_bridge_profile', speed)
-    monkeypatch.setattr('mklink.project_config.load_config', lambda root: {})
-
-    class CliBridge(FakeBridge):
-        def __init__(self, port):
-            super().__init__([])
-            self.port = port
-
-        def connect(self):
-            return True
-
-        def close(self):
-            self.calls.append(("close",))
-
-    created = []
-
-    def make_bridge(port):
-        instance = CliBridge(port)
-        created.append(instance)
-        return instance
-
-    monkeypatch.setattr(cli, "_resolve_port", lambda port: port or "COM_TEST")
-    monkeypatch.setattr(cli, "_init_target_bridge", lambda bridge: None)
-    monkeypatch.setattr(bridge_module, "MKLinkSerialBridge", make_bridge)
-
-    exit_code = cli._cli_dump_memory(
-        None, ["0x20000000:4"], period=0.001, frames=0, duration=0.001,
-    )
-
-    assert exit_code == 1
-    speed.assert_called_once_with(created[0], 'medium')
-    writes = [call[1] for call in created[0].calls if call[0] == "write"]
-    assert writes == [
-        b"cmd.dump_memory(0x20000000, 4, 0.001)\n",
-        b"cmd.dump_memory(0x20000000, 4, -1.0)\n",
-    ]
-
-
-def test_cli_write_ram_uses_device_path_and_verifies_zero_payload(monkeypatch, capsys):
+def test_dump_capture_finally_confirms_stop_after_no_samples(monkeypatch):
     from types import SimpleNamespace
-    from mklink import cli, device
-
-    writes = []
-    fake = SimpleNamespace(
-        write_memory=lambda address, data: writes.append((address, data)),
-        read_memory=lambda address, size: b"\x00" * size,
-        close=lambda: writes.append(("close",)),
-    )
-    monkeypatch.setattr(cli, "_resolve_port", lambda port: port or "COM_TEST")
-    monkeypatch.setattr(device, "connect", lambda **kwargs: fake)
-
-    cli._cli_write_ram(None, "0x24040100", ["0x00"] * 4)
-
-    assert writes == [(0x24040100, b"\x00" * 4), ("close",)]
-    assert "[OK] 回读验证通过" in capsys.readouterr().out
-
-
-def test_cli_write_ram_rejects_invalid_or_oversize_data_before_port_access(monkeypatch, capsys):
-    from mklink import cli
-
-    monkeypatch.setattr(
-        cli,
-        "_resolve_port",
-        lambda _port: (_ for _ in ()).throw(AssertionError("port discovery reached")),
-    )
-    cli._cli_write_ram(None, "0x24040100", ["0x100"])
-    cli._cli_write_ram(None, "0xFFFFFFFE", ["0x00"] * 4)
-    cli._cli_write_ram(None, "0x24040100", ["0x00"] * 4097)
-
-    output = capsys.readouterr().out
-    assert "格式无效" in output
-    assert "超出 32 位地址空间" in output
-    assert "单次最多写入 4096 字节" in output
+    from mklink.dump_memory import capture_dump_stream
+    bridge = FakeBridge([])
+    ticks = iter([0, 0, 3])
+    monkeypatch.setattr('mklink.dump_memory.time.monotonic', lambda: next(ticks))
+    with pytest.raises(TimeoutError, match='No complete'):
+        capture_dump_stream(SimpleNamespace(_bridge=bridge), [{'address':0x20000000,'size':4}],
+                            period=.001, frames=0, duration=.1)
+    assert [call[1] for call in bridge.calls if call[0]=='write']==[
+        b'cmd.dump_memory(0x20000000, 4, 0.001)\n', b'cmd.dump_memory(0x20000000, 4, -1.0)\n']
 
 
 def test_superwatch_poll_reuses_one_connection_and_accounts_for_read_time(monkeypatch):
@@ -281,23 +211,6 @@ def test_superwatch_poll_reuses_one_connection_and_accounts_for_read_time(monkey
     assert factory.call_count == init.call_count == 1
     assert sleeps == pytest.approx([.01, .01])
     bridge.close.assert_called_once()
-
-
-@pytest.mark.parametrize("dump_mem", [False, True])
-def test_superwatch_cli_always_selects_stream_collector(monkeypatch, dump_mem):
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-    from mklink import cli, superwatch
-    collector = Mock(return_value=[])
-    monkeypatch.setattr(superwatch, 'poll_blocks_dumpmem', collector, raising=False)
-    monkeypatch.setattr(superwatch, 'find_project_svd', lambda _: None)
-    monkeypatch.setattr(superwatch, 'resolve_watch_items', lambda *a, **k: [superwatch.WatchItem('a', 0x20000000, 'float', 4)])
-    poll = Mock(return_value=[])
-    monkeypatch.setattr(superwatch, 'poll_blocks', poll)
-    cli._cli_superwatch(SimpleNamespace(svd=None, project_root='.', source=None, variables=['a'],
-                                       visualize=False, period=.001, port='test', duration=1, dump_mem=dump_mem))
-    collector.assert_called_once()
-    poll.assert_not_called()
 
 
 def test_superwatch_dump_collector_decodes_device_time_and_releases_stream(monkeypatch):
@@ -365,6 +278,10 @@ def test_standalone_superwatch_uses_explicit_dump_stop(monkeypatch):
         def _exit_stream(self):
             return None
 
+        def _stop_stream_and_sync(self, command):
+            self._write_raw(command)
+            return True
+
         def close(self):
             return None
 
@@ -414,7 +331,7 @@ def test_superwatch_poll_closes_on_read_error_and_keeps_custom_reader(monkeypatc
 def test_dump_session_reuses_parser_and_owns_exact_stream_lifecycle():
     bridge = FakeBridge([b"noise" + _old_frame(123, struct.pack("<f", 2.5))])
     session = DumpMemoryStreamSession(
-        bridge, [(0x20000000, 4)], 0.0001, stop_grace_s=0,
+        bridge, [(0x20000000, 4)], 0.0001,
     )
 
     session.start()
@@ -477,6 +394,7 @@ def test_dump_stop_consumes_delayed_prompt_before_next_memory_command():
             except queue.Empty:
                 return b""
 
+    bridge._mux_supported = False  # This fixture emulates the legacy wire protocol.
     bridge._serial = SerialPort()
     bridge._ctx.state = DeviceState.READY
     bridge._running = True
@@ -502,7 +420,7 @@ def test_dump_session_reports_crc_loss_and_firmware_drop_flags_separately():
     bridge = FakeBridge([
         bytes(corrupt) + _old_frame(2, b"efgh", flags=FLAG_SAMPLE_DROPPED),
     ])
-    session = DumpMemoryStreamSession(bridge, [(0x20000000, 4)], 0.001, stop_grace_s=0)
+    session = DumpMemoryStreamSession(bridge, [(0x20000000, 4)], 0.001)
 
     session.start()
     frames = session.read_frames()
@@ -518,7 +436,7 @@ def test_dump_session_reports_crc_loss_and_firmware_drop_flags_separately():
 def test_one_shot_dump_reads_payload_and_stops_stream_cleanly():
     bridge = FakeBridge([b"noise", _old_frame(123, b"\x01\x02\x03\x04")])
 
-    payload = read_dump_memory_once(
+    payload = read_dump_memory_range_once(
         bridge, 0x20000020, 4, timeout=0.1, poll_interval=0,
     )
 
@@ -540,7 +458,7 @@ def test_one_shot_dump_error_uses_dump_stop_without_requesting_another_sample():
     bridge = FakeBridge([])
 
     with pytest.raises(TimeoutError, match="timed out"):
-        read_dump_memory_once(
+        read_dump_memory_range_once(
             bridge, 0x20000020, 4, timeout=0.001, poll_interval=0,
         )
 
@@ -614,7 +532,6 @@ def test_multi_region_one_shot_accepts_exact_old_sample_and_reuses_bridge():
     [
         DeviceState.RTT_STREAM,
         DeviceState.SYSTEMVIEW_STREAM,
-        DeviceState.VOFA_STREAM,
         DeviceState.DUMP_STREAM,
     ],
 )
@@ -693,7 +610,7 @@ def test_multi_region_one_shot_serializes_concurrent_dump_captures():
 
 def test_real_bridge_atomically_arbitrates_rtt_enter_against_dump_claim():
     for _attempt in range(25):
-        bridge = object.__new__(MKLinkSerialBridge)
+        bridge = MKLinkSerialBridge("TEST-LEGACY")
         bridge._ctx = DeviceContext(state=DeviceState.READY)
         bridge._buffer_lock = threading.Lock()
         bridge._response_buffer = [b"stale"]
@@ -736,7 +653,7 @@ def test_real_bridge_atomically_arbitrates_rtt_enter_against_dump_claim():
 
 
 def test_real_bridge_failed_dump_claim_preserves_active_rtt_buffer_and_state():
-    bridge = object.__new__(MKLinkSerialBridge)
+    bridge = MKLinkSerialBridge("TEST-LEGACY")
     bridge._ctx = DeviceContext(state=DeviceState.RTT_STREAM)
     bridge._buffer_lock = threading.Lock()
     bridge._response_buffer = [b"live-rtt-bytes"]
@@ -1001,33 +918,19 @@ def test_multi_region_timeout_without_frames_reports_missing_block_gap():
 
 
 @pytest.mark.parametrize("blocked", [False, True])
-def test_cli_dump_limits_complete_samples_inside_one_usb_read(monkeypatch, tmp_path, blocked):
-    from mklink import bridge as bridge_module, cli
-    monkeypatch.setattr("mklink.debug_speed.apply_bridge_profile", lambda *a: {})
-    monkeypatch.setattr("mklink.project_config.load_config", lambda *a: {})
-    expected = b"A" * (4096 if blocked else 4)
+def test_dump_capture_limits_complete_samples_inside_one_usb_read(blocked):
+    from types import SimpleNamespace
+    from mklink.dump_memory import capture_dump_stream
+    expected = b'A' * (4096 if blocked else 4)
     if blocked:
-        raw = b"".join(
-            _b1_frame(t, value * 2048, block_index=i, block_count=2, total_size=4096)
-            for t, value, i in ((1, b"A", 0), (2, b"A", 1), (3, b"B", 0), (4, b"B", 1))
-        )
+        raw = b''.join(_b1_frame(t,value*2048,block_index=i,block_count=2,total_size=4096)
+                      for t,value,i in ((1,b'A',0),(2,b'A',1),(3,b'B',0),(4,b'B',1)))
     else:
-        raw = _old_frame(1, expected) + _old_frame(2, b"BBBB")
-    class CliBridge(FakeBridge):
-        def __init__(self, port):
-            super().__init__([raw])
-        def connect(self):
-            return True
-        def close(self):
-            pass
-    monkeypatch.setattr(bridge_module, "MKLinkSerialBridge", CliBridge)
-    monkeypatch.setattr(cli, "_resolve_port", lambda p: "TEST")
-    monkeypatch.setattr(cli, "_init_target_bridge", lambda b: None)
-    output = tmp_path / "sample.bin"
-    result = cli._cli_dump_memory(None, [f"0x20000000:{len(expected)}"],
-                                  period=.001, frames=1, duration=1, save=str(output))
-    assert result == 0
-    assert output.read_bytes() == expected
+        raw = _old_frame(1,expected)+_old_frame(2,b'BBBB')
+    result = capture_dump_stream(SimpleNamespace(_bridge=FakeBridge([raw])),
+                                  [{'address':0x20000000,'size':len(expected)}], period=.001, frames=1)
+    assert result['sample_count']==1 and result['total_bytes']==len(expected)
+    assert bytes.fromhex(result['samples'][0]['regions'][0]['data_hex'])==expected
 
 
 def test_range_read_uses_acknowledged_stop_without_fixed_delay(monkeypatch):
@@ -1046,3 +949,21 @@ def test_range_read_rejects_failed_command_resynchronization():
     with pytest.raises(TimeoutError, match="restore command mode"):
         read_dump_memory_range_once(bridge, 0x80000000, 4, poll_interval=0)
     assert ("exit",) not in bridge.calls
+
+
+def test_multi_region_read_uses_acknowledged_stop_without_fixed_delay(monkeypatch):
+    bridge = FakeBridge([_old_regions_frame(1, [(0, b'abcd')])])
+    stopped = []
+    bridge._stop_stream_and_sync = lambda command: stopped.append(command) or True
+    monkeypatch.setattr('mklink.dump_memory.time.sleep', lambda _: pytest.fail('fixed sleep'))
+    assert read_dump_memory_regions_once(bridge, [(0x20000000, 4)], poll_interval=0) == (b'abcd',)
+    assert stopped == [b'cmd.dump_memory(0x20000000, 1, -1.0)\n']
+    assert ('exit',) not in bridge.calls
+
+
+def test_multi_region_read_rejects_failed_command_resynchronization():
+    bridge = FakeBridge([_old_regions_frame(1, [(0, b'abcd')])])
+    bridge._stop_stream_and_sync = lambda command: False
+    with pytest.raises(TimeoutError, match='restore command mode'):
+        read_dump_memory_regions_once(bridge, [(0x20000000, 4)], poll_interval=0)
+    assert ('exit',) not in bridge.calls

@@ -1,4 +1,11 @@
-# Mklink Site Agent package v0.1.6
+# MKLink 0.3.0 standalone remote service
+
+Builds require the same complete, integrity-checked built-in FLM bundle as the
+desktop package. Set `MKLINK_BUILTIN_FLM_ROOT` to that local asset directory
+when it isn't installed in the checkout. The existing desktop asset validator
+checks the catalog and every blob before building and again in the final bundle.
+Only manifest-listed built-in FLMs are allowed; unrelated firmware, Packs and
+FLMs remain prohibited. These assets are package inputs, not committed binaries.
 
 This ZIP is the standalone Windows field-side Site Agent. It includes the
 Python runtime and remote-agent dependencies; the field machine does not need
@@ -85,10 +92,12 @@ Each control command loads the same token source and emits structured JSON:
 `stop` requests cooperative shutdown through the authenticated public
 protocol. `restart` requests that shutdown, waits for the listener to close,
 then the invoking process becomes the replacement foreground agent. The
-package creates no product worker or supervisor child. Windows may attach an
-operating-system `conhost.exe` console host; it is not a Mklink worker and
-exits with the foreground agent. The readiness field `owned_children: 0`
-means zero product-owned worker children.
+listener has no supervisor worker. Connecting a physical probe can start a
+separate shared runtime using the same executable, or attach to an existing
+runtime. That runtime serves GUI/AI clients independently and is not stopped
+when this listener stops. Windows may also attach a `conhost.exe` console host.
+The readiness field `owned_children: 0` describes listener-owned workers only;
+it is not a count of shared runtimes or all operating-system descendants.
 
 Exit code `0` means the requested lifecycle operation completed. Exit code `2`
 is a redacted configuration, authentication, connection, or runtime failure;
@@ -96,7 +105,43 @@ is a redacted configuration, authentication, connection, or runtime failure;
 
 ## Removal
 
-Stop the listener, verify the foreground process has exited, and delete the
-extracted package directory. Runtime uploads are stored below the configured
+Stop the listener and verify the foreground process has exited. Before deleting
+or replacing the package directory, also detach its other GUI/AI clients and
+explicitly stop any shared runtime running from this executable through the
+shared runtime controls. Do not terminate another probe's runtime or assume
+listener shutdown released the package's executable files. Runtime uploads are stored below the configured
 `--project-root` (the current directory by default), not inside this package
 unless that directory is chosen as the project root.
+
+
+## Shared target operations in 0.3.0
+
+Choose the command interface with `--device-port` when multiple probes are
+present. A remote client calls `agent.reconnect` before target operations;
+the selected USB identity remains fixed for the service lifetime. There is no
+fallback to a direct exclusive CDC connection. Stop/restart the service to
+choose another probe.
+
+RTT and SystemView use shared subscriptions with version-2 read contracts.
+Stopping a borrowed subscription does not stop another client's acquisition.
+Offline deployment resolves uploaded references and passes through the shared
+backend's identity and operation admission checks. `jobs.status` queries retained
+flash/erase/reset and version-2 offline deployment jobs. Deployment requires a
+stable `request_id`; keep it before sending and query `jobs.status` with that ID
+on the same probe after a lost response. The Python client generates an ID if
+omitted and exposes it as `error.request_id` on failure. Direct RPC requests
+must supply it explicitly. Querying never resubmits. At most 64 records remain;
+a missing record does not prove that an operation did not execute. Incomplete
+rollback retains its backup path in the job record for manual inspection.
+The GUI provides the same request ID and result-query controls. This journals
+file deployment only; it does not turn deployment into a flash trigger.
+
+The listener being ready does not prove target connectivity, packaged algorithm
+coverage, physical deployment, or long-duration operation. Check the capability
+handshake and operation result. This package does not include FLM/Pack assets or
+target firmware; upload the algorithm and firmware needed for offline deployment.
+BIN deployment also requires exact target metadata to validate the Flash range;
+an uploaded FLM alone does not supply that catalog entry. Never substitute a
+similar part number to pass validation. The remote dependency set includes
+pyOCD for catalog and geometry queries, and the frozen package must include its
+dynamic modules and resources.

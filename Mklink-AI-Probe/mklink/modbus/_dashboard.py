@@ -1,868 +1,409 @@
-"""Modbus Web Dashboard — real-time register visualization with interactive controls.
+"""Profile dashboard presentation server; all Modbus I/O uses the shared runtime.
 
-Architecture: HTTP+SSE server plus exactly one Modbus I/O worker thread.
-HTTP handlers may run concurrently, but all serial operations must be
-submitted to that single worker queue. Never access the Modbus serial port
-directly from multiple threads.
-Zero new Python dependencies — uses stdlib http.server + threading + queue.
+FastAPI owns HTTP/disconnect handling, AsyncBridge owns bounded SSE delivery,
+and the runtime owns serial access and transaction cancellation. There is no
+dashboard serial client, worker queue, or independently timed write operation.
 """
-
 from __future__ import annotations
 
-import atexit
+import asyncio
+from collections import deque
+from contextlib import asynccontextmanager
 import json
-import os
-import queue
+import math
+from pathlib import Path
 import secrets
 import signal
-import sys
+import socket
 import threading
 import time
+from typing import Literal
+from urllib.parse import urlsplit
 import webbrowser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
 
-from mklink.modbus._client import ModbusClient, ModbusError
-from mklink.modbus._format import RegisterSpec, registers_to_values
-from mklink.modbus._poller import _group_consecutive
-from mklink.modbus._profile import (
-    build_addr_index,
-    find_command,
-    get_writable_addrs,
-    resolve_command,
-    validate_param,
-)
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
+from starlette.concurrency import run_in_threadpool
+import uvicorn
 
-MAX_BATCH = 125  # Modbus FC03 limit
-
-
-# ---------------------------------------------------------------------------
-# Modbus I/O Worker — serializes all serial operations
-# ---------------------------------------------------------------------------
+from mklink.modbus._format import RegisterSpec
+from mklink.modbus._profile import build_addr_index, find_command, resolve_command, validate_param
+from mklink.modbus._registers import read_register_values, validate_poll_interval, validate_register_specs
+from mklink.modbus._session import validate_slave, validate_transaction
+from mklink.remote.dashboards import AsyncBridge, _sse_json
+from mklink.runtime import RuntimeClient, RuntimeErrorResponse
 
 
-class _ModbusWorker:
-    """Single-thread worker that processes read/write requests via a queue."""
-
-    def __init__(self, client: ModbusClient, slave: int):
-        self._client = client
-        self._slave = slave
-        self._queue: queue.Queue = queue.Queue()
-        self._thread: threading.Thread | None = None
-        self._running = threading.Event()
-
-    def start(self):
-        self._running.set()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def stop(self):
-        self._running.clear()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=3.0)
-
-    def submit_read(self, specs: list[RegisterSpec]) -> dict[int, int | float]:
-        """Submit a synchronous read request, block until done."""
-        result: dict[int, int | float] = {}
-        done = threading.Event()
-        resp_holder: list[Any] = [None]
-
-        def _do_read():
-            try:
-                resp_holder[0] = self._batch_read(specs)
-            except Exception as e:
-                resp_holder[0] = e
-            finally:
-                done.set()
-
-        self._queue.put(_do_read)
-        done.wait(timeout=10.0)
-        if isinstance(resp_holder[0], Exception):
-            raise resp_holder[0]
-        return resp_holder[0] or {}
-
-    def submit_write(self, addr: int, value: int) -> None:
-        """Submit a synchronous write request."""
-        done = threading.Event()
-        error_holder: list = [None]
-
-        def _do_write():
-            try:
-                self._client.write_register(addr, value, self._slave)
-            except Exception as e:
-                error_holder[0] = e
-            finally:
-                done.set()
-
-        self._queue.put(_do_write)
-        done.wait(timeout=5.0)
-        if error_holder[0]:
-            raise error_holder[0]
-
-    def submit_debug_read(self, fc: int, start: int, quantity: int) -> list[int | bool]:
-        """Submit a synchronous manual read request for FC01/02/03/04."""
-        done = threading.Event()
-        resp_holder: list[Any] = [None]
-
-        def _do_read():
-            try:
-                if fc == 1:
-                    resp_holder[0] = self._client.read_coils(start, quantity, self._slave)
-                elif fc == 2:
-                    resp_holder[0] = self._client.read_discrete_inputs(start, quantity, self._slave)
-                elif fc == 3:
-                    resp_holder[0] = self._client.read_holding_registers(start, quantity, self._slave)
-                elif fc == 4:
-                    resp_holder[0] = self._client.read_input_registers(start, quantity, self._slave)
-                else:
-                    raise ValueError(f"Unsupported read function code: {fc}")
-            except Exception as e:
-                resp_holder[0] = e
-            finally:
-                done.set()
-
-        self._queue.put(_do_read)
-        done.wait(timeout=10.0)
-        if isinstance(resp_holder[0], Exception):
-            raise resp_holder[0]
-        return list(resp_holder[0] or [])[:quantity]
-
-    def submit_debug_write(self, fc: int, start: int, values: list[int | bool]) -> None:
-        """Submit a synchronous manual write request for FC05/06/15/16."""
-        done = threading.Event()
-        error_holder: list[Any] = [None]
-
-        def _do_write():
-            try:
-                if fc == 5:
-                    self._client.write_coil(start, bool(values[0]), self._slave)
-                elif fc == 6:
-                    self._client.write_register(start, int(values[0]), self._slave)
-                elif fc == 15:
-                    self._client.write_coils(start, [bool(v) for v in values], self._slave)
-                elif fc == 16:
-                    self._client.write_registers(start, [int(v) for v in values], self._slave)
-                else:
-                    raise ValueError(f"Unsupported write function code: {fc}")
-            except Exception as e:
-                error_holder[0] = e
-            finally:
-                done.set()
-
-        self._queue.put(_do_write)
-        done.wait(timeout=10.0)
-        if error_holder[0]:
-            raise error_holder[0]
-
-    def _run(self):
-        while self._running.is_set():
-            try:
-                task = self._queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
-            try:
-                task()
-            except Exception:
-                pass  # errors handled in resp_holder
-
-    def _batch_read(self, specs: list[RegisterSpec]) -> dict[int, int | float]:
-        """Read registers in batches of max MAX_BATCH, return {addr: value}."""
-        result: dict[int, int | float] = {}
-        groups = _group_consecutive(specs)
-        for group in groups:
-            start_addr = group[0].addr
-            count = sum(s.reg_count for s in group)
-            # Split oversized batches
-            while count > 0:
-                n = min(count, MAX_BATCH)
-                regs = self._client.read_holding_registers(start_addr, n, self._slave)
-                for spec in group:
-                    offset = spec.addr - start_addr
-                    if offset < 0 or offset + spec.reg_count > len(regs):
-                        continue
-                    raw = regs[offset: offset + spec.reg_count]
-                    vals = registers_to_values(raw, spec.type)
-                    if vals:
-                        result[spec.addr] = vals[0]
-                start_addr += n
-                count -= n
-        return result
+class _Body(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    token: str
 
 
-# ---------------------------------------------------------------------------
-# Poller — periodic register reads via worker
-# ---------------------------------------------------------------------------
+class _Write(_Body):
+    addr: StrictInt
+    value: StrictInt
 
 
-class _DashboardPoller:
-    """Periodic poller that reads registers in fast/slow groups."""
-
-    def __init__(
-        self,
-        worker: _ModbusWorker,
-        profile: dict,
-        on_snapshot,  # callback: (snapshot_dict) -> None
-        fast_interval: float = 1.0,
-        slow_interval: float = 5.0,
-    ):
-        self._worker = worker
-        self._profile = profile
-        self._on_snapshot = on_snapshot
-        self._fast_interval = fast_interval
-        self._slow_interval = slow_interval
-        self._running = threading.Event()
-        self._thread: threading.Thread | None = None
-
-        # Build spec lists per poll group
-        self._fast_specs: list[RegisterSpec] = []
-        self._slow_specs: list[RegisterSpec] = []
-        for group in profile.get("groups", []):
-            pg = group.get("poll_group", "fast")
-            for reg in group.get("registers", []):
-                if reg.get("hidden"):
-                    continue
-                spec = RegisterSpec(
-                    addr=reg["addr"],
-                    type=reg.get("type", "uint16"),
-                    name=reg.get("name", ""),
-                )
-                if pg == "fast":
-                    self._fast_specs.append(spec)
-                else:
-                    self._slow_specs.append(spec)
-
-        # Sort for consecutive grouping
-        self._fast_specs.sort(key=lambda s: s.addr)
-        self._slow_specs.sort(key=lambda s: s.addr)
-
-    def start(self):
-        self._running.set()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def stop(self):
-        self._running.clear()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=3.0)
-
-    def _run(self):
-        last_fast = 0.0
-        last_slow = 0.0
-        while self._running.is_set():
-            now = time.time()
-            snapshot: dict[str, Any] = {"_t": now}
-
-            # Fast group
-            if now - last_fast >= self._fast_interval:
-                try:
-                    data = self._worker.submit_read(self._fast_specs)
-                    snapshot["registers"] = data
-                    last_fast = now
-                except Exception:
-                    pass
-
-            # Slow group
-            if now - last_slow >= self._slow_interval and self._slow_specs:
-                try:
-                    data = self._worker.submit_read(self._slow_specs)
-                    snapshot.setdefault("registers", {}).update(data)
-                    last_slow = now
-                except Exception:
-                    pass
-
-            if "registers" in snapshot:
-                self._on_snapshot(snapshot)
-
-            # Sleep for remainder of fast interval
-            elapsed = time.time() - now
-            sleep_time = max(0.05, self._fast_interval - elapsed)
-            self._running.wait(sleep_time)
+class _Command(_Body):
+    action: str
+    params: dict[str, StrictInt] = Field(default_factory=dict)
 
 
-# ---------------------------------------------------------------------------
-# HTTP / SSE server
-# ---------------------------------------------------------------------------
+class _Read(_Body):
+    fc: StrictInt
+    start: StrictInt
+    quantity: StrictInt = 1
+
+
+class _DebugWrite(_Body):
+    fc: StrictInt
+    start: StrictInt
+    values: list[StrictInt | StrictBool]
+
+
+class _Language(_Body):
+    lang: Literal['zh', 'en']
 
 
 class ModbusDashboardServer:
-    """Web dashboard server with SSE real-time data and REST write endpoints."""
+    """Serve a profile UI using an attached RuntimeClient owned by the caller."""
 
-    def __init__(
-        self,
-        client: ModbusClient,
-        slave: int,
-        profile: dict,
-        host: str = "127.0.0.1",
-        port: int = 0,
-        max_points: int = 500,
-        fast_interval: float = 1.0,
-        slow_interval: float = 5.0,
-        enable_remote_writes: bool = False,
-        allow_arbitrary_writes: bool = False,
-        html_path: str | None = None,
-        idle_timeout: float = 300.0,
-    ):
-        self._host = host
-        self._port = port
-        self._max_points = max_points
+    def __init__(self, client: RuntimeClient, slave: int, profile: dict,
+                 host: str = '127.0.0.1', port: int = 0, max_points: int = 500,
+                 fast_interval: float = 1.0, slow_interval: float = 5.0,
+                 enable_remote_writes: bool = False, allow_arbitrary_writes: bool = False,
+                 html_path: str | None = None, idle_timeout: float = 300.0):
+        self._client = client
+        self._slave = validate_slave(slave)
         self._profile = profile
+        self._host, self._port = host, port
+        if type(port) is not int or not 0 <= port <= 65535:
+            raise ValueError('HTTP port must be in the range 0..65535')
+        if type(max_points) is not int or not 1 <= max_points <= 10000:
+            raise ValueError('max_points must be in the range 1..10000')
+        if isinstance(idle_timeout, bool) or not math.isfinite(idle_timeout) or idle_timeout < 0:
+            raise ValueError('idle_timeout must be finite and non-negative')
+        self._max_points, self._idle_timeout = max_points, idle_timeout
+        self._intervals = [validate_poll_interval(fast_interval), validate_poll_interval(slow_interval)]
+        self._specs: list[list[RegisterSpec]] = [[], []]
+        for group in profile.get('groups', []):
+            poll_group = group.get('poll_group', 'fast')
+            if poll_group not in ('fast', 'slow'):
+                raise ValueError('Profile poll_group must be fast or slow')
+            for reg in group.get('registers', []):
+                if not reg.get('hidden'):
+                    self._specs[poll_group == 'slow'].append(RegisterSpec(
+                        addr=reg['addr'], type=reg.get('type', 'uint16'), name=reg.get('name', ''),
+                        register_type=reg.get('register_type', 'holding')))
+        validate_register_specs(self._specs[0] + self._specs[1])
+        for specs in self._specs:
+            specs.sort(key=lambda spec: (spec.register_type, spec.addr))
+        self._addr_index = build_addr_index(profile)
+        self._root = Path.cwd()
+        self._html_path = Path(html_path).resolve() if html_path else None
+        if self._html_path and not self._html_path.is_file():
+            raise FileNotFoundError(self._html_path)
         self._enable_remote_writes = enable_remote_writes
         self._allow_arbitrary_writes = allow_arbitrary_writes
-        self._html_path = html_path
-        self._idle_timeout = idle_timeout  # 0 = disabled
-        self._idle_since: float | None = None
-        self._idle_timer: threading.Thread | None = None
-        self._idle_stop = threading.Event()
-
-        # Security
         self._csrf_token = secrets.token_hex(16)
-
-        # Modbus I/O
-        self._worker = _ModbusWorker(client, slave)
-        self._poller = _DashboardPoller(
-            self._worker, profile, self.push_snapshot,
-            fast_interval=fast_interval, slow_interval=slow_interval,
-        )
-
-        # SSE clients
-        self._clients: list[queue.Queue] = []
-        self._clients_lock = threading.Lock()
-        self._history: list[dict] = []
+        self._bridge = AsyncBridge()
+        self._history: deque = deque(maxlen=max_points)
         self._latest: dict = {}
-
-        # HTTP server
-        self._httpd: ThreadingHTTPServer | None = None
+        self._stopping = threading.Event()
+        self._finished = threading.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._wake: asyncio.Event | None = None
         self._thread: threading.Thread | None = None
-        self._running = threading.Event()
+        self._server: uvicorn.Server | None = None
+        self._error: BaseException | None = None
+        self.app = self._create_app()
 
-        # Addr index for lookups
-        self._addr_index = build_addr_index(profile)
-        self._writable_addrs = get_writable_addrs(profile)
+    def _transaction(self, fc, start, *, quantity=None, values=None):
+        fc, start, quantity, values = validate_transaction(fc, start, quantity=quantity, values=values)
+        if self._stopping.is_set():
+            raise RuntimeErrorResponse('Dashboard is stopping', status_code=503)
+        params = {'slave': self._slave, 'fc': fc, 'start': start}
+        params.update({'quantity': quantity} if quantity is not None else {'values': values})
+        return self._client.call('modbus_transaction', params)
 
-    @property
-    def port(self) -> int:
-        if self._httpd:
-            return self._httpd.server_address[1]
-        return self._port
+    async def _poll(self):
+        deadlines = [0.0, 0.0]
+        idle_since = time.monotonic()
+        try:
+            while not self._stopping.is_set():
+                now = time.monotonic()
+                if self._bridge.client_count:
+                    idle_since = now
+                elif self._idle_timeout and now - idle_since >= self._idle_timeout:
+                    self.request_stop()
+                    break
+                registers = {}
+                for index, specs in enumerate(self._specs):
+                    if specs and now >= deadlines[index] and not self._stopping.is_set():
+                        data = await run_in_threadpool(read_register_values,
+                            lambda fc, address, count: self._transaction(fc, address, quantity=count)['values'], specs)
+                        registers.update(data)
+                        deadlines[index] = time.monotonic() + self._intervals[index]
+                if registers and not self._stopping.is_set():
+                    self.push_snapshot({'_t': time.time(), 'registers': registers})
+                delay = min([1.0] + [max(.01, deadlines[i] - time.monotonic())
+                                      for i, specs in enumerate(self._specs) if specs])
+                try:
+                    await asyncio.wait_for(self._wake.wait(), timeout=delay)
+                except asyncio.TimeoutError:
+                    pass
+        except Exception as exc:
+            if not self._stopping.is_set():
+                self._error = exc
+                self.push_event('poll_error', {'error': str(exc), 'ok': False})
+                self.request_stop()
+
+    def _authorize(self, request: Request, body: _Body):
+        if self._stopping.is_set():
+            raise HTTPException(503, 'Dashboard is stopping')
+        if not secrets.compare_digest(body.token.encode('utf-8'), self._csrf_token.encode('ascii')):
+            raise HTTPException(403, 'CSRF token mismatch')
+        origin = request.headers.get('origin')
+        if origin and not self._enable_remote_writes:
+            actual, expected = urlsplit(origin), urlsplit(str(request.base_url))
+            if (actual.scheme, actual.netloc) != (expected.scheme, expected.netloc):
+                raise HTTPException(403, 'Cross-origin writes are disabled')
+
+    def _validate_write(self, addr, value):
+        ok, message = validate_param(self._profile, addr, value)
+        if not ok:
+            raise ValueError(message)
+
+    def _create_app(self):
+        @asynccontextmanager
+        async def lifespan(app):
+            self._loop = asyncio.get_running_loop()
+            self._wake = asyncio.Event()
+            poll = asyncio.create_task(self._poll())
+            try:
+                yield
+            finally:
+                self.request_stop()
+                # Drain the current RPC before the caller detaches its session.
+                await poll
+
+        app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+        async def error_response(request, exc):
+            status = getattr(exc, 'status_code', None) or (502 if isinstance(exc, (OSError, RuntimeErrorResponse)) else 422)
+            event = {'/write': 'write_result', '/command': 'command_result',
+                     '/debug/read': 'debug_result', '/debug/write': 'debug_result'}.get(request.url.path)
+            if event and isinstance(exc, (OSError, RuntimeErrorResponse)):
+                self.push_event(event, {'ok': False, 'error': str(exc)})
+            return JSONResponse({'ok': False, 'error': str(getattr(exc, 'detail', exc))}, status_code=status)
+
+        for error in (ValueError, OSError, RuntimeErrorResponse, HTTPException, RequestValidationError):
+            app.add_exception_handler(error, error_response)
+
+        @app.get('/', response_class=HTMLResponse)
+        @app.get('/index.html', response_class=HTMLResponse)
+        def html():
+            from mklink.modbus._dashboard_html import build_html
+            path = self._html_path or self._root / '.mklink/modbus_dashboard.html'
+            if path.is_file():
+                return path.read_text(encoding='utf-8')
+            return build_html(self._max_points, json.dumps(self._profile), self._csrf_token, project_root=self._root)
+
+        @app.get('/profile')
+        async def profile():
+            return self._profile
+
+        @app.get('/snapshot')
+        async def snapshot():
+            return self._latest
+
+        @app.get('/csrf-token')
+        async def csrf():
+            return {'token': self._csrf_token}
+
+        @app.get('/stream')
+        async def stream():
+            async def events():
+                queue = self._bridge.add_client()
+                try:
+                    if self._stopping.is_set():
+                        yield _sse_json({'_event': 'shutdown'})
+                        return
+                    for point in list(self._history):
+                        yield _sse_json(point)
+                    while True:
+                        try:
+                            data = await asyncio.wait_for(queue.get(), timeout=15)
+                        except asyncio.TimeoutError:
+                            yield ':ping\n\n'
+                            continue
+                        if data is None:
+                            yield _sse_json({'_event': 'shutdown'})
+                            return
+                        yield _sse_json(data)
+                finally:
+                    self._bridge.remove_client(queue)
+            return StreamingResponse(events(), media_type='text/event-stream',
+                                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+        @app.post('/write')
+        async def write(request: Request, body: _Write):
+            self._authorize(request, body)
+            self._validate_write(body.addr, body.value)
+            await run_in_threadpool(self._transaction, 6, body.addr, values=[body.value])
+            self.push_event('write_result', {'ok': True, 'addr': body.addr, 'value': body.value,
+                                          'name': self._addr_index.get(body.addr, {}).get('name', str(body.addr))})
+            return {'ok': True, 'message': 'Write successful'}
+
+        @app.post('/command')
+        async def command(request: Request, body: _Command):
+            self._authorize(request, body)
+            ok, address, value, message = resolve_command(self._profile, body.action)
+            if not ok:
+                raise ValueError(message)
+            definition = find_command(self._profile, body.action)
+            params = definition.get('params', [])
+            # This protocol writes one register. Never silently discard parameters.
+            if len(params) > 1 or set(body.params) != {p['name'] for p in params}:
+                raise ValueError('Command requires its declared parameters and at most one value')
+            for param in params:
+                value = body.params[param['name']]
+                if value < param.get('min', 0) or value > param.get('max', 65535):
+                    raise ValueError(f"{param['name']} is out of range")
+            await run_in_threadpool(self._transaction, 6, address, values=[value])
+            self.push_event('command_result', {'ok': True, 'action': body.action,
+                                              'write_addr': address, 'write_value': value})
+            return {'ok': True, 'message': f"Command '{body.action}' sent"}
+
+        @app.post('/debug/read')
+        async def debug_read(request: Request, body: _Read):
+            self._authorize(request, body)
+            if body.fc not in (1, 2, 3, 4):
+                raise ValueError('Read function code must be 1, 2, 3, or 4')
+            result = await run_in_threadpool(self._transaction, body.fc, body.start, quantity=body.quantity)
+            payload = {'ok': True, 'fc': body.fc, 'start': body.start, 'quantity': body.quantity,
+                       'values': result['values']}
+            self.push_event('debug_result', payload)
+            return payload
+
+        @app.post('/debug/write')
+        async def debug_write(request: Request, body: _DebugWrite):
+            self._authorize(request, body)
+            if body.fc not in (5, 6, 15, 16):
+                raise ValueError('Write function code must be 5, 6, 15, or 16')
+            fc, start, _, values = validate_transaction(body.fc, body.start, values=body.values)
+            if not self._allow_arbitrary_writes:
+                for offset, value in enumerate(values):
+                    self._validate_write(start + offset, value)
+            await run_in_threadpool(self._transaction, fc, start, values=values)
+            payload = {'ok': True, 'fc': fc, 'start': start, 'values': values}
+            self.push_event('debug_result', payload)
+            return payload
+
+        @app.post('/api/lang')
+        async def language(request: Request, body: _Language):
+            self._authorize(request, body)
+            def save():
+                path = self._root / '.mklink/lang.json'
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps({'lang': body.lang}), encoding='utf-8')
+            await run_in_threadpool(save)
+            return {'status': 'ok', 'lang': body.lang}
+
+        from mklink._static import _STATIC_DIR
+        app.mount('/static', StaticFiles(directory=_STATIC_DIR), name='static')
+        return app
+
+    def push_snapshot(self, data):
+        """Called on the presentation loop after a complete polling cycle."""
+        self._latest = {'_t': data['_t'], 'registers': {
+            **self._latest.get('registers', {}), **data['registers']}}
+        self._history.append(data)
+        self._bridge.put(data)
+
+    def push_event(self, event, payload):
+        self._bridge.put({'_event': event, **payload})
+
+    def request_stop(self):
+        """Reject new operations and wake streams before uvicorn drains handlers."""
+        self._stopping.set()
+        self._bridge.stop()
+        if self._loop and self._wake and not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(self._wake.set)
+        if self._server:
+            self._server.should_exit = True
 
     def start(self) -> int:
-        """Start all services. Returns actual HTTP port."""
-        if self._httpd is not None:
-            return self.port
-
-        server = self
-        _max_points = self._max_points
-        _profile = self._profile
-        _csrf = self._csrf_token
-        _addr_index = self._addr_index
-        _writable = self._writable_addrs
-
-        class _Handler(BaseHTTPRequestHandler):
-            def log_message(this, fmt, *args):
-                pass
-
-            def do_GET(this):
-                if this.path == "/" or this.path == "/index.html":
-                    this._serve_html()
-                elif this.path == "/stream":
-                    this._handle_sse()
-                elif this.path == "/snapshot":
-                    this._serve_json(server._latest)
-                elif this.path == "/profile":
-                    this._serve_json(_profile)
-                elif this.path == "/csrf-token":
-                    this._serve_json({"token": _csrf})
-                elif this.path.startswith("/static/"):
-                    from mklink._static import serve_static
-                    if not serve_static(this, this.path[8:]):
-                        this.send_error(404)
-                else:
-                    this.send_error(404)
-
-            def do_POST(this):
-                if this.path == "/write":
-                    this._handle_write()
-                elif this.path == "/command":
-                    this._handle_command()
-                elif this.path == "/debug/read":
-                    this._handle_debug_read()
-                elif this.path == "/debug/write":
-                    this._handle_debug_write()
-                elif this.path == "/api/lang":
-                    this._handle_lang()
-                else:
-                    this.send_error(404)
-
-            # --- GET handlers ---
-
-            def _serve_html(this):
-                html_content = None
-
-                # 1. Explicit --html path
-                if server._html_path and os.path.isfile(server._html_path):
-                    with open(server._html_path, "r", encoding="utf-8") as f:
-                        html_content = f.read()
-
-                # 2. Project-level .mklink/modbus_dashboard.html
-                if html_content is None:
-                    project_html = os.path.join(".mklink", "modbus_dashboard.html")
-                    if os.path.isfile(project_html):
-                        with open(project_html, "r", encoding="utf-8") as f:
-                            html_content = f.read()
-
-                # 3. Fallback: generate from profile
-                if html_content is None:
-                    from mklink.modbus._dashboard_html import build_html
-                    html_content = build_html(_max_points, json.dumps(_profile), _csrf)
-
-                data = html_content.encode("utf-8")
-                this.send_response(200)
-                this.send_header("Content-Type", "text/html; charset=utf-8")
-                this.send_header("Content-Length", str(len(data)))
-                this.end_headers()
-                this.wfile.write(data)
-
-            def _serve_json(this, obj):
-                data = json.dumps(obj).encode("utf-8")
-                this.send_response(200)
-                this.send_header("Content-Type", "application/json")
-                this.send_header("Content-Length", str(len(data)))
-                this.end_headers()
-                this.wfile.write(data)
-
-            def _handle_sse(this):
-                this.send_response(200)
-                this.send_header("Content-Type", "text/event-stream")
-                this.send_header("Cache-Control", "no-cache")
-                this.send_header("Connection", "keep-alive")
-                this.end_headers()
-
-                client_q: queue.Queue = queue.Queue(maxsize=100)
-                with server._clients_lock:
-                    server._clients.append(client_q)
-
-                # Replay history
+        if self._thread is not None or self._stopping.is_set():
+            raise RuntimeError('Dashboard instances may only be started once')
+        listener = socket.socket(socket.AF_INET6 if ':' in self._host else socket.AF_INET)
+        try:
+            if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            listener.bind((self._host, self._port))
+            self._port = listener.getsockname()[1]
+            self._server = uvicorn.Server(uvicorn.Config(self.app, log_level='warning',
+                lifespan='on', limit_concurrency=32))
+            def serve():
                 try:
-                    for pt in server._history[-_max_points:]:
-                        client_q.put_nowait(pt)
-                except queue.Full:
-                    pass
-
-                try:
-                    last_hb = time.time()
-                    while server._running.is_set():
-                        try:
-                            pt = client_q.get(timeout=1.0)
-                            line = f"data: {json.dumps(pt)}\n\n"
-                            this.wfile.write(line.encode("utf-8"))
-                            this.wfile.flush()
-                        except queue.Empty:
-                            now = time.time()
-                            if now - last_hb > 15:
-                                this.wfile.write(b":ping\n\n")
-                                this.wfile.flush()
-                                last_hb = now
-                except (BrokenPipeError, ConnectionResetError, OSError):
-                    pass
+                    self._server.run(sockets=[listener])
+                except BaseException as exc:
+                    self._error = exc
                 finally:
-                    with server._clients_lock:
-                        if client_q in server._clients:
-                            server._clients.remove(client_q)
+                    listener.close()
+                    self._finished.set()
+            self._thread = threading.Thread(target=serve, name='modbus-dashboard-http', daemon=True)
+            self._thread.start()
+            deadline = time.monotonic() + 10
+            while not self._server.started:
+                if self._finished.wait(.01) or time.monotonic() >= deadline:
+                    raise RuntimeErrorResponse(f'Dashboard failed to start: {self._error or "startup timeout"}')
+            return self._port
+        except BaseException:
+            self.stop()
+            listener.close()
+            raise
 
-            # --- POST handlers ---
-
-            def _read_body(this) -> bytes:
-                length = int(this.headers.get("Content-Length", 0))
-                if length > 4096:
-                    return b""
-                return this.rfile.read(length) if length > 0 else b""
-
-            def _check_csrf(this, body: dict) -> bool:
-                token = body.get("token", "")
-                if token != _csrf:
-                    return False
-                origin = this.headers.get("Origin", "")
-                referer = this.headers.get("Referer", "")
-                if origin and "127.0.0.1" not in origin and "localhost" not in origin:
-                    if not server._enable_remote_writes:
-                        return False
-                return True
-
-            def _handle_write(this):
-                try:
-                    body = json.loads(this._read_body())
-                except Exception:
-                    this._send_error(400, "Invalid JSON")
-                    return
-
-                if not this._check_csrf(body):
-                    this._send_error(403, "CSRF token mismatch")
-                    return
-
-                addr = body.get("addr")
-                value = body.get("value")
-                if addr is None or value is None:
-                    this._send_error(400, "Missing addr or value")
-                    return
-
-                addr = int(addr)
-                value = int(value)
-
-                # Validate against profile
-                ok, msg = validate_param(_profile, addr, value)
-                if not ok:
-                    this._send_error(422, msg)
-                    return
-
-                try:
-                    server._worker.submit_write(addr, value)
-                    # Push write result as SSE event
-                    server.push_event("write_result", {
-                        "addr": addr, "value": value, "ok": True,
-                        "name": _addr_index.get(addr, {}).get("name", str(addr)),
-                    })
-                    this._serve_json({"ok": True, "message": "Write successful"})
-                except ModbusError as e:
-                    server.push_event("write_result", {
-                        "addr": addr, "value": value, "ok": False, "error": str(e),
-                    })
-                    this._send_error(502, f"Modbus error: {e}")
-
-            def _handle_command(this):
-                try:
-                    body = json.loads(this._read_body())
-                except Exception:
-                    this._send_error(400, "Invalid JSON")
-                    return
-
-                if not this._check_csrf(body):
-                    this._send_error(403, "CSRF token mismatch")
-                    return
-
-                action = body.get("action", "")
-                ok, write_addr, write_value, msg = resolve_command(_profile, action)
-                if not ok:
-                    this._send_error(422, msg)
-                    return
-
-                # Generic parametric command handling
-                cmd_def = find_command(_profile, action)
-                if cmd_def and "params" in cmd_def:
-                    params = body.get("params", {})
-                    for param_def in cmd_def["params"]:
-                        pval = params.get(param_def["name"])
-                        if pval is None:
-                            this._send_error(400, f"Missing parameter: {param_def['name']}")
-                            return
-                        pval = int(pval)
-                        pmin = param_def.get("min")
-                        pmax = param_def.get("max")
-                        if pmin is not None and pval < pmin:
-                            this._send_error(422, f"{param_def['name']} must be >= {pmin}")
-                            return
-                        if pmax is not None and pval > pmax:
-                            this._send_error(422, f"{param_def['name']} must be <= {pmax}")
-                            return
-                        write_value = pval
-
-                try:
-                    server._worker.submit_write(write_addr, write_value)
-                    server.push_event("command_result", {
-                        "action": action, "ok": True,
-                        "write_addr": write_addr, "write_value": write_value,
-                    })
-                    this._serve_json({"ok": True, "message": f"Command '{action}' sent"})
-                except ModbusError as e:
-                    server.push_event("command_result", {
-                        "action": action, "ok": False, "error": str(e),
-                    })
-                    this._send_error(502, f"Modbus error: {e}")
-
-            def _handle_debug_read(this):
-                try:
-                    body = json.loads(this._read_body())
-                except Exception:
-                    this._send_error(400, "Invalid JSON")
-                    return
-
-                if not this._check_csrf(body):
-                    this._send_error(403, "CSRF token mismatch")
-                    return
-
-                try:
-                    fc = int(body.get("fc"))
-                    start = int(body.get("start"))
-                    quantity = int(body.get("quantity", 1))
-                except Exception:
-                    this._send_error(400, "Invalid fc, start, or quantity")
-                    return
-                if fc not in (1, 2, 3, 4):
-                    this._send_error(422, "Read function code must be 1, 2, 3, or 4")
-                    return
-                if quantity < 1 or quantity > 125:
-                    this._send_error(422, "Quantity must be 1..125")
-                    return
-
-                try:
-                    values = server._worker.submit_debug_read(fc, start, quantity)
-                    payload = {"ok": True, "fc": fc, "start": start, "quantity": quantity, "values": values}
-                    server.push_event("debug_result", payload)
-                    this._serve_json(payload)
-                except ModbusError as e:
-                    this._send_error(502, f"Modbus error: {e}")
-                except Exception as e:
-                    this._send_error(500, str(e))
-
-            def _handle_debug_write(this):
-                try:
-                    body = json.loads(this._read_body())
-                except Exception:
-                    this._send_error(400, "Invalid JSON")
-                    return
-
-                if not this._check_csrf(body):
-                    this._send_error(403, "CSRF token mismatch")
-                    return
-
-                try:
-                    fc = int(body.get("fc"))
-                    start = int(body.get("start"))
-                    values = body.get("values", [])
-                    if not isinstance(values, list):
-                        values = [values]
-                    values = [int(v) for v in values]
-                except Exception:
-                    this._send_error(400, "Invalid fc, start, or values")
-                    return
-                if fc not in (5, 6, 15, 16):
-                    this._send_error(422, "Write function code must be 5, 6, 15, or 16")
-                    return
-                if not values:
-                    this._send_error(400, "Missing values")
-                    return
-
-                if not server._allow_arbitrary_writes:
-                    for i, value in enumerate(values):
-                        addr = start + i
-                        ok, msg = validate_param(_profile, addr, value)
-                        if not ok:
-                            this._send_error(422, msg)
-                            return
-
-                try:
-                    server._worker.submit_debug_write(fc, start, values)
-                    payload = {"ok": True, "fc": fc, "start": start, "values": values}
-                    server.push_event("debug_result", payload)
-                    this._serve_json(payload)
-                except ModbusError as e:
-                    this._send_error(502, f"Modbus error: {e}")
-                except Exception as e:
-                    this._send_error(500, str(e))
-
-            def _handle_lang(this):
-                try:
-                    body = json.loads(this._read_body())
-                except Exception:
-                    this._send_error(400, "Invalid JSON")
-                    return
-                lang = str(body.get("lang", "zh")).strip()
-                if lang not in ("zh", "en"):
-                    lang = "zh"
-                mklink_dir = ".mklink"
-                os.makedirs(mklink_dir, exist_ok=True)
-                lang_file = os.path.join(mklink_dir, "lang.json")
-                with open(lang_file, "w", encoding="utf-8") as f:
-                    f.write(json.dumps({"lang": lang}))
-                this._serve_json({"status": "ok", "lang": lang})
-
-            def _send_error(this, code: int, message: str):
-                data = json.dumps({"ok": False, "error": message}).encode("utf-8")
-                this.send_response(code)
-                this.send_header("Content-Type", "application/json")
-                this.send_header("Content-Length", str(len(data)))
-                this.end_headers()
-                this.wfile.write(data)
-
-        # Start everything
-        self._running.set()
-        self._httpd = ThreadingHTTPServer((self._host, self._port), _Handler)
-        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
-        self._thread.start()
-
-        self._worker.start()
-        self._poller.start()
-        self._idle_stop.clear()
-        if self._idle_timeout > 0:
-            self._idle_timer = threading.Thread(
-                target=self._idle_watchdog, daemon=True
-            )
-            self._idle_timer.start()
-
-        return self.port
-
-    def push_snapshot(self, data: dict) -> None:
-        """Push a register snapshot to all SSE clients."""
-        if not self._running.is_set():
-            return
-
-        # Store latest
-        regs = data.get("registers", {})
-        self._latest.update(data)
-        self._latest["registers"] = regs
-
-        # History ring buffer
-        self._history.append(data)
-        if len(self._history) > self._max_points:
-            self._history = self._history[-self._max_points:]
-
-        # Fan out
-        with self._clients_lock:
-            dead: list[queue.Queue] = []
-            for cq in self._clients:
-                try:
-                    cq.put_nowait(data)
-                except queue.Full:
-                    dead.append(cq)
-            for dq in dead:
-                self._clients.remove(dq)
-
-    def push_event(self, event_type: str, data: dict | None = None) -> None:
-        """Push a typed event (write/command result) to SSE clients."""
-        if not self._running.is_set():
-            return
-        payload = {"_event": event_type, "_t": time.time()}
-        if data:
-            payload.update(data)
-        with self._clients_lock:
-            dead: list[queue.Queue] = []
-            for cq in self._clients:
-                try:
-                    cq.put_nowait(payload)
-                except queue.Full:
-                    dead.append(cq)
-            for dq in dead:
-                self._clients.remove(dq)
-
-    def _idle_watchdog(self) -> None:
-        """Auto-stop server after idle timeout with no SSE clients."""
-        while not self._idle_stop.wait(timeout=5.0):
-            if self._idle_timeout <= 0:
-                continue
-            with self._clients_lock:
-                client_count = len(self._clients)
-            if client_count > 0:
-                self._idle_since = None
-            else:
-                if self._idle_since is None:
-                    self._idle_since = time.time()
-                elif time.time() - self._idle_since >= self._idle_timeout:
-                    print(f"[WARN] No clients for {self._idle_timeout}s, auto-stopping server")
-                    self.stop()
-                    return
-
-    def stop(self) -> None:
-        """Shut down everything."""
-        if self._idle_stop:
-            self._idle_stop.set()
-        if self._running.is_set():
-            self.push_event("shutdown")
-            time.sleep(0.5)
-        self._running.clear()
-        self._poller.stop()
-        self._worker.stop()
-        httpd = self._httpd
-        if httpd:
-            httpd.shutdown()
-            httpd.server_close()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
-        self._httpd = None
-        self._thread = None
-        self._idle_timer = None
-        with self._clients_lock:
-            self._clients.clear()
+    def stop(self):
+        """Return only after handlers, polling and the HTTP thread have exited."""
+        self.request_stop()
+        if self._thread:
+            if self._thread is threading.current_thread():
+                raise RuntimeError('Use request_stop from the dashboard thread')
+            self._thread.join()
 
 
-# ---------------------------------------------------------------------------
-# Convenience runner — used by cli.py
-# ---------------------------------------------------------------------------
-
-
-def run_modbus_dashboard(
-    client: ModbusClient,
-    slave: int,
-    profile: dict,
-    *,
-    host: str = "127.0.0.1",
-    port: int = 0,
-    no_browser: bool = False,
-    max_points: int = 500,
-    fast_interval: float = 1.0,
-    slow_interval: float = 5.0,
-    duration: float = 0,
-    enable_remote_writes: bool = False,
-    allow_arbitrary_writes: bool = False,
-    html_path: str | None = None,
-) -> None:
-    """Run the Modbus dashboard server until KeyboardInterrupt."""
-    _stopped = threading.Event()  # idempotent cleanup guard
-
-    server = ModbusDashboardServer(
-        client=client,
-        slave=slave,
-        profile=profile,
-        host=host,
-        port=port,
-        max_points=max_points,
-        fast_interval=fast_interval,
-        slow_interval=slow_interval,
-        enable_remote_writes=enable_remote_writes,
-        allow_arbitrary_writes=allow_arbitrary_writes,
-        html_path=html_path,
-    )
-    actual_port = server.start()
-
-    url = f"http://{host}:{actual_port}"
-    print(f"[OK] Modbus Dashboard 已启动: {url}")
-    if not no_browser:
-        print(f"[*] 正在打开浏览器...")
-        webbrowser.open(url)
-
-    # -- idempotent cleanup --
-    def _cleanup():
-        if _stopped.is_set():
-            return
-        _stopped.set()
-        server.stop()
-        client.close()
-
-    atexit.register(_cleanup)
-
-    if sys.platform == "win32":
-        original_sigbreak = signal.getsignal(signal.SIGBREAK)
-        def _sigbreak_handler(signum, frame):
-            _cleanup()
-            sys.exit(1)
-        signal.signal(signal.SIGBREAK, _sigbreak_handler)
-    else:
-        original_sigterm = signal.getsignal(signal.SIGTERM)
-        def _sigterm_handler(signum, frame):
-            _cleanup()
-            sys.exit(0)
-        signal.signal(signal.SIGTERM, _sigterm_handler)
-
-    print(f"[*] Dashboard 运行中，按 Ctrl+C 停止...\n")
+def run_modbus_dashboard(client: RuntimeClient, slave: int, profile: dict, *,
+                         no_browser: bool = False, duration: float = 0, **options) -> None:
+    """Run the UI, draining it before the caller releases its shared session."""
+    if isinstance(duration, bool) or not math.isfinite(duration) or duration < 0:
+        raise ValueError('duration must be finite and non-negative')
+    server = ModbusDashboardServer(client, slave, profile, **options)
+    previous_signals = {}
     try:
-        if duration > 0:
-            start = time.time()
-            while time.time() - start < duration:
-                time.sleep(0.5)
-        else:
-            while True:
-                time.sleep(1.0)
+        port = server.start()
+        host = server._host
+        url = f'http://{"[" + host + "]" if ":" in host else host}:{port}'
+        print(f'[OK] Modbus Dashboard 已启动: {url}')
+        if not no_browser:
+            webbrowser.open(url)
+        if threading.current_thread() is threading.main_thread():
+            for sig in (signal.SIGTERM, getattr(signal, 'SIGBREAK', signal.SIGTERM)):
+                if sig not in previous_signals:
+                    previous_signals[sig] = signal.getsignal(sig)
+                    signal.signal(sig, lambda *_: server.request_stop())
+        deadline = time.monotonic() + duration if duration else math.inf
+        while not server._finished.wait(.1) and time.monotonic() < deadline:
+            pass
     except KeyboardInterrupt:
-        print("\n[*] 用户中断")
-
-    print("[*] 正在停止...")
-    _cleanup()
-    print("[OK] Modbus Dashboard 已关闭")
+        print('\n[*] 用户中断')
+    finally:
+        server.stop()
+        for sig, handler in previous_signals.items():
+            signal.signal(sig, handler)
+    if server._error:
+        raise RuntimeErrorResponse(f'Dashboard stopped: {server._error}') from server._error
+    print('[OK] Modbus Dashboard 已关闭')

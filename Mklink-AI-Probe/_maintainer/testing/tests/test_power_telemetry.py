@@ -95,29 +95,12 @@ def test_device_entry_uses_same_parser():
     assert dev._bridge.commands == ['cmd.get_power()']
 
 
-def test_cli_json_has_no_diagnostics_and_closes_port(monkeypatch, capsys):
-    from mklink import bridge as bridge_module, cli
-    bridge = Bridge()
-    def connect():
-        print('connection diagnostic')
-        return True
-    bridge.connect = connect
-    monkeypatch.setattr(bridge_module, 'MKLinkSerialBridge', lambda port: bridge)
-    assert cli._cli_power_read('COM_TEST', as_json=True) == 0
+def test_cli_json_has_no_diagnostics(capsys):
+    from mklink import cli
+    assert cli._print_power_read(read_power(Bridge()), as_json=True) == 0
     output = capsys.readouterr()
     assert json.loads(output.out)['power_mw'] == 40.739
-    assert 'connection diagnostic' in output.err
-    assert bridge.closed and bridge.commands == ['cmd.get_power()']
-
-
-def test_cli_old_firmware_fails_and_closes_port(monkeypatch, capsys):
-    from mklink import bridge as bridge_module, cli
-    bridge = Bridge('AttributeError: get_power\n>>>')
-    monkeypatch.setattr(bridge_module, 'MKLinkSerialBridge', lambda port: bridge)
-    assert cli._cli_power_read('COM_TEST', as_json=True) == 1
-    output = capsys.readouterr()
-    assert not output.out and 'upgrade' in output.err
-    assert bridge.closed
+    assert not output.err
 
 
 def test_cli_dispatch(monkeypatch, capsys):
@@ -125,9 +108,10 @@ def test_cli_dispatch(monkeypatch, capsys):
     from mklink import cli
     calls = []
     monkeypatch.setattr(sys, 'argv', ['mklink', 'power-read', '--port', 'COM_TEST', '--json'])
-    monkeypatch.setattr(cli, '_cli_power_read', lambda port, as_json: calls.append((port, as_json)) or 0)
-    assert cli.main() == 0
-    assert calls == [('COM_TEST', True)]
+    monkeypatch.setattr('mklink.runtime.query_probe', lambda name, **kw: calls.append((name, kw)) or read_power(Bridge()))
+    cli.main()
+    assert calls == [('power_read', {'port': 'COM_TEST', 'probe': None})]
+    assert json.loads(capsys.readouterr().out)['voltage_mv'] == 3300
 
 
 def test_mcp_registration_schema_and_read_only_result(monkeypatch):

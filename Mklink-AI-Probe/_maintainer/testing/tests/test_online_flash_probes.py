@@ -563,7 +563,8 @@ def test_different_dashboard_starts_share_one_transaction_lock(monkeypatch):
     assert max_active == 1
 
 
-def test_rtt_write_endpoint_preserves_exact_binary_payload():
+@pytest.mark.parametrize("channel", [None, *range(8)])
+def test_rtt_write_endpoint_preserves_exact_binary_payload(channel):
     rtt = SimpleNamespace(running=True, write=MagicMock(return_value=4))
     managers = {
         name: rtt if name == "rtt" else SimpleNamespace(running=False)
@@ -572,18 +573,18 @@ def test_rtt_write_endpoint_preserves_exact_binary_payload():
     client, _state = _dashboard_client(managers)
 
     response = client.post(
-        "/api/dash/rtt/write", json={"data_hex": "00ff0d0a"},
+        "/api/dash/rtt/write", json={"data_hex": "00ff0d0a", "channel": channel},
     )
 
     assert response.status_code == 200
     assert response.json() == {"sent_bytes": 4}
-    rtt.write.assert_called_once_with(b"\x00\xff\r\n")
+    rtt.write.assert_called_once_with(b"\x00\xff\r\n", channel=channel)
 
 
 def test_rtt_write_endpoint_runs_device_write_outside_event_loop_thread():
     call_threads = []
 
-    def write(data):
+    def write(data, *, channel=None):
         call_threads.append(threading.get_ident())
         return len(data)
 
@@ -1071,7 +1072,7 @@ def test_mcu_detect_with_idcode_uses_target_lease_and_preempts_dashboard():
         )
         return {"detected": True}
 
-    with patch("mklink.mcu_detect.detect_mcu_profile", side_effect=detect):
+    with patch("mklink.mcu_detect.inspect_mcu", side_effect=detect):
         response = client.post("/api/mcu-detect", json={"port": "COM5"})
 
     assert response.status_code == 200
@@ -1084,7 +1085,7 @@ def test_mcu_detect_with_idcode_uses_target_lease_and_preempts_dashboard():
     managers["rtt"].running = True
     with patch("mklink.remote.dashboards.get_managers", return_value=managers):
         with patch(
-            "mklink.mcu_detect.detect_mcu_profile",
+            "mklink.mcu_detect.inspect_mcu",
             return_value={"detected": True},
         ) as detect_mock:
             switched = client.post("/api/mcu-detect", json={"port": "COM5"})
@@ -1094,42 +1095,6 @@ def test_mcu_detect_with_idcode_uses_target_lease_and_preempts_dashboard():
     detect_mock.assert_called_once()
     assert state["resource_manager"].get_status() == {}
 
-
-def test_run_server_auto_connect_uses_target_lease_and_preempts_dashboard():
-    from mklink.remote.api import create_app, run_server
-    from mklink.remote.resource_manager import ResourceGroup
-
-    app = create_app(auth_token=None, project_root=".")
-    state = app.state.mklink_state
-    owners_seen = []
-    device = MagicMock()
-    device.mcu_name = "HPM5301"
-    device.idcode = 0x1234
-
-    def connect(**_kwargs):
-        owners_seen.append(
-            state["resource_manager"].get_status()["target_debug"]["owner"]
-        )
-        return device
-
-    with patch("mklink.connect", side_effect=connect), patch("uvicorn.run"):
-        run_server(app, auto_connect=True)
-
-    assert owners_seen == ["user:api:auto-connect"]
-    assert state["device"] is device
-    assert state["resource_manager"].get_status() == {}
-
-    state["device"] = None
-    state["resource_manager"].acquire(
-        ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt"
-    )
-    with patch("mklink.connect") as connect_mock, patch("uvicorn.run") as serve_mock:
-        run_server(app, auto_connect=True)
-
-    connect_mock.assert_called_once()
-    serve_mock.assert_called_once()
-    assert state["device"] is connect_mock.return_value
-    assert state["resource_manager"].get_status() == {}
 
 
 def test_dashboard_preempt_stop_failure_restores_old_lease():
@@ -1157,36 +1122,6 @@ def test_dashboard_preempt_stop_failure_restores_old_lease():
     assert state["resource_manager"].get_active_lease(
         ResourceGroup.TARGET_DEBUG
     ).owner == "user:dashboard:rtt"
-
-
-def test_session_acquire_failure_preserves_same_ai_owner_existing_lease():
-    from mklink.remote.resource_manager import ResourceGroup
-
-    managers = {
-        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
-        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
-    }
-    client, state = _dashboard_client(managers)
-    manager = state["resource_manager"]
-    old_lease = manager.acquire(
-        ResourceGroup.MKLINK_BRIDGE,
-        "ai:session:existing",
-        ttl=30,
-    )
-    manager.acquire(ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt")
-
-    response = client.post(
-        "/api/session/acquire",
-        json={
-            "session_id": "existing",
-            "resources": ["mklink_bridge", "target_debug"],
-            "ttl": 60,
-        },
-    )
-
-    assert response.status_code == 409
-    assert manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is old_lease
-    assert manager.get_active_lease(ResourceGroup.TARGET_DEBUG).owner == "user:dashboard:rtt"
 
 
 @pytest.mark.parametrize(
@@ -2111,11 +2046,3 @@ def test_rtt_start_failure_callback_runs_after_worker_cleanup():
     manager._thread.join(timeout=1)
     assert callback_observations == [(True, False)]
     assert resource_manager.get_status() == {}
-
-def test_run_server_uses_sansio_websocket_flow_control():
-    from mklink.remote.api import create_app, run_server
-    app = create_app(auth_token=None, project_root=".")
-    with patch("uvicorn.run") as serve:
-        run_server(app)
-    assert serve.call_args.kwargs["ws"] == "websockets-sansio"
-    assert serve.call_args.kwargs["ws_per_message_deflate"] is False

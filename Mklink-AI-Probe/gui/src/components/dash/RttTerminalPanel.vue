@@ -21,6 +21,8 @@ const normalizer = new SeggerAnsiNormalizer()
 let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
 let resizeObserver: ResizeObserver | null = null
+let visibilityObserver: IntersectionObserver | null = null
+let visible = typeof IntersectionObserver === 'undefined'
 let pasteHost: HTMLElement | null = null
 let pendingOutput = ''
 let outputFrame: number | null = null
@@ -70,7 +72,7 @@ function clear(): void {
 
 function fit(): void {
   const element = host.value
-  if (!element || element.clientWidth <= 0 || element.clientHeight <= 0) return
+  if (!visible || !element || element.clientWidth <= 0 || element.clientHeight <= 0) return
   try { fitAddon?.fit() } catch { /* hidden or not measured yet */ }
 }
 
@@ -209,6 +211,16 @@ onMounted(() => {
     if (props.inputEnabled) emit('input', data)
   })
   if (pendingOutput) scheduleOutput()
+  // xterm pauses renderer measurements offscreen. Resizing its buffer while
+  // those measurements are stale can turn the resize into a history scroll.
+  // Keep receiving output, and fit only when the terminal becomes visible.
+  if (typeof IntersectionObserver !== 'undefined') {
+    visibilityObserver = new IntersectionObserver(entries => {
+      visible = entries[entries.length - 1]?.isIntersecting ?? false
+      if (visible) fit()
+    })
+    visibilityObserver.observe(element)
+  }
   if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(fit)
     resizeObserver.observe(element)
@@ -226,6 +238,7 @@ onUnmounted(() => {
   pasteHost?.removeEventListener('paste', handleBrowserPaste, true)
   pasteHost = null
   resizeObserver?.disconnect()
+  visibilityObserver?.disconnect()
   const currentTerminal = terminal
   terminal = null
   fitAddon = null

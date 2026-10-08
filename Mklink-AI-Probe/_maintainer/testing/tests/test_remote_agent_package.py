@@ -765,3 +765,68 @@ def test_lifecycle_clean_environment_target_restart_neighbor_and_cleanup(
         )
         for stream in streams:
             stream.close()
+
+
+def test_packaged_shared_backend_runs_without_python_and_detaches_clients(clean_package, tmp_path):
+    from mklink.runtime import RuntimeClient, request, PROTOCOL
+    runtime = tmp_path / 'shared-backend-artifact'
+    runtime.mkdir()
+    with zipfile.ZipFile(clean_package['artifact']) as archive:
+        archive.extractall(runtime)
+    package = runtime / 'mklink-remote-agent'
+    executable = package / 'mklink-remote-agent.exe'
+    assert list(package.rglob('windows_probe_volumes.ps1'))
+    env = _runtime_environment(runtime / 'environment', 'unused-agent-token')
+    env['MKLINK_RUNTIME_DIR'] = str(runtime / 'runtime-state')
+    project = runtime / 'project'; project.mkdir()
+    endpoint = Path(env['MKLINK_RUNTIME_DIR']) / 'probes' / 'lobby' / 'endpoint.json'
+    info = None
+    clients = []
+    with (runtime / 'backend.log').open('w', encoding='utf-8') as log:
+        process = subprocess.Popen([str(executable), 'runtime', 'serve', '--project-root', str(project),
+                                    '--port', '0', '--probe-id', 'lobby'], cwd=runtime, env=env,
+                                   stdout=log, stderr=subprocess.STDOUT, creationflags=_creation_flags())
+        try:
+            deadline = time.monotonic() + 45
+            while time.monotonic() < deadline:
+                assert process.poll() is None, 'packaged backend exited before readiness'
+                if endpoint.exists():
+                    candidate = json.loads(endpoint.read_text(encoding='utf-8'))
+                    try:
+                        status = request(candidate, 'GET', '/_runtime/status', timeout=1)
+                    except Exception:
+                        time.sleep(.05); continue
+                    info = candidate
+                    assert status['protocol'] == PROTOCOL and status['probe_id'] == 'lobby'
+                    break
+                time.sleep(.05)
+            assert info is not None, 'packaged backend did not become ready'
+            first, second = RuntimeClient(info=info), RuntimeClient(info=info)
+            clients.extend((first, second))
+            first.connect(scope='uart'); second.connect(scope='uart')
+            assert request(info, 'GET', '/_runtime/status')['clients'] == 2
+            assert first.call('serial_status')['running'] is False
+            assert second.call('modbus_status')['running'] is False
+            first.close()
+            assert request(info, 'GET', '/_runtime/status')['clients'] == 1
+            assert second.call('serial_status')['running'] is False
+            second.close()
+            assert request(info, 'GET', '/api/device/status')['connected'] is False
+            for model, part in (('V4', 'STM32F103RE'), ('V4', 'GD32F303RE'),
+                                ('V3', 'STM32G474RET6'), ('V3', 'PY32F030K28T6')):
+                capability = request(info, 'GET',
+                    f'/api/offline-download/security?model={model}&part_number={part}')
+                assert capability['supported'] and capability['unlock_supported'] and capability['lock_supported']
+            for part in ('STM32G474RE', 'PY32F030x8', 'STM32G474RET6', 'PY32F030K28T6'):
+                assert request(info, 'GET',
+                    f'/api/offline-download/security?model=V4&part_number={part}')['supported'] is False
+            assert request(info, 'POST', '/_runtime/stop', {'confirm': True})['status'] == 'stopping'
+            assert process.wait(timeout=15) == 0
+            assert not endpoint.exists()
+        finally:
+            for client in clients:
+                try: client.close()
+                except Exception: pass
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=10)

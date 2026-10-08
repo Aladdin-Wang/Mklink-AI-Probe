@@ -20,6 +20,7 @@ from mklink.offline_download import (
     OfflineAlgorithm,
     OfflineDownloadConfig,
     OfflineDownloadError,
+    OfflineRecoveryError,
     deploy_offline_bundle,
     generate_offline_script,
     offline_trigger_command,
@@ -502,6 +503,68 @@ def _copy_upload(upload: UploadFile, destination: Path, total: list[int]) -> Pat
     return destination
 
 
+def _deployment_inputs(payload, firmware_sources, algorithm_sources, temp):
+    """Freeze submitted bytes and fingerprint content, never transient paths."""
+    from types import SimpleNamespace
+    stable = json.loads(json.dumps(payload))
+    total = [0]
+    hashes = {}
+    for field, sources in (('firmwares', firmware_sources), ('algorithms', algorithm_sources)):
+        for index, (key, source) in enumerate(list(sources.items())):
+            snapshot = temp / f'journal-{field}-{index}'
+            with source.open('rb') as stream:
+                _copy_upload(SimpleNamespace(file=stream), snapshot, total)
+            if snapshot.stat().st_size == 0:
+                raise OfflineDownloadError('offline source became empty while preparing deployment')
+            sources[key] = snapshot
+            digest = hashlib.sha256()
+            with snapshot.open('rb') as stream:
+                for chunk in iter(lambda: stream.read(_UPLOAD_CHUNK), b''):
+                    digest.update(chunk)
+            hashes[f'{field}:{key}'] = digest.hexdigest()
+        for row in stable.get(field, []):
+            for locator in ('source_path', 'source_token', 'upload_index'):
+                row.pop(locator, None)
+    return hashlib.sha256(json.dumps(['offline_deploy', stable, hashes], sort_keys=True).encode()).hexdigest()
+
+
+async def _perform_deployment(runtime, disk_root, operation, recovery=None):
+    """One identity recheck and recovery bridge for all journaled file deployments."""
+    loop = asyncio.get_running_loop()
+    def record_recovery(directory):
+        asyncio.run_coroutine_threadsafe(recovery(directory), loop).result()
+    try:
+        if runtime is not None:
+            from mklink.probe_volumes import resolve_volume
+            await asyncio.to_thread(runtime.require_identity)
+            try:
+                current = await asyncio.to_thread(resolve_volume, runtime.info.get('probe_id'))
+            except RuntimeError as error:
+                raise HTTPException(409, 'Bound deployment disk is unavailable') from error
+            if Path(current['root']).resolve() != disk_root.resolve():
+                raise HTTPException(409, 'Bound deployment disk changed while preparing inputs')
+        return await asyncio.to_thread(operation, record_recovery if recovery is not None else None)
+    except OfflineRecoveryError as error:
+        raise HTTPException(500, detail={
+            'code': 'OFFLINE_RECOVERY_REQUIRED', 'message': str(error),
+            'recovery_directory': error.recovery_directory,
+        }) from error
+    except OfflineDownloadError as error:
+        raise HTTPException(422, detail=str(error)) from error
+
+
+def _deployment_result(job):
+    identity = {key: job[key] for key in ('job_id', 'request_id', 'state')}
+    if job['state'] == 'succeeded':
+        return {**job['result'], **identity}
+    detail = {'code': 'OFFLINE_JOB_RESULT', **identity,
+              'message': job.get('error') or 'Deployment is still running; query this request, do not replay'}
+    if job.get('recovery_directory'):
+        detail['code'] = 'OFFLINE_RECOVERY_REQUIRED'
+        detail['recovery_directory'] = job['recovery_directory']
+    raise HTTPException(500 if job['state'] == 'unknown' else 409, detail=detail)
+
+
 def _format_trigger_line(raw: str) -> str:
     # Debug-port IDCODE identifies a device type, not an individual unit.
     # Keep it visible so operators can distinguish successful identification
@@ -592,7 +655,7 @@ def create_offline_download_router(
             async def run() -> None:
                 try:
                     resource_manager.acquire_many(
-                        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+                        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH],
                         owner,
                         preempt=False,
                         preempt_user_dashboard=True,
@@ -638,16 +701,57 @@ def create_offline_download_router(
                 await task
             finally:
                 accepting_output = False
-                if task.done():
-                    await task
+                import anyio
+                from mklink.runtime_api import settle
+                with anyio.CancelScope(shield=True):
+                    await settle(task)
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+    @router.post("/algorithm")
+    async def copy_algorithm(request: Request, body: dict = Body(...)):
+        from mklink.offline_download import _file_name, _transactional_copy
+        from mklink.probe_volumes import resolve_volume
+        runtime = getattr(request.app.state, 'shared_runtime', None)
+        if runtime is None:
+            raise HTTPException(409, 'Algorithm copies require a shared backend')
+        if set(body) - {'source_path', 'file_name', 'request_id'}:
+            raise HTTPException(422, 'Unsupported algorithm copy arguments')
+        request_id = body.get('request_id')
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise HTTPException(422, 'A stable request_id is required')
+        try:
+            name = _file_name(body.get('file_name'), 'FLM file name', ('.flm',))
+            raw_source = body.get('source_path')
+            if not isinstance(raw_source, str) or not raw_source.strip():
+                raise OfflineDownloadError('A local FLM source path is required')
+            source = Path(raw_source).expanduser().resolve()
+            if source.suffix.casefold() != '.flm' or not source.is_file():
+                raise OfflineDownloadError('Local FLM source is unavailable')
+            disk_root = Path((await asyncio.to_thread(resolve_volume, runtime.info.get('probe_id')))['root'])
+            with tempfile.TemporaryDirectory(prefix='mklink-flm-copy-') as directory:
+                sources = {'algorithm': source}
+                fingerprint = await asyncio.to_thread(_deployment_inputs,
+                    {'operation': 'flm_copy', 'file_name': name}, {}, sources, Path(directory))
+                def copy(callback):
+                    files = _transactional_copy(disk_root, [(Path('FLM') / name, sources['algorithm'], None)], callback)
+                    return {'status': 'deployed', 'files': files}
+                async def perform(recovery):
+                    return await _perform_deployment(runtime, disk_root, copy, recovery)
+                job = await runtime.jobs.record_deployment(request_id, fingerprint, perform, action='flm_copy')
+                return _deployment_result(job)
+        except (OfflineDownloadError, OSError) as error:
+            raise HTTPException(422, str(error)) from error
 
     @router.get("/status")
     async def status() -> object:
         from mklink.discovery import find_microkeen_disk
 
-        disk = await asyncio.to_thread(find_microkeen_disk)
+        try:
+            disk = await asyncio.to_thread(find_microkeen_disk)
+        except ConnectionError as error:
+            return {"available": False, "disk_path": None, "python_dir": None,
+                    "flm_dir": None, "reason": str(error)}
         root = Path(disk) if disk else None
         return {
             "available": root is not None,
@@ -660,7 +764,10 @@ def create_offline_download_router(
     async def algorithms(part_number: str) -> object:
         from mklink.discovery import find_microkeen_disk
 
-        disk = await asyncio.to_thread(find_microkeen_disk)
+        try:
+            disk = await asyncio.to_thread(find_microkeen_disk)
+        except ConnectionError:
+            disk = None  # Local catalog remains usable without a selected probe.
         root = Path(disk) if disk else None
         try:
             return await asyncio.to_thread(
@@ -695,7 +802,9 @@ def create_offline_download_router(
 
     @router.post("/deploy")
     async def deploy(
+        request: Request,
         config_json: str = Form(...),
+        request_id: Optional[str] = Form(None),
         firmware_files: List[UploadFile] = File(default=[]),
         flm_files: List[UploadFile] = File(default=[]),
     ) -> object:
@@ -739,12 +848,6 @@ def create_offline_download_router(
                         raise OfflineDownloadError(
                             f"missing firmware source: {firmware.file_name}"
                         )
-                await asyncio.to_thread(
-                    _validate_bin_firmware_ranges,
-                    config,
-                    online_services,
-                    firmware_sources,
-                )
                 uploaded_flms = []
                 for index, upload in enumerate(flm_files):
                     uploaded_flms.append(
@@ -785,13 +888,26 @@ def create_offline_download_router(
                             algorithm.source_token or "",
                             temp / f"pack-{algorithm.id}.flm",
                         )
-                return await asyncio.to_thread(
-                    deploy_offline_bundle,
-                    config,
-                    disk_root,
-                    firmware_sources=firmware_sources,
-                    algorithm_sources=algorithm_sources,
+                async def perform(recovery=None):
+                    return await _perform_deployment(runtime, disk_root, lambda callback:
+                        deploy_offline_bundle(config, disk_root, firmware_sources=firmware_sources,
+                                              algorithm_sources=algorithm_sources, recovery_callback=callback), recovery)
+                runtime = getattr(request.app.state, 'shared_runtime', None)
+                if runtime is None:
+                    await asyncio.to_thread(_validate_bin_firmware_ranges, config, online_services, firmware_sources)
+                    return await perform()
+                fingerprint = await asyncio.to_thread(
+                    _deployment_inputs, payload, firmware_sources, algorithm_sources, temp,
                 )
+                # Validate the frozen bytes, not a source file that can change while preparing.
+                await asyncio.to_thread(_validate_bin_firmware_ranges, config, online_services, firmware_sources)
+                job = await runtime.jobs.record_deployment(request_id, fingerprint, perform)
+                return _deployment_result(job)
+        except OfflineRecoveryError as error:
+            raise HTTPException(status_code=500, detail={
+                "code": "OFFLINE_RECOVERY_REQUIRED", "message": str(error),
+                "recovery_directory": error.recovery_directory,
+            }) from error
         except (OfflineDownloadError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=422, detail=str(error))
         finally:
@@ -809,6 +925,13 @@ def create_offline_download_router(
         values = payload or {}
         raw_port = values.get("port")
         port = str(raw_port) if raw_port else None
+        runtime = getattr(request.app.state, 'shared_runtime', None)
+        if runtime:
+            from mklink.probes import select_probe
+            selected = select_probe(runtime.info['probe_id'])
+            if port and port.casefold() != selected['port'].casefold():
+                raise HTTPException(409, 'Trigger port does not match the bound probe')
+            port = selected['port']
         try:
             if values:
                 model = str(values.get("model") or "").upper()
@@ -833,7 +956,7 @@ def create_offline_download_router(
         owner = f"user:offline-download:trigger:{uuid.uuid4().hex}"
         try:
             resource_manager.acquire_many(
-                [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+                [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH],
                 owner,
                 preempt=False,
                 preempt_user_dashboard=True,

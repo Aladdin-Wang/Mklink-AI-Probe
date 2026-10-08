@@ -33,6 +33,15 @@
 | `GET /csrf-token` | JSON | `{"token": "..."}` |
 | `POST /write` | JSON | 写入寄存器（需 CSRF） |
 | `POST /command` | JSON | 执行命令（需 CSRF） |
+| `POST /debug/read` | JSON | 手动读取 FC01/02/03/04（需 CSRF） |
+| `POST /debug/write` | JSON | 手动写入 FC05/06/15/16（需 CSRF） |
+| `POST /api/lang` | JSON | 保存语言：`{"lang":"en","token":"..."}` |
+
+0.3.0 中仪表盘通过共享后台通信，可与 GUI、AI 同时连接；多下载器使用
+`--probe` 选择身份，`--port` 选择 UART。停止仪表盘会先结束 HTTP/SSE 和在途请求，
+再释放自己的会话。借用的 GUI 连接继续运行。自定义页面继续使用本表接口。
+Python 调用 `ModbusDashboardServer` 时传入已附着的 `RuntimeClient`，原始
+`ModbusClient` 直连方式已移除；调用者负责在服务器停止后释放共享会话。
 
 ### 写入寄存器
 ```json
@@ -40,7 +49,8 @@ POST /write
 {"addr": 200, "value": 1500, "token": "CSRF_TOKEN"}
 → {"ok": true, "message": "Write successful"}
 ```
-- 服务器校验：addr 必须在 profile 中标记为 `access: "rw"`，value 必须在 min/max 范围内
+- 服务器校验：addr 必须属于可写组（`writable: true`）或已有寄存器定义的命令地址，value 必须满足配置的 min/max 范围。只有命令定义、没有寄存器定义的地址须经命名命令操作。
+- JSON 地址、数量及寄存器值必须是整数，不接受小数、布尔值或数字字符串；线圈值接受布尔值或整数 0/1。未知字段、单写的多余值与跨地址边界请求均拒绝。
 
 ### 执行命令
 ```json
@@ -49,9 +59,12 @@ POST /command
 → {"ok": true, "message": "Command 'start' sent"}
 ```
 - 带参数的命令：`{"action": "set_level", "params": {"level": 3}, "token": "..."}`
+- 当前命令写入一个寄存器，仅支持零个或一个配置参数；参数须与声明完全匹配，多个参数不会按最后一个值静默覆盖。
 
 ### CSRF 保护
 所有 POST 请求必须包含 `token` 字段。token 在页面加载时注入到 JS 全局变量 `CSRF` 中。
+默认拒绝跨来源 POST。通信失败会返回 `{"ok":false,"error":"..."}`；写入结果未知时不要自动重发。
+SSE 的 `_event: "poll_error"` 表示轮询失败，随后发送 `_event: "shutdown"` 并关闭；页面应停止重连并显示原因。
 
 ## 2. JavaScript 全局变量
 
@@ -73,17 +86,14 @@ fetch('/csrf-token').then(r => r.json()).then(d => { CSRF = d.token; });
 
 ## 3. 数据格式
 
-- 寄存器值为 **原始 uint16 或 int16**（无符号/有符号 16 位整数）
+- 寄存器值已按 `type` 解码，支持 uint16/int16/uint32/int32/float；寄存器区域 `register_type` 默认为 holding，也支持 input。
 - 显示时需应用 `scale`（如 `scale: 0.1` 表示值需除以 10）
-- int16 类型：如果 `raw >= 0x8000`，则实际值 = `raw - 0x10000`
-- Profile 中每个寄存器的 `type` 字段标明类型：`"uint16"` 或 `"int16"`
+- SSE 的 `registers` 是本轮完成的快/慢组增量；`GET /snapshot` 保留各组最近成功值，不代表同一瞬间的原子采样。读取失败不补零。
 
 ```javascript
 function rawToValue(raw, reg) {
   var scale = reg.scale || 1;
-  var v = raw * scale;
-  if (reg.type === 'int16' && raw >= 0x8000) v = (raw - 0x10000) * scale;
-  return v;
+  return raw * scale;
 }
 ```
 

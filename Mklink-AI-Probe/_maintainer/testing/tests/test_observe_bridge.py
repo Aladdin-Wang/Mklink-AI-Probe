@@ -1019,7 +1019,7 @@ def test_direct_mcp_dump_is_bounded_and_reuses_operation_id_across_samples(monke
     calls = []
     sidechannel = []
 
-    def read_regions(actual_bridge, pairs, *, timeout):
+    def read_regions(actual_bridge, pairs, *, timeout, cancelled=None):
         calls.append((actual_bridge, pairs, timeout))
         sample = len(calls)
         return (bytes([sample]) * 4, bytes([sample + 16]) * 2)
@@ -1043,7 +1043,7 @@ def test_direct_mcp_dump_is_bounded_and_reuses_operation_id_across_samples(monke
     result = mcp.tools["dump_memory"](
         [
             {"address": 0x20000000, "size": 4},
-            {"address": 0x1_00000000, "size": 2},
+            {"address": 0x20001000, "size": 2},
         ],
         sample_count=2,
         timeout=0.25,
@@ -1051,8 +1051,8 @@ def test_direct_mcp_dump_is_bounded_and_reuses_operation_id_across_samples(monke
 
     assert observe_bridge.flush_process_observation(timeout=1.0) is True
     assert calls == [
-        (bridge, [(0x20000000, 4), (0x1_00000000, 2)], 0.25),
-        (bridge, [(0x20000000, 4), (0x1_00000000, 2)], 0.25),
+        (bridge, [(0x20000000, 4), (0x20001000, 2)], 0.25),
+        (bridge, [(0x20000000, 4), (0x20001000, 2)], 0.25),
     ]
     assert result == {
         "sample_count": 2,
@@ -1063,14 +1063,14 @@ def test_direct_mcp_dump_is_bounded_and_reuses_operation_id_across_samples(monke
                 "sample_index": 0,
                 "regions": [
                     {"address": "0x20000000", "size": 4, "data_hex": "01010101"},
-                    {"address": "0x0000000100000000", "size": 2, "data_hex": "1111"},
+                    {"address": "0x20001000", "size": 2, "data_hex": "1111"},
                 ],
             },
             {
                 "sample_index": 1,
                 "regions": [
                     {"address": "0x20000000", "size": 4, "data_hex": "02020202"},
-                    {"address": "0x0000000100000000", "size": 2, "data_hex": "1212"},
+                    {"address": "0x20001000", "size": 2, "data_hex": "1212"},
                 ],
             },
         ],
@@ -1106,7 +1106,7 @@ def test_direct_mcp_dump_private_publish_drop_keeps_response_and_marks_each_samp
     ))
     monkeypatch.setattr(
         "mklink.dump_memory.read_dump_memory_regions_once",
-        lambda actual_bridge, _pairs, *, timeout: (
+        lambda actual_bridge, _pairs, *, timeout, cancelled=None: (
             b"private" if actual_bridge is bridge and timeout == 0.1 else b"",
         ),
     )
@@ -1183,7 +1183,7 @@ def test_direct_mcp_dump_failure_emits_failed_lifecycle_and_stream_gap(monkeypat
 
 
 def test_direct_mcp_flush_partial_result_is_failed_without_changing_response(monkeypatch):
-    from mklink import cli
+    from mklink import memory_write
 
     raw = _Producer()
     _install_observe(monkeypatch, raw)
@@ -1195,8 +1195,8 @@ def test_direct_mcp_flush_partial_result_is_failed_without_changing_response(mon
         _bridge=bridge,
     ))
     monkeypatch.setattr(
-        cli,
-        "_parse_flush_response",
+        memory_write,
+        "parse_flush_response",
         lambda response: (response == "ok", response),
     )
     mcp = _Mcp()
@@ -1241,7 +1241,7 @@ def test_direct_mcp_flush_partial_result_is_failed_without_changing_response(mon
 
 
 def test_direct_mcp_flush_exception_after_success_reports_safe_batch_counts(monkeypatch):
-    from mklink import cli
+    from mklink import memory_write
 
     raw = _Producer()
     _install_observe(monkeypatch, raw)
@@ -1259,7 +1259,7 @@ def test_direct_mcp_flush_exception_after_success_reports_safe_batch_counts(monk
     monkeypatch.setattr(mcp_server, "_connected_device", lambda: SimpleNamespace(
         _bridge=SimpleNamespace(send_command=send_command),
     ))
-    monkeypatch.setattr(cli, "_parse_flush_response", lambda response: (True, response))
+    monkeypatch.setattr(memory_write, "parse_flush_response", lambda response: (True, response))
     mcp = _Mcp()
     mcp_server._register_flush_tools(mcp)
     writes = [

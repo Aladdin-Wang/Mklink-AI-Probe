@@ -189,3 +189,76 @@ def test_generic_flash_call_returns_nonzero_for_completion_unknown(
 
     assert result == 2
     assert '"state": "completion-unknown"' in capsys.readouterr().out
+
+
+def test_packaged_entry_routes_only_runtime_serve_to_existing_backend(monkeypatch, tmp_path):
+    from mklink.remote import package_agent
+    calls = []
+    monkeypatch.setattr('mklink.runtime.serve_runtime', lambda **kwargs: calls.append(kwargs))
+    assert package_agent.main(['runtime', 'serve', '--project-root', str(tmp_path),
+                               '--port', '0', '--probe-id', 'lobby']) == 0
+    assert calls == [{'project_root': str(tmp_path), 'port': 0, 'probe_id': 'lobby'}]
+
+
+def test_packaged_runtime_entry_keeps_direct_secret_rejection(capsys):
+    import pytest
+    from mklink.remote import package_agent
+    with pytest.raises(SystemExit) as result:
+        package_agent.main(['runtime', 'serve', '--token', 'must-not-be-echoed'])
+    assert result.value.code == 2
+    captured = capsys.readouterr()
+    assert 'must-not-be-echoed' not in captured.out + captured.err
+    assert 'direct token values are not supported' in captured.err
+
+@pytest.mark.parametrize('command', ['connect', 'reconnect'])
+def test_explicit_connect_and_reconnect_keep_distinct_semantics(monkeypatch, command):
+    registry = _Registry()
+    monkeypatch.setattr('mklink.remote.sites.default_registry', lambda: registry)
+    monkeypatch.setattr('mklink.remote.sites.close_all', lambda: None)
+    assert cli.main(['--site', 'field-bench', command]) == 0
+    assert registry.client_instance.calls == [('agent.' + command, {})]
+
+@pytest.mark.parametrize('arguments', [
+    ['--channels',''], ['--channels','0,0'], ['--channels','8'], ['--channels','-1'],
+    ['--channels','0,true'], ['--duration','nan'], ['--duration','inf'],
+    ['--duration','0'], ['--duration','-1'], ['--addr','0x20000000'],
+])
+def test_rtt_invalid_cli_parameters_never_connect(monkeypatch, arguments):
+    monkeypatch.setattr(cli, '_client', lambda _: pytest.fail('Invalid command connected'))
+    with pytest.raises(SystemExit) as result:
+        cli.main(['rtt', *arguments])
+    assert result.value.code == 2
+
+
+@pytest.mark.parametrize('failure', [None, 'read', 'interrupt'])
+def test_rtt_cli_keeps_cursors_and_releases_connection_on_every_exit(monkeypatch, capsys, failure):
+    import json
+    calls, closed = [], []
+    clock = [0.0]
+    class Client:
+        def supports(self, capability):return capability == 'stream.rtt'
+        def call(self, operation, **params):
+            calls.append((operation, params))
+            if operation == 'agent.connect':return {'connected': True}
+            if operation == 'rtt.start':return {'session':'one', 'reused':True}
+            if failure == 'interrupt':raise KeyboardInterrupt()
+            if failure == 'read':raise RuntimeError('lost response')
+            return {'channel':params['channel'], 'cursor':params['cursor']+3,
+                    'session':'one', 'data_hex':'00ff80','lost_bytes':5}
+    monkeypatch.setattr(cli, '_client', lambda _: Client())
+    monkeypatch.setattr('mklink.remote.sites.close_all', lambda: closed.append(True))
+    monkeypatch.setattr(cli.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(cli.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0]+seconds))
+    result=cli.main(['rtt','--channels','0,7','--duration','0.1'])
+    assert result == {None:0, 'read':2, 'interrupt':130}[failure]
+    assert closed == [True]
+    assert calls[:2] == [('agent.connect',{}),('rtt.start',{})]
+    reads=[params for op,params in calls if op == 'rtt.read_channel']
+    if failure:
+        assert reads == [{'channel':0,'cursor':0}]
+    else:
+        assert reads == [{'channel':0,'cursor':0},{'channel':7,'cursor':0},
+                         {'channel':0,'cursor':3},{'channel':7,'cursor':3}]
+        pages=[json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert len(pages)==5
+        assert all(p['lost_bytes']==5 and p['data_hex']=='00ff80' for p in pages[1:])

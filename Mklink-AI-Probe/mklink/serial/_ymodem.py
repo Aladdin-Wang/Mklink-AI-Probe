@@ -25,6 +25,28 @@ CAN = 0x18
 CRC_REQUEST = 0x43
 CPMEOF = 0x1A
 
+YMODEM_FILE_LIMIT = 32 * 1024 * 1024
+
+
+class YModemFileTooLarge(ValueError):
+    """The shared transfer's input limit was exceeded."""
+
+
+def validate_transfer(filename: str, size: int) -> str:
+    """Normalize the wire filename and bound shared GUI/AI transfers."""
+    filename = str(filename or '').replace('\\', '/').rsplit('/', 1)[-1]
+    if not filename:
+        raise ValueError('YMODEM filename is required')
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in filename):
+        raise ValueError('YMODEM filename contains control characters')
+    if len(filename.encode('utf-8')) > 31:
+        raise ValueError('YMODEM filename exceeds the safe 31-byte limit')
+    if size <= 0:
+        raise ValueError('YMODEM file is empty')
+    if size > YMODEM_FILE_LIMIT:
+        raise YModemFileTooLarge('YMODEM file exceeds the 32 MiB upload limit')
+    return filename
+
 
 class YModemError(RuntimeError):
     """Base class for deterministic YMODEM transfer failures."""

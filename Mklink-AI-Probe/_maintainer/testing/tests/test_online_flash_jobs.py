@@ -1,3 +1,4 @@
+from dataclasses import replace
 import threading
 import time
 import subprocess
@@ -9,7 +10,7 @@ import pytest
 
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.jobs import OnlineFlashJobManager
-from mklink.cmsis_dap.models import ImageInspection, JobRequest, JobState
+from mklink.cmsis_dap.models import ImageInspection, ImageSegment, JobRequest, JobState
 from mklink.remote.resource_manager import ResourceGroup, ResourceManager
 
 
@@ -420,8 +421,8 @@ class BlockingAcquireResourceManager(ResourceManager):
         self.acquire_started = threading.Event()
         self.allow_acquire_return = threading.Event()
 
-    def acquire(self, *args, **kwargs):
-        lease = super().acquire(*args, **kwargs)
+    def acquire_many(self, *args, **kwargs):
+        lease = super().acquire_many(*args, **kwargs)
         self.acquire_started.set()
         assert self.allow_acquire_return.wait(2)
         return lease
@@ -443,9 +444,9 @@ class CountingResourceManager(ResourceManager):
         super().__init__()
         self.acquire_calls = 0
 
-    def acquire(self, *args, **kwargs):
+    def acquire_many(self, *args, **kwargs):
         self.acquire_calls += 1
-        return super().acquire(*args, **kwargs)
+        return super().acquire_many(*args, **kwargs)
 
 
 class FailingSubmitExecutor:
@@ -552,7 +553,8 @@ def test_full_job_releases_resource_and_records_snapshot():
     assert "target_debug" not in resources.get_status()
 
 
-def test_program_progress_reports_real_bytes_and_updates_total_progress():
+@pytest.mark.parametrize("image_format", ["bin", "hex"])
+def test_program_progress_reports_real_bytes_and_updates_total_progress(image_format):
     class ProgressiveBackend(FakeBackend):
         def program(self, inspected, progress_callback=None):
             self.calls.append(("program", inspected))
@@ -563,6 +565,12 @@ def test_program_progress_reports_real_bytes_and_updates_total_progress():
 
     backend = ProgressiveBackend()
     inspected = image()
+    if image_format == "hex":
+        inspected = replace(
+            inspected, format="hex", size=4096,
+            segments=(ImageSegment(0x08000000, 0x08000100),
+                      ImageSegment(0x08001000, 0x08001300)),
+        )
     manager = OnlineFlashJobManager(
         lambda: backend,
         ResourceManager(),
@@ -586,7 +594,8 @@ def test_program_progress_reports_real_bytes_and_updates_total_progress():
     assert result.total_progress == 1.0
 
 
-def test_verify_progress_reports_real_bytes_and_updates_total_progress():
+@pytest.mark.parametrize("image_format", ["bin", "hex"])
+def test_verify_progress_reports_real_bytes_and_updates_total_progress(image_format):
     class ProgressiveBackend(FakeBackend):
         def verify(self, inspected, progress_callback=None):
             self.calls.append(("verify", inspected))
@@ -597,6 +606,12 @@ def test_verify_progress_reports_real_bytes_and_updates_total_progress():
 
     backend = ProgressiveBackend()
     inspected = image()
+    if image_format == "hex":
+        inspected = replace(
+            inspected, format="hex", size=4096,
+            segments=(ImageSegment(0x08000000, 0x08000100),
+                      ImageSegment(0x08001000, 0x08001300)),
+        )
     manager = OnlineFlashJobManager(
         lambda: backend,
         ResourceManager(),
@@ -830,6 +845,7 @@ def test_stop_after_worker_claim_releases_without_provider_or_backend_factory():
     manager.shutdown()
     assert provider_calls == []
     assert factory_calls == []
+    assert resources.get_status() == {}
 
 
 def test_stop_before_worker_claim_has_no_external_side_effects():

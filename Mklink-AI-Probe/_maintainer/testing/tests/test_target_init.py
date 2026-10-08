@@ -109,7 +109,7 @@ class TestInitializeTarget:
 
 class TestDeviceConnectInitializesTarget:
     def test_deferred_connection_applies_saved_clock(self):
-        dev = Device(initialize_target_now=False)
+        dev = Device(port="COM6", initialize_target_now=False)
         bridge = MagicMock()
         bridge.connect.return_value = True
         bridge.send_command.return_value = 'set clock 4000000\r\n0\r\n'
@@ -129,7 +129,7 @@ class TestDeviceConnectInitializesTarget:
         with patch("mklink.bridge.MKLinkSerialBridge", return_value=new_bridge), \
              patch("mklink.project_config.load_config", return_value={"com_port": "COM6"}), \
              patch("mklink.device.initialize_target") as mock_init:
-            dev._port = None
+            dev._port = "COM6"
             dev._connect()
         mock_init.assert_called_once()
         args, kwargs = mock_init.call_args
@@ -137,59 +137,20 @@ class TestDeviceConnectInitializesTarget:
         assert kwargs.get("project_root") == "."
         assert dev.connected is True
 
-    def test_automatic_connect_falls_back_when_preferred_port_is_claimed(self, tmp_path):
-        created = []
-        events = []
-
-        class DiscoveryLock:
-            def __init__(self, name):
-                assert name == "mklink_auto_connect"
-
-            def acquire(self):
-                events.append("discovery-lock-acquired")
-                return True
-
-            def release(self):
-                events.append("discovery-lock-released")
-
-        class Bridge:
-            def __init__(self, port):
-                self.port = port
-                self._ctx = MagicMock()
-                created.append(port)
-
-            def connect(self):
-                return self.port == "COM228"
-
-            def _verify_identity(self):
-                return True
-
-            def close(self):
-                pass
-
-        dev = Device(preferred_port="COM46", project_root=str(tmp_path))
-        with patch("mklink.bridge.MKLinkSerialBridge", Bridge), \
-             patch("mklink.discovery.find_mklink_cdc_port", side_effect=lambda **_kwargs: (
-                 events.append("discovered") or "COM228"
-             )) as discover, \
-             patch("mklink.discovery.list_available_ports", return_value=[
-                 {"device": "COM46"}, {"device": "COM228"}
-             ]), \
-             patch("mklink.project_config.load_config", return_value={"com_port": "COM46"}), \
-             patch("mklink.project_config.save_config") as save_config, \
-             patch("mklink.serial._port._PortLock", DiscoveryLock), \
-             patch("mklink.device.initialize_target"):
-            dev._connect()
-
-        assert created == ["COM46", "COM46", "COM228"]
-        discover.assert_called_once_with(exclude_ports={"com46"})
-        assert events == [
-            "discovery-lock-acquired",
-            "discovered",
-            "discovery-lock-released",
-        ]
-        save_config.assert_not_called()
-        assert dev.port == "COM228"
+    def test_previously_selected_port_failure_never_scans_or_retries(self, tmp_path):
+        bridge = MagicMock()
+        bridge.connect.return_value = False
+        dev = Device(preferred_port='COM46', project_root=str(tmp_path))
+        with patch('mklink.bridge.MKLinkSerialBridge', return_value=bridge) as factory, \
+             patch('mklink.discovery.find_mklink_cdc_port') as discover, \
+             patch('mklink.project_config.save_config') as save:
+            with pytest.raises(DeviceNotConnectedError, match='no fallback'):
+                dev._connect()
+        factory.assert_called_once_with('COM46')
+        bridge.connect.assert_called_once()
+        bridge.close.assert_called_once()
+        discover.assert_not_called()
+        save.assert_not_called()
 
     def test_explicit_port_does_not_fall_back(self, tmp_path):
         bridge = MagicMock()
@@ -203,7 +164,7 @@ class TestDeviceConnectInitializesTarget:
                 dev._connect()
 
         discover.assert_not_called()
-        assert bridge.connect.call_count == 2
+        assert bridge.connect.call_count == 1
 
 
 # ----------------------------------------------------------------------
@@ -229,6 +190,12 @@ class TestMemoryAccessFreshBridgeInit:
 # ----------------------------------------------------------------------
 
 class TestApiConnectShape:
+    @pytest.fixture(autouse=True)
+    def isolated_dashboard_managers(self, monkeypatch):
+        # Connection preparation mutates the process-local manager catalog.
+        # Keep these fake devices out of subsequent API/symbol tests.
+        monkeypatch.setattr('mklink.remote.dashboards._managers', {})
+
     def test_connect_response_includes_idcode_port_axf(self):
         client, _ = _api_client_and_state()
         dev = MagicMock()

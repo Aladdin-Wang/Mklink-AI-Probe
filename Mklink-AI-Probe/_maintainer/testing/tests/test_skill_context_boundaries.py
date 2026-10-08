@@ -54,10 +54,12 @@ def test_user_skill_publishes_probe_safety_boundaries():
 
     assert "同一下载器、命令口或目标串口同一时刻只" in entry
     assert "最多 **15 个**离散地址" in entry
-    assert "快速连续 float VOFA 最多 **16 路**" in entry
+    assert "VOFA 最多 **64 路**" in entry
     assert "**511 UTF-8 字节**" in entry
     assert "单批总数据最多 **12 KiB**、最多 **8 个地址项**" in entry
-    assert "V4 通道为 **0~2**，搜索窗口为 **0~65536 字节**" in entry
+    assert "旧固件/SystemView 通道为 **0~2**" in entry
+    assert "`MUX_TARGET=1` 的 V3/V4 RTT 可订阅 **0~7**" in entry
+    assert "搜索窗口为 **0~65536 字节**" in entry
     assert "不得拼接 Pika 表达式" in entry
     assert "MCP `rtt_write` 单次最多 **256" in entry
     assert "超限不得自动拆分" in entry
@@ -68,9 +70,9 @@ def test_user_skill_publishes_probe_safety_boundaries():
     assert "`disconnect` → `connect`" in entry
     assert "禁止自动重试" in entry
 
-    assert "精确模式最多 **15 个**" in memory
-    assert "安全上限为 **511B**" in memory
-    assert "**1~16 路**" in memory
+    assert "最多 15 个读取分组" in memory
+    assert "511 UTF-8 字节" in memory
+    assert "连续 1..16 个 float" in memory
     assert "单批最多 **12 KiB / 8 个地址项**" in memory
     assert "每批总数据量 ≤ 12 KiB" in flush
     assert "地址项数量 ≤ 8" in flush

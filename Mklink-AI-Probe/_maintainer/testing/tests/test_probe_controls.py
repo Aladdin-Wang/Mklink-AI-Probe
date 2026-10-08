@@ -92,18 +92,17 @@ def test_windows_pid_exists_reports_completed_real_process_as_dead():
 
 
 def test_release_serial_resources_removes_exited_auto_connect_owner(tmp_path, monkeypatch):
-    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("MKLINK_LOCK_DIR", str(tmp_path))
     kernel32 = _Kernel32(exit_code=1)
     _install_windows_process_api(monkeypatch, kernel32)
     path = local_resources.serial_lock_path("MKLINK_AUTO_CONNECT")
-    lock_path = tmp_path / "mklink_serial_locks" / "serial_MKLINK_AUTO_CONNECT.lock"
+    lock_path = tmp_path / "serial_MKLINK_AUTO_CONNECT.lock"
     assert path == str(lock_path)
-    lock_path.parent.mkdir(parents=True)
-    lock_path.write_text("99106", encoding="utf-8")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_bytes(b"\0" + b"99106")
 
     result = local_resources.release_serial_resources(
         port="MKLINK_AUTO_CONNECT",
-        include_mklink_bridge=False,
     )
 
     assert result["serial_locks"] == [{
@@ -112,9 +111,9 @@ def test_release_serial_resources_removes_exited_auto_connect_owner(tmp_path, mo
         "exists": True,
         "owner_pid": 99106,
         "owner_alive": False,
-        "action": "removed_stale_lock",
+        "action": "cleared_stale_lock",
     }]
-    assert not lock_path.exists()
+    assert lock_path.read_bytes() == b"\0" + b"0"
 
 
 class _Serial:
@@ -299,66 +298,6 @@ def test_mcp_exposes_guarded_power_and_probe_reboot(monkeypatch):
         ("power", 5000, True),
         ("reboot",),
         ("reset-holder",),
-    ]
-
-
-def test_mcp_security_tools_share_guarded_one_shot_backend(monkeypatch):
-    mcp = _Mcp()
-    calls = []
-    monkeypatch.setattr(mcp_server, "_reset_device", lambda: calls.append(("reset",)))
-    monkeypatch.setattr(
-        "mklink.security_operations.run_security_operation",
-        lambda action, target_part, **kwargs: calls.append(
-            (action, target_part, kwargs)
-        ) or {"status": "succeeded", "action": action},
-    )
-    monkeypatch.setattr(
-        "mklink.cmsis_dap.security.security_capability",
-        lambda part: SimpleNamespace(public=lambda: {"part_number": part, "supported": True}),
-    )
-
-    mcp_server._register_security_tools(mcp)
-
-    assert mcp.tools["security_status"]("STM32L010F4P6")["supported"] is True
-    assert mcp.tools["security_lock"](
-        "STM32L010F4P6", "firmware.bin", 3300,
-        base_address=0x08000000,
-        confirm_user=True,
-    )["action"] == "lock"
-    assert mcp.tools["security_unlock"](
-        "STM32L010F4P6",
-        3300,
-        confirm_user=True,
-        confirm_data_loss=True,
-    )["action"] == "unlock"
-    assert calls == [
-        ("reset",),
-        (
-            "lock",
-            "STM32L010F4P6",
-            {
-                "voltage_mv": 3300,
-                "confirm_user": True,
-                "firmware": "firmware.bin",
-                "base_address": 0x08000000,
-                "probe_id": None,
-                "frequency": 1_000_000,
-                "timeout": 240.0,
-            },
-        ),
-        ("reset",),
-        (
-            "unlock",
-            "STM32L010F4P6",
-            {
-                "voltage_mv": 3300,
-                "confirm_user": True,
-                "confirm_data_loss": True,
-                "probe_id": None,
-                "frequency": 1_000_000,
-                "timeout": 240.0,
-            },
-        ),
     ]
 
 
@@ -818,25 +757,25 @@ def test_mcp_detect_profile_guards_only_idcode_hardware_path(monkeypatch):
             raise TimeoutError("fake IDCODE timeout")
         return {"status": "file-only"}
 
-    monkeypatch.setattr("mklink.mcu_detect.detect_mcu_profile", detect)
+    monkeypatch.setattr("mklink.mcu_detect.inspect_mcu", detect)
     monkeypatch.setitem(mcp_server._holder, "device", None)
     monkeypatch.setitem(mcp_server._holder, "kwargs", {})
     monkeypatch.setitem(mcp_server._holder, "quarantine", None)
     mcp = _Mcp()
     mcp_server._register_project_tools(mcp)
 
-    assert mcp.tools["detect_mcu_profile"](read_idcode=False) == {
+    assert mcp.tools["inspect_mcu"](read_idcode=False) == {
         "status": "file-only"
     }
     with pytest.raises(TimeoutError, match="IDCODE"):
-        mcp.tools["detect_mcu_profile"](read_idcode=True)
+        mcp.tools["inspect_mcu"](read_idcode=True)
     with pytest.raises(RuntimeError, match="quarantined"):
-        mcp.tools["detect_mcu_profile"](read_idcode=True)
+        mcp.tools["inspect_mcu"](read_idcode=True)
     assert calls == [False, True]
 
     # File-only project inspection remains available because it performs no
     # probe I/O, even while the hardware session awaits explicit recovery.
-    assert mcp.tools["detect_mcu_profile"](read_idcode=False) == {
+    assert mcp.tools["inspect_mcu"](read_idcode=False) == {
         "status": "file-only"
     }
     assert calls == [False, True, False]

@@ -5,6 +5,18 @@
 
 ## 内存操作
 
+### 共享变量与 C 布局（0.3.0）
+
+变量访问使用后台当前符号目录。C 布局覆盖后，读取、写入、搜索及 SuperWatch 使用
+覆盖字段的地址和类型；删除的字段不再回退到原 DWARF。覆盖的一维标量数组可以
+分页浏览和选择快照范围。C 布局必须完整落在目录已识别的可写内存范围内。
+
+普通变量读取可读取已解析的 Flash 标量，但不会将它加入可写目录。变量写入复用
+目录的类型编码与范围检查；未知字段、不可写地址及不合法的类型值返回 422。
+共享 `write_variable` 仍接收整数参数；布尔、浮点和其他类型的 GUI/MCP 写入使用
+既有 SuperWatch 类型化写入。AXF 内容变化或丢失返回 409，不自动重解析或重放。
+
+
 ### 读取 RAM
 
 #### `python -m mklink read-ram --addr <地址> [--size <字节数>] [--port COM6] [--save <文件名>]`
@@ -142,90 +154,56 @@ python -m mklink dump-memory 0x08000000:256 --frames 0 --duration 1 --save flash
 - 单次 `cmd.dump_memory()` 总长度默认 **512 KiB**（固件 V4.3.3 实测整片 Flash 稳定，256 个 B1 块全 `flags=0x0000`）。**老固件**（pre-V4.3.3，BUG-5：>64 KiB 末块截尾 512B）请传 ≤32 KiB 的 `ADDR:SIZE` region 规避。
 - 如果没有解析到任何帧，CLI 会打印设备返回的可见文本，常见原因是固件未暴露 `cmd.dump_memory` 或设备仍处于异常流模式。
 
-#### `python -m mklink flush-memory <item> [<item> ...] [--verify] [--repeat N] [--interval-ms MS]`
-静默写 RAM,支持多地址多字节(内部调用 PikaScript `cmd.flush_memory()`)。与 `write-ram` 的关键区别:
+#### `python -m mklink dump-benchmark <ADDR:SIZE> ... [--probe ID] [--duration 3] [--period 0.000001] [--speed PROFILE]`
 
-- **成功无 ACK** — 设备只回显命令 + `>>>`,不输出 hexdump 预览。
-- **不得与流并发** — 虽然成功时没有 hexdump，仍必须先停止 dump/VOFA/RTT/SystemView、
-  释放连接，再在普通命令会话中写入。
-- **多字节 / 多地址** — 单次 PikaScript 调用提交多块写入,远比 `write-ram` 的循环高效。
-- **批写支持** — `--repeat N` + `--interval-ms MS` 实现周期写入(压力测试、抖动测试用)。
+通过共享后台测量完整 dump 样本的频率、有效载荷吞吐和采样间隔。
+活动 MCP 使用 `measure_dump_memory`，共享 SDK 使用同名 `call`；
+都复用既有采样会话和完整样本组装器。GUI 正在采集时返回忙，不抢停。
 
-`<item>` 格式:`ADDR:BYTE,BYTE,...` 或 `ADDR:0xBYTE 0xBYTE ...`(逗号/空格皆可,带不带 0x 前缀皆可)。
+- 1..15 个地址/大小区域，合计不超过 4096 字节；时长 0.5..30 秒，周期 1 微秒至 100 毫秒。
+- 首个完整样本最多等待 2 秒；之后开始计算时长，其中前 200 ms 为预热，
+  不计入统计。频率和分位数来自下载器时间戳，不代表主机界面刷新率。
+- B1 样本使用第一块的时间戳，所有块及区域完整后才计数；周期 `dump-memory`
+  也使用这一时间戳语义。CRC、区域、顺序或停止确认失败则整次请求失败，不重试。
+- 到时停止可能留下一个不完整样本，结果用 `incomplete_tail` 标记并排除该样本；
+  `integrity` 保留协议统计。`parser_dropped_bytes` 可包含命令回显，不能单独当作丢帧数。
+- 省略 `--speed` 保持后台当前时钟；显式指定会改变共享下载器的当前时钟，不写工程配置。
+  测量只保留间隔计数，不积累全部原始样本；完成后确认恢复命令模式再返回。
 
-##### PikaScript 函数同时支持两种调用协议(实测 2026-06)
+#### `python -m mklink flush-memory <item> [<item> ...] [--probe ID] [--no-verify] [--repeat N] [--interval-ms MS]`
 
-新固件的 `cmd.flush_memory` 同时支持两条路径,CLI 会根据 item 数自动选用:
+通过所选下载器的共享后台写 RAM。CLI、活动 MCP 的 `flush_memory` 和
+`SharedDevice.call('flush_memory', ...)` 使用同一校验、分包及执行实现。
+GUI 正在 RTT/VOFA/SuperWatch/SystemView 采集时返回忙；由采集方显式停止后再写，
+无需关闭 GUI 或 AI 会话。
 
-| CLI 形态 | 调用的 PikaScript | 稳定性 | 推荐场景 |
-|----------|-------------------|--------|----------|
-| 单 item (1 项) | `cmd.flush_memory(0x20010200, 0xA5, 0x5A, 0xDE, 0xAD)` <br> **旧协议**(位置参数) | **100% PASS** 实测 1~16 字节全通过 | **单地址多字节**(默认推荐) |
-| 多 item (≥2 项) | `cmd.flush_memory([(0x20010200, bytes([0x11])), (0x20010400, bytes([0x22]))])` <br> **新协议**(list-of-tuples) | 多数 PASS;某些活跃地址会被固件周期覆写 | 多地址写入(唯一选择) |
+- 单批最多 **12 KiB / 8 个地址项**；每次请求 1..8 个不重叠区域，
+  地址为 32 位整数，合计 1..12288 字节。
+- 所有输入先检查，非法后项不会导致前项先写。非重复数据自动拆成至多 30 字节，
+  每条命令不超过 230 字符；重复字节使用 `bytes([byte])*count`。
+- 默认逐批回读并逐字节比较，单次回读不超过 4096 字节。
+  `--no-verify` 只检查固件响应，不证明目标内容；MCP 对应 `verify=false`。
+- 硬件异常、非预期文本（包括裸 `flush fail`）、缺失回读或数据不符立即停止。
+  不重试、不发送剩余批次、不回滚；此前的批次可能已经写入。
+- `--repeat` 为 1..100，`--interval-ms` 为 0..30000；只在前次成功后发送下一次。
+  每次单独申请已有后台准入；间隔中 GUI 开始采集时，后续写会被拒绝。
 
-```
-# 单地址单字节(1 项,走旧协议)
-python -m mklink flush-memory 0x20010000:0x55
+item 支持 `ADDR:BYTE,BYTE` 或 `ADDR:BYTE*N`，地址/字节按十六进制解释，
+重复次数为十进制。PowerShell 中用单引号包裹 item。下面地址仅为格式示例，
+使用前必须根据目标工程确认专用、稳定且可写的区域。
 
-# 单地址多字节(1 项,走旧协议,1~16 字节稳定)
-python -m mklink flush-memory 0x20010000:0xDE,0xAD,0xBE,0xEF
-python -m mklink flush-memory 0x20010000:0xCA,0xFE,0xBA,0xBE,0x12,0x34,0x56,0x78,0x9A,0xBC,0xDE,0xF0,0x0F,0xED,0xCB,0xA9
-
-# 多地址多字节(≥2 项,走新协议)
-python -m mklink flush-memory \
-    0x20010000:0x11,0x22,0x33 \
-    0x20010100:0x44,0x55,0x66,0x77 \
-    0x20010200:0x88
-
-# 回读验证(强烈建议对多地址 / ≥2 字节使用)
-python -m mklink flush-memory 0x20010000:0xDE,0xAD,0xBE,0xEF --verify
-
-# 周期写 10 次,每次间隔 50ms
-python -m mklink flush-memory 0x20010000:0xA5 --repeat 10 --interval-ms 50
-```
-
-##### 已知固件 bug:首次调用 / 偶发裸 `flush fail`
-实测 PikaScript `cmd.flush_memory` 在 **同一连接的首次调用** 或某些时机会返回裸 `flush fail` (无 `:` 原因),但 **写入实际上已生效**(可通过 `read-ram` 验证)。**第二次起恢复正常静默成功**。CLI 已识别为 `WARN` 而非 `FAIL`,请用 `read-ram` / `cmd.read_ram(...)` 单独验证。
-
-##### 已知固件 bug:多地址的活跃地址会被周期覆写
-固件某些数据(`.bss`/GUI 回调表/heap 元数据/任务栈)会被后台线程周期性刷新。新协议多地址写入在 `0x20010A00` 等活跃地址上的写入**会立即被覆写**——这是固件问题,不是 flush_memory 的 bug。规避:
-1. 写入前用 `python -m mklink symbols --source <axf> --filter "heap|stack|GUI"` 排除活跃地址
-2. 写入活跃地址后,**不要回读**——读到的是覆写后的状态,不是你的写入
-3. 一次性写入 1 个稳定地址,然后立即用 PikaScript 表达式 `print(0x20010000)` 等读(若可用)做"原位验证"
-
-##### 响应解析规则
-| 响应 | CLI 判定 | 含义 |
-|------|---------|------|
-| 空(只回显命令) | OK | 静默成功 |
-| `TypeError/NameError/...` | FAIL | 真实异常(参数类型/拼写错) |
-| `flush fail: <原因>` | FAIL | 显式原因(如 `data must be bytes or int list` / `item must be (addr, data)`) |
-| 裸 `flush fail` | OK + WARN | 已知固件 bug,首次/偶发,写入实际生效 |
-| 其他非空 | OK + WARN | 非预期响应,保留原始文本供排查 |
-
-##### 旧拼写向后兼容
-旧名 `flush-memroy`(带拼写错误)作为 argparse alias 仍可工作,但会打印一行 deprecation WARN 提醒改用 `flush-memory`。**注意:PikaScript 端的旧函数名 `cmd.flush_memroy` 已被新代码移除**(`NameError`);任何直接调用旧函数名的脚本/工具都需要更新到 `cmd.flush_memory`。
-
-```
-# 仍可用(自动转发 + WARN)
-python -m mklink flush-memroy 0x20010000:0x55
-# → [WARN] 'flush-memroy' 是旧拼写,已自动转发到 'flush-memory',请改用新名
+```powershell
+python -m mklink flush-memory '0x20002000:DE,AD,BE,EF' --probe <probe-id>
+python -m mklink flush-memory '0x20002000:A5*64' --probe <probe-id> --repeat 2 --interval-ms 50
 ```
 
-##### 验证技巧
-PikaScript 端的 `cmd.read_ram` 显示屏对部分地址会**不显示数据行**(返回 `wRamAddr`/`wCount` 但缺第二行)——这是 read 显示 bug,与 flush_memory 无关。**解决方法**:
-- 用 `--verify`(CLI 自动 read_ram 每个地址),CLI 会同时打印 hex,数据行缺失也能在调用现场看出
-- 用 `cmd.write_ram(addr, byte)` 看它的"AFTER 回显"行(只对单字节有效)
-- 用 `python -m mklink vofa <addr> uint8_t --period 0.01`(连续采样)看实际值
+结果包含 `ok`、计划批次数 `batches`、请求字节数 `total_bytes`、
+已执行批次 `results`，启用回读时另有 `verified`。
+CLI 失败返回非零退出码；共享 MCP/SDK 调用方必须检查 `ok`/`verified`。
+没有接收到响应时，不能假定写入未发生；应先检查目标，不自动重放请求。
 
-##### 📌 边界与分块约束（三类边界务必区分）
-
-`flush-memory` 单批最多 **12 KiB / 8 个地址项**。更大输入必须串行分批并等待提示符。
-固件极限、命令串和 Windows 命令行限制见[静默写边界](flush-memory.md)；推荐边界不得
-用直接 SDK/Pika 调用绕过。
-
-- 非重复数据 CLI **不自动分块**，超 230B 直接 `FAIL`。
-- **重复字节**用紧凑语法 `ADDR:BYTE*N`（如 `flush-memory "0x20008000:0xAA*12288"`），CLI 自动转 `bytes([0xVV])*N` 短表达式，绕开 ②③；AI/MCP 单次最多写 12 KiB。
-- **PowerShell**：始终用单引号包裹整个 item（`'0x...:0xAA*N'`），否则逗号会被预处理改写参数。
-- 完整边界表与 host 端分块策略见 **[flush-memory.md](flush-memory.md)**。
+移除了旧拼写 `flush-memroy` 以及将错误响应降为成功 WARN 的兼容逻辑。
+详细固件约束见[静默写边界](flush-memory.md)。
 
 ### 读取 Flash
 
@@ -237,162 +215,54 @@ python -m mklink read-flash --addr 0x08000000 --size 128
 python -m mklink read-flash --addr 0x08005000 --size 4096 --save flash_dump.bin
 ```
 
-### VOFA+ 实时变量观测
+### VOFA+ 共享实时变量观测（0.3.0）
 
-MKLink 通过 SWD 直接读取目标芯片内存中的变量数据，实时封装为 VOFA+ 协议（JustFloat）经 USB CDC 虚拟串口发送至 PC。**不占用 MCU 串口资源，不侵入业务代码**，可替代 J-Link J-Scope。快速连续布局最多读取 **16 路 float**；精确离散布局最多读取 **15 个地址/类型对**。最小采样周期为 **1us**。
+VOFA CLI、WebGUI、SDK 和 MCP 复用所选下载器的共享后台。后台用现有
+`dump_memory` 二进制采集，通过有界历史和 WebSocket 分发波形；客户端不打开
+CDC、不启动另一台网页服务，也不使用旧 `vofa.send` / JustFloat 路径。无需修改
+目标程序或下载器固件。详见 [共享后台](shared-runtime.md)。
 
-#### 使用方式1：连续读取 float 变量（快速模式）
-
-MKLink 固件支持的 `vofa.send` 命令形式之一，用于读取一段连续内存中的 float 变量。只需指定起始地址和个数，固件将数据以 VOFA+ JustFloat 协议输出。
-
-```
-python -m mklink vofa <起始地址> <个数> --period <秒>
-```
-
-- `<起始地址>`：第一个 float 变量的内存地址
-- `<个数>`：连续读取的 float 数量（1~16）
-- `--period`：采样周期（秒），最小 1us（0.000001），设为 0 停止
-
-#### dump_memory 流停止与 AI 恢复边界
-
-当前 V4.3.8 中 `period>0` 持续采样，`period=0` 输出一个完整样本后回到 idle，
-`period=-1` 用于显式停止。主机停止后至少保留默认 **50 ms** 排空时间；V4 实测把
-等待缩到 10 ms 会残留二进制流并污染后续命令。不要快速 start/stop，也不要在同一
-下载器上并行发命令。
-
-结束 dump/VOFA/RTT/SystemView 后关闭当前连接；普通 `read_ram` 等命令重新连接后再发。
-若 MCP tool 超时，只调用一次 `device_status`，随后结束旧会话并只执行一次
-`disconnect` → `connect`。任一步失败就停止并请用户拔插 USB；不得自动重试超时原
-调用，也不得循环发送 stop、`reboot_probe` 或 `reboot()`。
-
-```
-# 从 0x20000030 开始，连续读取 5 个 float，周期 10us
-python -m mklink vofa 0x20000030 5 --period 0.00001
-
-# 从 0x20000000 读取 3 个 float
-python -m mklink vofa 0x20000000 3 --period 0.001
+```powershell
+# 按当前 AXF/ELF 的标量类型采集，支持字段和数组元素
+python -m mklink vofa rt_tick "g_config.speed" "samples[0]" --probe "电机板" --period 0.01
+# 裸地址必须给出类型；相邻通道会合并为对齐读取
+python -m mklink vofa 0x20000030 uint16_t 0x20000034 float --probe "电机板" --names adc,filtered
+# 连续 1..16 个 float；符号数组仍检查元素类型与边界
+python -m mklink vofa 0x20000030 3 --probe "电机板" --duration 60
+# 已有采集：不提供通道/周期，订阅它而不改变设置
+python -m mklink vofa --probe "电机板" --duration 10
 ```
 
-#### 使用方式2：多地址、多类型读取（精确模式）
+新采集默认周期 0.001 秒；`--period` 要求有限正数、不超过 60 秒，实际最小值为
+1 us。请求周期不等于实际采样率，状态返回 `actual_rate`、`completed_samples`、
+`read_errors` 和 `stream_integrity`。首次 start 成功只证明命令送达；CLI 结束前
+检查实际完整样本，空流、终止错误或停止确认失败会非零退出。
 
-MKLink 固件支持的 `vofa.send` 命令形式之二，用于读取不同地址、不同类型的变量。每个变量指定地址和类型，固件将数据以 VOFA+ JustFloat 协议输出。
+通道上限 64，地址按 4 字节边界合并后最多 15 个读取分组，完整 REPL 命令最多
+511 UTF-8 字节。超过限制会拒绝，不退回主机逐变量轮询。支持 float、bool、
+int8/16/32_t、uint8/16/32_t，以及 char/uchar、short/ushort、int/uint、fp32 等别名。
+符号类型由当前目录确定，显式类型须匹配；double、64 位整数和整体结构/数组不能
+作为单个通道。读取非原子快照；对齐读取的邻接地址也必须可安全读取，不宜猜测
+带读取副作用的外设地址。
 
-精确模式最多 **15 个** `(地址, 类型)` 对。16 对再加采样周期会形成 33 个
-Pika 位置参数，触及已知会使 REPL 失去响应的边界。主机还会按 UTF-8 字节数校验
-完整 `vofa.send(...)` 命令，安全上限为 **511B**；超限请求会在发现端口前拒绝。
-快速模式只使用 `起始地址、通道数、周期` 3 个参数，因此保留独立的 **1~16 路**
-连续 float 上限，不能把这个通道上限套用到精确模式。
+`--source` 可在首次连接时指定 AXF/ELF；省略时采用后台当前目录。符号通道保留
+路径，每次显式启动重新解析；源内容变化时拒绝沿用旧描述，不自动切换工程或
+抢停其他采集。裸地址通道始终按用户指定地址处理。
 
-```
-python -m mklink vofa <地址1> <类型1> [<地址2> <类型2> ...] --period <秒>
-```
+`--duration` 默认 30 秒，0 表示运行到 Ctrl+C。创建采集的 CLI 在正常结束时
+尝试停止一次；若另一个 AI/SDK 仍在订阅，后台拒绝停止，CLI 提示保留采集后
+只解除自己。借用已有采集的 CLI 始终只解除自己。删除了旧 `--stop`；不要用新
+临时客户端代替创建者强停，可先让订阅者退出，再从创建者或 GUI 显式停止。
 
-```
-# 观测 2 个不同地址的变量（混合类型）
-python -m mklink vofa 0x20000030 uint8_t 0x2000154c float --period 0.001
+GUI 已移除 VOFA+ 入口和独立页面；实时曲线使用仪表盘 SuperWatch。
+VOFA 第三方兼容协议和后台能力保留。`--visualize`、`--no-browser`、旧 `--host`、
+`--port-http`、`--max-points` 和自定义私有 HTML 服务入口已删除。
 
-# 观测 3 个变量
-python -m mklink vofa 0x20000030 uint8_t 0x2000154c uint16_t 0x20001550 float --period 0.00001
-
-# 观测 4 个变量
-python -m mklink vofa 0x20000030 int32_t 0x20000034 float 0x20000038 uint16_t 0x2000003c int8_t --period 0.0001
-```
-
-**MKLink 固件接受的变量类型字符串：**
-
-| 关键字 | C 类型 | 字节数 | 说明 |
-|--------|--------|--------|------|
-| `int8_t` / `int8` / `char` | int8_t | 1 | 有符号 8 位 |
-| `uint8_t` / `uint8` / `uchar` | uint8_t | 1 | 无符号 8 位 |
-| `int16_t` / `int16` / `short` | int16_t | 2 | 有符号 16 位 |
-| `uint16_t` / `uint16` / `ushort` | uint16_t | 2 | 无符号 16 位 |
-| `int32_t` / `int32` / `int` | int32_t | 4 | 有符号 32 位 |
-| `uint32_t` / `uint32` / `uint` | uint32_t | 4 | 无符号 32 位 |
-| `float` / `fp32` | float | 4 | 单精度浮点 |
-| `bool` / `boolean` | bool | 1 | 布尔类型 |
-
-> 以下类型由 MKLink 固件解析，CLI 将类型字符串原样传递给 `vofa.send()` 命令。
-
-> **对齐警告（MKLink SWD 读取限制）：非 4 字节变量（int8_t、uint8_t、int16_t、uint16_t、bool）必须强制 4 字节对齐，否则 MKLink 固件通过 SWD 32 位读取时会出现数据撕裂。** 在 C 代码中声明变量时使用：
-> ```c
-> __attribute__((aligned(4))) static volatile uint16_t my_var = 0;
-> ```
-
-#### 停止观测
-
-```
-python -m mklink vofa --stop
-```
-
-#### VOFA+ Web 可视化（--visualize）
-
-启动 Web 仪表盘，在浏览器中实时显示 VOFA+ JustFloat 数据的趋势图表，无需 VOFA+ 桌面软件。
-
-```
-python -m mklink vofa <变量参数> --visualize [选项]
-```
-
-自动完成：发现端口 → 连接 → 启动 VOFA 采样 → 解析 JustFloat 二进制帧 → 启动 Web 服务器 → 打开浏览器 → 实时绘图
-
-**使用示例：**
-
-```bash
-# 快速模式可视化（3 个连续 float）
-python -m mklink vofa 0x20000030 3 --period 0.01 --visualize
-
-# 精确模式可视化（混合类型，自动用地址作通道名）
-python -m mklink vofa 0x20000030 uint16_t 0x20000034 float --period 0.01 --visualize
-
-# 自定义通道名（推荐，直观识别每条曲线）
-python -m mklink vofa 0x20000030 uint16_t 0x20000034 float --period 0.01 --visualize --names raw_adc,filtered,speed
-
-# 固定端口，不打开浏览器（用于远程查看）
-python -m mklink vofa 0x20000030 3 --visualize --port-http 8888 --no-browser
-
-# 限时运行 60 秒
-python -m mklink vofa 0x20000030 3 --period 0.01 --visualize --duration 60
-
-# 使用 AXF 符号名 / struct.field（需要 --source）
-python -m mklink vofa g_appState uint8_t --source path/to/firmware.axf --visualize
-python -m mklink vofa g_config.setpoint float --source path/to/firmware.axf --visualize
-```
-
-**可视化选项：**
-
-| 选项 | 说明 |
-|------|------|
-| `--host 127.0.0.1` | HTTP 服务器绑定地址（默认 127.0.0.1） |
-| `--port-http 0` | HTTP 端口（默认 0 = 随机可用端口） |
-| `--no-browser` | 不自动打开浏览器 |
-| `--max-points 500` | 浏览器最大数据点数（默认 500） |
-| `--duration 30` | 运行时长（秒，默认 30） |
-| `--names a,b,c` | 通道名称，逗号分隔（如 `ch0,ch1,ch2`） |
-
-**通道命名规则：**
-- 使用 `--names`：按指定名称显示（推荐，直观识别每条曲线）
-- 快速模式无 `--names`：自动用地址偏移命名，如 `0x20000030`, `0x20000034`, `0x20000038`
-- 精确模式无 `--names`：自动用变量地址命名，如 `0x20000030`, `0x20000034`
-
-**VOFA 类型显示：**
-- 快速模式 `vofa <addr> <count>` 默认每个通道是 `float`，`Size` 为 `4B`。
-- 精确模式 `vofa <addr> <type> ...` 最多 15 路，会在 Watch 表显示规范 C 类型和字节数。
-- Watch 表中的 `Type` 是变量 C 类型；`Size` 是该类型字节数；`Unit` 是物理单位（如 `V`、`rpm`、`degC`），没有单位时显示 `-`。
-- 支持的类型别名见上文「MKLink 固件接受的变量类型字符串」表格。
-
-**浏览器界面说明：**
-- 标题栏显示 **MKLink VOFA Viewer**，RTT 模式显示 **MKLink RTT View**
-- 左上角 **VOFA** / **RTT** 模式徽章，区分当前数据来源
-- 实时折线图，每条曲线独立颜色，点击通道名切换显示/隐藏
-- 统计面板：当前值、最小值、最大值、平均值
-- 按 `Space` 暂停/恢复，按 `L` 显示/隐藏原始日志
-
-**VOFA 仪表盘 HTML 加载优先级（与 RTT 共用模板）：**
-
-1. `.mklink/vofa_viewer.html` — **完全自定义 HTML**（需自行通过 SSE `/stream` 端点获取数据）
-2. `.mklink/vofa_viewer_template.html` — **用户模板**（保留 `__MAX_POINTS__`、`__TITLE__`、`__MODE__` 占位符，服务器自动注入，其余可自由修改）
-3. 内置模板 `_rtt_viewer_template.html`（默认，与 RTT 共用）
-
-> **注意**：VOFA 可视化复用 RTT 的 `VisualizationServer`，前端数据格式一致。如需自定义样式，拷贝内置模板到 `.mklink/` 下修改即可。
+MCP 使用 `gui_call` 的 `vofa_start/stop/pause/resume/status/history` 能力；
+共享 SDK 使用同名 `call`，不增加专门的 MCP 服务。`vofa_history` 最多保留 500
+个样本。浏览器波形使用 Float32，大于 2^24 的整数可能失去低位精度；精确判断
+请读取历史或停止采集后用内存/变量接口。非有限浮点在图表/历史中替换为 0。
+有限缓冲和断线不保证无损。
 
 ### AXF/DWARF 调试增强
 
@@ -413,12 +283,16 @@ python -m mklink symbols --source path/to/firmware.axf
 python -m mklink symbols --source path/to/firmware.axf --filter "counter|sensor"
 ```
 
-#### `python -m mklink watch <变量1,变量2> --source <firmware.axf> [--period 秒]`
-一次性读取变量快照，支持基础类型和 `struct.field`。周期模式用 Ctrl+C 停止。
+#### `python -m mklink watch <变量1,变量2> --probe <设备ID或别名> [--source <firmware.axf>] [--period 秒]`
+通过共享后台批量读取 1..16 个标量，支持 typedef、`struct.field`、数组元素和当前 C 布局。
+未指定工程和符号文件时使用后台当前配置；多下载器必须明确选择。周期模式用 Ctrl+C
+停止并只解除自己的会话。采集冲突或读取失败会退出报错，不抢停 GUI、不重试或转为直连。
+多变量读取不保证目标原子快照；高速曲线仍使用 SuperWatch。`--profile` 接受仅含
+`{"variables": ["变量路径"]}` 的 JSON；原未实现的 `--struct` 参数已删除。
 
 ```
-python -m mklink watch g_counter,g_sensor --source path/to/firmware.axf
-python -m mklink watch g_config.setpoint --source path/to/firmware.axf --period 1
+python -m mklink watch g_counter,g_sensor --probe "电机板"
+python -m mklink watch g_config.setpoint,samples[1] --probe "电机板" --period 1
 ```
 
 #### `python -m mklink superwatch <变量/字段/寄存器...> [--source <firmware.axf>] [--svd <device.svd>] [--visualize]`
@@ -450,7 +324,20 @@ ARM SWD 和 HPM JTAG 使用相同的 4/10/20/30 MHz 档位；20/30 MHz 必须由
 
 档位设置改变探针的调试时钟，同一连接中的 RTT、SystemView 等内存访问也使用该时钟。Keil、在线烧录和脱机脚本会按各自配置重新设置时钟；不能用 SuperWatch 的档位代替下载配置。采样报告应分别注明包含批间空隙的持续速率与批内速率，不能混用。
 
-SuperWatch 固定使用官方 `cmd.dump_memory(addr1, size1, addr2, size2, ..., period)` 二进制流协议。设备端一条命令配置所有区域后主动推送 `MPMDMPMD` 帧（64 位时间戳 + frame CRC32 校验）。同一协议也可通过公共 CLI `python -m mklink dump-memory ...` 直接使用。旧命令中的 `--dump-mem` 参数继续接受，但不再切换行为。
+SuperWatch 使用设备主动推送的二进制流，不以主机循环读内存代替。配套新版 V3/V4 协商
+CDC 多路复用微秒采样；当前开发固件设置 1 μs（`0.000001` 秒）请求全速，
+更长周期按实际读取能力定时，读取超时不额外等待。早期开发固件采用过 20 μs 分界，
+测全速统一使用 1 μs。RTT 独立按 1 ms 轮询。
+单个对齐 4 B 变量可走批量快路径；速率依目标和区域布局而变，设置值不是速率保证。
+测峰值时单独运行 SuperWatch，共存测试另测。旧固件使用
+`cmd.dump_memory(addr1, size1, ..., period)` 的 `MPMDMPMD` 帧；旧 MUX 为毫秒采样。
+公共 CLI `python -m mklink dump-memory ...` 自动选择协议。旧 `--dump-mem` 仍接受。
+
+判断数据质量时分开记录：目标采样时间戳的相邻间隔、持续采样率、协议序号缺口、
+传输丢弃和客户端历史覆盖。`drops=0` 仅说明相应传输/缓存层没有报告丢弃，不能
+证明采样间隙内没有遗漏目标变化；未知目标信号也不能据此计算“误码率”。GUI
+栅格和缩放仅改变显示，不改变设备采样周期。暂停/停止后可缩放，恢复时保留时间
+窗口宽度；历史不足时只能显示已保留的数据。
 
 ```bash
 python -m mklink superwatch g_counter,g_sensor --source path/to/firmware.axf --visualize --period 0.01
@@ -477,17 +364,6 @@ python -m mklink hardfault --source path/to/firmware.axf --sp 0x20001FF0
 ```
 python -m mklink memmap --source path/to/firmware.axf
 python -m mklink memmap --source path/to/firmware.axf --json
-```
-
-**JustFloat 二进制解析特性：**
-- 自动解析 VOFA+ JustFloat 协议帧（小端 IEEE 754 float + 帧尾 `0x00 0x00 0x80 0x7f`）
-- 基于通道数的帧长度校验，防止数据损坏或中途捕获导致的解析错误
-- 正确处理通道值为 +Inf（`0x7f800000`）的情况，不与帧尾混淆
-- 自动重同步：遇到损坏帧时丢弃并继续解析后续有效帧
-- 支持帧尾跨 read 分割、垃圾数据后正常帧恢复等边界场景
-
-```
-python -m mklink vofa --stop
 ```
 
 #### 变量地址查找

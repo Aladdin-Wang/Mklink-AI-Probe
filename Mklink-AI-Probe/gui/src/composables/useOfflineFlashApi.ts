@@ -78,12 +78,27 @@ export function useOfflineFlashApi() {
     config: OfflineConfigPayload,
     firmwareFiles: File[],
     flmFiles: File[],
+    requestId: string = crypto.randomUUID(),
   ): Promise<OfflineDeployResult> {
     const body = new FormData()
     body.append('config_json', JSON.stringify(config))
+    body.append('request_id', requestId)
     firmwareFiles.forEach(file => body.append('firmware_files', file, file.name))
     flmFiles.forEach(file => body.append('flm_files', file, file.name))
-    return request('/deploy', { method: 'POST', body })
+    return request<OfflineDeployResult>('/deploy', { method: 'POST', body }).catch(error => {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; request_id=${requestId}`)
+    })
+  }
+
+  async function deploymentStatus(requestId: string) {
+    const response = await fetch(`${API_BASE}/api/runtime/jobs/`)
+    if (!response.ok) throw await responseError(response)
+    const payload = await response.json()
+    const job = payload.jobs.find((item: { request_id: string }) => item.request_id === requestId)
+    if (!job || job.action !== 'offline_deploy') {
+      throw new Error(tr('原下载器没有保留此部署记录；不能据此判断未执行或重新部署。', 'No retained deployment on this probe; this does not prove it did not run. Do not replay.'))
+    }
+    return job as { state: string; result: OfflineDeployResult | null; error: string | null; recovery_directory?: string }
   }
 
   async function trigger(
@@ -153,5 +168,5 @@ export function useOfflineFlashApi() {
     return result
   }
 
-  return { getStatus, listAlgorithms, getSecurityStatus, preview, deploy, trigger }
+  return { getStatus, listAlgorithms, getSecurityStatus, preview, deploy, deploymentStatus, trigger }
 }

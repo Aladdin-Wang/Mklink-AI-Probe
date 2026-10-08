@@ -92,7 +92,7 @@ def read_debug_state(bridge: MKLinkSerialBridge) -> DebugState:
 
     # Read FP_CTRL to get number of comparators
     fp_ctrl = _read_u32(bridge, FP_CTRL)
-    state.num_breakpoints = (fp_ctrl >> 4) & 0x0F  # NUM_CODE field [7:4]
+    state.num_breakpoints = ((fp_ctrl >> 4) & 0x0F) | ((fp_ctrl >> 8) & 0x70)  # NUM_CODE field [7:4]
 
     # Read each comparator
     for i in range(state.num_breakpoints):
@@ -101,7 +101,7 @@ def read_debug_state(bridge: MKLinkSerialBridge) -> DebugState:
         if comp_val & 0x01:  # ENABLE bit
             # FPBv1: address in bits [28:2], REPLACE in [31:30]
             # FPBv2: address in bits [31:1]
-            bp_addr = comp_val & 0x1FFFFFFC
+            bp_addr = (comp_val & 0x1FFFFFFC) | (2 if comp_val >> 30 == 2 else 0)
             state.breakpoints.append(BreakpointSlot(index=i, address=bp_addr, enabled=True))
 
     return state
@@ -134,7 +134,7 @@ def step_cpu(bridge: MKLinkSerialBridge) -> DebugState:
 def get_num_breakpoints(bridge: MKLinkSerialBridge) -> int:
     """Get the number of FPB hardware breakpoint comparators available."""
     fp_ctrl = _read_u32(bridge, FP_CTRL)
-    return (fp_ctrl >> 4) & 0x0F
+    return ((fp_ctrl >> 4) & 0x0F) | ((fp_ctrl >> 8) & 0x70)
 
 
 def set_breakpoint(bridge: MKLinkSerialBridge, address: int, slot: int | None = None) -> int:
@@ -151,17 +151,13 @@ def set_breakpoint(bridge: MKLinkSerialBridge, address: int, slot: int | None = 
     Raises:
         ValueError: If address is not in Flash or no free slot available
     """
-    if address >= 0x20000000:
-        raise ValueError(f"FPB breakpoints only work in Flash region (< 0x20000000), got 0x{address:08X}")
-
+    if isinstance(address, bool) or not isinstance(address, int) or not 0 <= address < 0x20000000:
+        raise ValueError("FPB address must be an integer in [0, 0x20000000)")
+    if slot is not None and (isinstance(slot, bool) or not isinstance(slot, int) or slot < 0):
+        raise ValueError("Breakpoint slot must be a non-negative integer")
     num_comp = get_num_breakpoints(bridge)
     if num_comp == 0:
         raise RuntimeError("FPB reports 0 comparators — hardware may not support breakpoints")
-
-    # Enable FPB unit if not already
-    fp_ctrl = _read_u32(bridge, FP_CTRL)
-    if not (fp_ctrl & FP_CTRL_ENABLE):
-        _write_u32(bridge, FP_CTRL, FP_CTRL_KEY | FP_CTRL_ENABLE)
 
     if slot is not None:
         if slot >= num_comp:
@@ -175,6 +171,11 @@ def set_breakpoint(bridge: MKLinkSerialBridge, address: int, slot: int | None = 
                 break
         if slot is None:
             raise ValueError(f"All {num_comp} breakpoint slots are in use")
+
+    # Only enable FPB after the requested slot has been validated/allocated.
+    fp_ctrl = _read_u32(bridge, FP_CTRL)
+    if not (fp_ctrl & FP_CTRL_ENABLE):
+        _write_u32(bridge, FP_CTRL, FP_CTRL_KEY | FP_CTRL_ENABLE)
 
     # FPBv1 encoding: address[28:2] | REPLACE[31:30] | ENABLE[0]
     # For Thumb instructions: if bit[1] of address is 0 → REPLACE=01 (lower halfword)
@@ -193,6 +194,10 @@ def set_breakpoint(bridge: MKLinkSerialBridge, address: int, slot: int | None = 
 
 def clear_breakpoint(bridge: MKLinkSerialBridge, slot: int) -> None:
     """Clear a specific breakpoint slot."""
+    if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+        raise ValueError("Breakpoint slot must be a non-negative integer")
+    if slot >= get_num_breakpoints(bridge):
+        raise ValueError("Breakpoint slot out of range")
     _write_u32(bridge, FP_COMP_BASE + slot * 4, 0x00000000)
 
 

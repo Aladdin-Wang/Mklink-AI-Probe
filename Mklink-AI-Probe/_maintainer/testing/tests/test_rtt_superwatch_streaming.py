@@ -191,6 +191,7 @@ def test_superwatch_low_rate_sample_flushes_immediately():
 
 class _MutableWatchRuntime:
     def __init__(self):
+        self.ram_ranges = ()
         self.items = [_watch_item("a", 0x20000000)]
         self._rebuild_blocks()
 
@@ -201,19 +202,30 @@ class _MutableWatchRuntime:
             items=list(self.items),
         )] if self.items else []
 
-    def add(self, name):
-        if name == "b" and all(item.name != name for item in self.items):
-            self.items.append(_watch_item("b", 0x20000004))
+    def add(self, name, *, validate_layout=None):
+        candidate = list(self.items)
+        if name == "b" and all(item.name != name for item in candidate):
+            candidate.append(_watch_item("b", 0x20000004))
+        if validate_layout is not None:
+            validate_layout(candidate)
+        self.items = candidate
         self._rebuild_blocks()
         return {"name": name}
 
-    def remove(self, name):
-        self.items = [item for item in self.items if item.name != name]
+    def remove(self, name, *, validate_layout=None):
+        candidate = [item for item in self.items if item.name != name]
+        if validate_layout is not None:
+            validate_layout(candidate)
+        self.items = candidate
         self._rebuild_blocks()
         return {"removed": True, "name": name}
 
 
 class _SuperWatchDumpBridge:
+    def _stop_stream_and_sync(self, command):
+        self._write_raw(command)
+        return True
+
     def _enter_stream(self, _state):
         pass
 
@@ -335,6 +347,35 @@ def test_rtt_rejects_unsupported_text_encoding():
 
     with pytest.raises(ValueError, match="Unsupported RTT encoding"):
         manager.set_encoding("shift-jis")
+
+
+@pytest.mark.parametrize("selected_channel", range(8))
+@pytest.mark.parametrize("encoding,text", [
+    ("gb2312", "中文"), ("gbk", "中文"),
+    ("gb18030", "扩展𠀀"), ("big5", "測試"),
+])
+def test_rtt_encoding_switch_keeps_queued_terminal_and_other_channel_fragments(
+    selected_channel, encoding, text,
+):
+    from mklink.remote.dashboards import RttChannelDecoder
+    decoders = [RttChannelDecoder() for _ in range(8)]
+    for channel, decoder in enumerate(decoders):
+        decoder._terminal_stream_hub = Mock()
+        decoder.feed_rtt_bytes(f"ch={channel},旧编码\n".encode("utf-8"))
+        # A split multibyte character in every other channel must survive.
+        decoder.feed_rtt_bytes("测".encode("utf-8")[:1])
+    decoders[selected_channel].set_encoding(encoding)
+    for channel, decoder in enumerate(decoders):
+        if channel == selected_channel:
+            for byte in (text + "\n").encode(encoding):
+                decoder.feed_rtt_bytes(bytes([byte]))
+            tail = text + "\n"
+        else:
+            decoder.feed_rtt_bytes("测".encode("utf-8")[1:] + b"\n")
+            tail = "测\n"
+        decoder.flush_pending(final=True)
+        terminal = b"".join(call.args[0] for call in decoder._terminal_stream_hub.publish.call_args_list)
+        assert terminal.decode("utf-8") == f"ch={channel},旧编码\n" + tail
 
 
 def test_rtt_invalid_utf8_is_replaced_and_empty_final_tail_is_not_emitted():
@@ -894,6 +935,21 @@ def test_superwatch_actual_rate_counts_only_complete_samples_on_a_monotonic_wind
     assert status["actual_rate"] == pytest.approx(4.0)
 
 
+def test_superwatch_batched_rate_counts_samples_and_expires_old_window():
+    now = [0.0]
+    manager = SuperWatchStreamManager(clock=lambda: now[0])
+    for timestamp, count in ((0.0, 100), (0.25, 500), (0.5, 1000)):
+        now[0] = timestamp
+        manager._record_sample_rate_locked(count)
+    assert manager.get_status()["actual_rate"] == pytest.approx(3000)
+    now[0] = 2.0
+    manager._record_sample_rate_locked(100)
+    assert manager.get_status()["actual_rate"] == 0
+    now[0] = 2.5
+    manager._record_sample_rate_locked(200)
+    assert manager.get_status()["actual_rate"] == pytest.approx(400)
+
+
 def test_superwatch_preserves_device_sample_times_across_host_batch_jitter():
     hub = Mock()
     manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=2)
@@ -906,6 +962,26 @@ def test_superwatch_preserves_device_sample_times_across_host_batch_jitter():
         assert call.kwargs["flags"] == 0x03
         assert struct.unpack_from("<2d", call.args[0]) == pytest.approx(times)
         assert struct.unpack_from("<2f", call.args[0], 16) == pytest.approx(tuple(t / 1000 for t in times))
+
+
+def test_shared_latest_row_uses_existing_capture_and_invalidates_on_layout_change():
+    manager = SuperWatchStreamManager(stream_hub=Mock(), batch_samples=1)
+    manager._runtime = _MutableWatchRuntime()
+    manager.publish_metadata()
+    assert manager.get_latest_sample()['sample'] is None
+    assert manager.publish_sample_points([{'_t': .025, 'a': 7.0}])
+    first = manager.get_latest_sample()
+    assert first['sample']['values'] == [7.0]
+    assert first['sample']['sample_time_ms'] == 25.0
+    assert first['age_seconds'] >= 0
+    # Repeated readers consume no samples and never invoke a target read.
+    assert manager.get_latest_sample()['sample'] == first['sample']
+    manager.add_watch('b')
+    assert manager.get_latest_sample()['sample'] is None
+    assert manager.publish_sample_points([{'_t': .026, 'a': 8.0, 'b': 9.0}])
+    second = manager.get_latest_sample()['sample']
+    assert second['sequence'] > first['sample']['sequence']
+    assert second['values'] == [8.0, 9.0]
 
 
 def test_superwatch_rejects_partial_and_nonfinite_samples_atomically():
@@ -1244,6 +1320,12 @@ def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
         def _write_raw(self, data):
             self.writes.append(data)
 
+        def _stop_stream_and_sync(self, command):
+            self._write_raw(command)
+            from mklink._types import DeviceState
+            self.state = DeviceState.READY
+            return True
+
         def drain_stream_bytes(self, max_bytes=None):
             return self.chunks.pop(0) if self.chunks else b""
 
@@ -1296,6 +1378,9 @@ def test_superwatch_rejects_bridge_without_dump_stream_instead_of_read_ram_fallb
         for call in events.put.call_args_list
     )
     assert manager.get_status()["acquisition_mode"] != "read-memory"
+    assert manager.get_status()["state"] == "stopped"
+    assert "read_ram fallback is disabled" in manager.get_status()["error"]
+    assert not manager._collecting.is_set()
 
 
 def test_superwatch_rejects_more_than_safe_dump_region_limit():
@@ -1304,18 +1389,13 @@ def test_superwatch_rejects_more_than_safe_dump_region_limit():
         WatchItem(f"value_{index}", 0x20000000 + index * 0x100, "float", 4)
         for index in range(16)
     ])
-    events = Mock()
-    manager._bridge = events
-
-    manager.start(SimpleNamespace(_bridge=_SuperWatchDumpBridge()))
-    manager._thread.join(timeout=1.0)
-
+    with pytest.raises(ValueError, match="at most 15 regions"):
+        manager.start(SimpleNamespace(_bridge=_SuperWatchDumpBridge()))
+    assert manager._thread is None
     assert not manager.running
-    assert any(
-        call.args[0].get("event") == "error"
-        and "more than 15 dump_memory regions" in call.args[0].get("message", "")
-        for call in events.put.call_args_list
-    )
+    assert manager.get_status()["state"] == "stopped"
+    assert "at most 15 regions" in manager.get_status()["error"]
+    assert not manager._collecting.is_set()
 
 
 def _symbol_write_device(tmp_path, *, write_error=None):
@@ -1520,7 +1600,7 @@ def test_superwatch_array_snapshot_reads_only_requested_slice(tmp_path):
         "samples[2]", "samples[3]", "samples[4]",
     ]
     assert [(block.address, block.size) for block in dump_blocks] == [
-        (0x20000024, 6),
+        (0x20000024, 8),  # word padding stays in RAM; only 3 requested values are decoded
     ]
     assert manager._update_array_snapshot_locked([{
         "timestamp_us": 25,
@@ -1742,3 +1822,226 @@ def test_restart_publishes_new_timeline_metadata_after_flushing_old_samples(monk
     assert old_sample < new_metadata
     assert decode_superwatch_metadata(batches[new_metadata].payload)["version"] > old_version
     manager.stop()
+
+
+def test_rtt_unterminated_line_is_bounded_without_losing_terminal_bytes():
+    terminal = _RecordingHub()
+    logs = _RecordingHub()
+    manager = RttStreamManager(stream_hub=logs)
+    manager.set_terminal_stream_hub(terminal)
+    chunk = b'x' * 8192
+    for _ in range(32):
+        manager.feed_rtt_bytes(chunk)
+        manager.flush_pending()
+        assert manager.get_status()['line_parser']['buffered_chars'] <= 65536
+    manager.feed_rtt_bytes(b'123\ntemp=7\n')
+    manager.flush_pending()
+    assert b''.join(batch.payload for batch in terminal.batches) == chunk * 32 + b'123\ntemp=7\n'
+    status = manager.get_status()['line_parser']
+    assert status == {'limit_chars':65536, 'buffered_chars':0, 'discarding':False,
+                      'dropped_lines':1, 'dropped_chars':len(chunk)*32+3}
+    assert manager.get_history()[-1]['temp'] == 7
+    assert [line.text for batch in logs.batches for line in decode_rtt_lines(batch.payload,batch.item_count)] == ['temp=7']
+
+
+def test_rtt_line_limit_counts_decoded_characters_across_utf8_boundaries():
+    from mklink.remote.dashboards import _RttLineAssembler
+    parser = _RttLineAssembler()
+    parser.MAX_LINE_CHARS = 4
+    for value in ('中'*5).encode('utf-8'):
+        assert parser.feed(bytes([value])) == []
+    assert parser.status()['dropped_chars'] == 5
+    assert parser.feed(b'\na=1\r\n') == ['a=1']
+    assert parser.status()['dropped_lines'] == 1
+    assert not parser.status()['discarding']
+
+
+@pytest.mark.parametrize('final', [False, True])
+def test_rtt_oversize_complete_line_and_final_tail_do_not_become_numeric_rows(final):
+    from mklink.remote.dashboards import _RttLineAssembler
+    parser = _RttLineAssembler()
+    parser.MAX_LINE_CHARS = 4
+    assert parser.feed(b'a=12345\na=1\nb=12345', final=final) == ['a=1']
+    assert parser.status()['dropped_lines'] == 2
+    assert parser.status()['dropped_chars'] == 14
+    assert parser.status()['buffered_chars'] == 0
+    if not final:
+        assert parser.feed(b'\n') == []
+    assert parser.feed(b'c=2', final=True) == ['c=2']
+    assert parser.status()['dropped_lines'] == 2
+    parser.reset()
+    assert parser.status()['dropped_lines'] == 0
+
+
+def test_rtt_channels_isolate_partial_lines_numeric_schema_and_encoding():
+    from mklink.remote.dashboards import RttChannelDecoder
+    first, second = RttChannelDecoder(), RttChannelDecoder()
+    first.feed_rtt_bytes(b"left=1\nleft=")
+    second.feed_rtt_bytes(b"right=9\nright=10\n")
+    first.feed_rtt_bytes(b"2\n")
+    assert first._numeric_channels == ("left",)
+    assert second._numeric_channels == ("right",)
+    assert [p["left"] for p in first._history] == [1, 2]
+    assert [p["right"] for p in second._history] == [9, 10]
+    first.set_encoding("gbk")
+    assert first._line_assembler.encoding == "gbk"
+    assert second._line_assembler.encoding == "utf-8"
+    assert second._numeric_channels == ("right",)
+
+
+def test_rtt_each_channel_publishes_its_own_log_terminal_and_waveform():
+    from mklink.remote.dashboards import RttChannelDecoder
+    decoders = [RttChannelDecoder() for _ in range(2)]
+    for ch, decoder in enumerate(decoders):
+        decoder._stream_hub = Mock()
+        decoder._terminal_stream_hub = Mock()
+        decoder.feed_rtt_bytes(f"value={ch}\nvalue={ch + 1}\n".encode())
+        decoder.flush_pending()
+        calls = decoder._stream_hub.publish.call_args_list
+        assert {c.kwargs["stream_type"] for c in calls} == {StreamType.RTT_RAW, StreamType.WAVEFORM}
+        raw = next(c for c in calls if c.kwargs["stream_type"] == StreamType.RTT_RAW)
+        assert f"value={ch}" in str(decode_rtt_lines(raw.args[0], raw.kwargs["item_count"]))
+        assert decoder._terminal_stream_hub.publish.call_args.args[0] == f"value={ch}\nvalue={ch + 1}\n".encode()
+    assert decoders[0]._history is not decoders[1]._history
+
+
+@pytest.mark.parametrize("kind,size", [("array", 4), ("array", 32), ("struct", 4), (None, 32)])
+def test_unsupported_watch_add_preserves_valid_sampling_layout(kind, size):
+    original = WatchItem("counter", 0x20000000, "uint32_t", 4, "ram")
+    candidate = WatchItem("aggregate", 0x20000100, "opaque", size, "ram", scalar_kind=kind)
+    runtime = SuperWatchRuntime(items=[original], peripheral_items={"aggregate": candidate})
+    blocks, version = runtime.blocks, runtime.blocks_version
+
+    result = runtime.add("aggregate")
+
+    assert "error" in result
+    assert "array snapshot" in result["error"]
+    assert runtime.items == [original]
+    assert runtime.blocks is blocks
+    assert runtime.blocks_version == version
+    compile_frame_decoder(runtime.items, runtime.blocks)
+
+
+@pytest.mark.parametrize("scalar", [False, True])
+def test_array_snapshot_capacity_rejection_preserves_live_selection(tmp_path, scalar):
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.symbol_catalog import SymbolCatalog
+
+    axf = tmp_path / "capacity.axf"
+    axf.write_bytes(b"axf")
+    info = DwarfInfo(
+        base_types={1: ("uint32_t", 4)}, arrays={2: (1, 2048)},
+        variables={"samples": DwarfVariable(
+            "samples", 10, 2, 0x20000000, 2048, "uint32_t[]",
+        )},
+    )
+    catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)],
+    )
+    device = SimpleNamespace(
+        _dwarf_info=info, symbol_catalog=catalog, _project_root=str(tmp_path),
+        _port=None, _bridge=SimpleNamespace(_mux_supported=True),
+    )
+    manager = SuperWatchStreamManager()
+    manager.prepare(device)
+    if scalar:
+        manager._runtime.items.append(WatchItem("other", 0x20003000, "uint32_t", 4))
+    limit = 448 if scalar else 480  # Reserve one region for the distant scalar.
+    selected = manager.select_array_snapshot("samples", start_index=0, count=limit)
+    assert selected["snapshot"]["count"] == limit
+    manager._dump_restart.clear()
+    before = manager._array_snapshot
+    generation = manager._config_generation
+    rejected = manager.select_array_snapshot("samples", start_index=0, count=limit + 1)
+    assert "15 regions" in rejected["error"]
+    assert manager._array_snapshot is before
+    assert manager._config_generation == generation
+    assert not manager._dump_restart.is_set()
+    # A valid replacement remains possible immediately after rejection.
+    assert manager.select_array_snapshot("samples", start_index=511, count=1)["snapshot"]["count"] == 1
+
+
+def test_scalar_add_capacity_rejection_keeps_layout_and_metadata():
+    items = [WatchItem(str(i), 0x20000000 + 256*i, "uint32_t", 4) for i in range(16)]
+    manager = SuperWatchStreamManager()
+    manager._device = SimpleNamespace(_bridge=SimpleNamespace(_mux_supported=True))
+    manager._runtime = SuperWatchRuntime(items=items[:15], peripheral_items={"last": items[15]})
+    before = manager._runtime.items
+    metadata = manager._metadata_version
+    result = manager.add_watch("last")
+    assert "15" in result["item"]["error"]
+    assert manager._runtime.items is before
+    assert manager._runtime.blocks_version == 0
+    assert manager._metadata_version == metadata
+    assert manager.remove_watch("0")["item"]["removed"]
+    assert "error" not in manager.add_watch("last")["item"]
+
+
+def test_scalar_remove_cannot_split_full_mux_layout_and_stop_capture():
+    items = [WatchItem(str(i), 0x20000000 + 4*i, "uint32_t", 4) for i in range(480)]
+    manager = SuperWatchStreamManager()
+    manager._device = SimpleNamespace(_bridge=SimpleNamespace(_mux_supported=True))
+    manager._runtime = SuperWatchRuntime(items=items)
+    before = manager._runtime.items
+    result = manager.remove_watch("1")
+    assert "15 regions" in result["item"]["error"]
+    assert not result["item"]["removed"]
+    assert manager._runtime.items is before
+    assert manager._runtime.blocks_version == 0
+    # Removing an endpoint shrinks the existing region without fragmentation.
+    assert manager.remove_watch("479")["item"]["removed"]
+
+
+def test_removing_last_scalar_allows_empty_sampling_layout():
+    manager = SuperWatchStreamManager()
+    manager._device = SimpleNamespace(_bridge=SimpleNamespace(_mux_supported=True))
+    manager._runtime = SuperWatchRuntime(items=[WatchItem("a", 0x20000000, "uint32_t", 4)])
+    assert manager.remove_watch("a")["item"]["removed"]
+    assert manager._runtime.items == []
+
+
+def test_reparse_capacity_failure_is_synchronous_and_keeps_new_catalog(tmp_path):
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.symbol_catalog import SymbolCatalog
+    from mklink.remote.dashboards import SuperWatchTransactionError
+
+    catalogs = []
+    infos = []
+    for generation, (type_name, width) in enumerate((("uint32_t", 4), ("uint64_t", 8)), 1):
+        axf = tmp_path / f"{generation}.axf"
+        axf.write_bytes(str(generation).encode())
+        info = DwarfInfo(
+            base_types={1: (type_name, width)}, arrays={2: (1, width*480)},
+            variables={"samples": DwarfVariable(
+                "samples", 10, 2, 0x20000000, width*480, type_name+"[]",
+            )},
+        )
+        infos.append(info)
+        catalogs.append(SymbolCatalog.from_dwarf(
+            info, axf_path=str(axf), generation=generation,
+            ram_ranges=[(0x20000000, 0x20010000)],
+        ))
+    bridge = SimpleNamespace(_mux_supported=True, enable_multiplex=Mock())
+    device = SimpleNamespace(symbol_catalog=catalogs[0], _dwarf_info=infos[0],
+                             _project_root=str(tmp_path), _port=None, _bridge=bridge)
+    def load(axf_path=None):
+        device.symbol_catalog = catalogs[1]
+        device._dwarf_info = infos[1]
+        return catalogs[1]
+    device.reparse_axf_atomically = load
+    manager = SuperWatchStreamManager()
+    manager.prepare(device)
+    manager.select_array_snapshot("samples", start_index=0, count=480)
+    manager._running = True
+    manager._collecting.set()
+    with pytest.raises(SuperWatchTransactionError, match="15 regions") as failed:
+        manager.reparse_symbols(device=device)
+    assert failed.value.phase == "restore"
+    assert device.symbol_catalog is catalogs[1]
+    assert manager._runtime.symbol_catalog is catalogs[1]
+    assert manager.get_array_snapshot()["snapshot"]["element_size"] == 8
+    assert not manager.running and not manager._collecting.is_set()
+    assert manager._thread is None
+    bridge.enable_multiplex.assert_not_called()
+    # The user can shrink the new layout; do not silently reuse old addresses/types.
+    assert manager.select_array_snapshot("samples", start_index=0, count=240)["snapshot"]["count"] == 240

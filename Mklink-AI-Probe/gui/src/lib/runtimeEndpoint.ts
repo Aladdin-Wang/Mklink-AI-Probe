@@ -19,8 +19,12 @@ export function resolveRuntimeBase(configuredBase: string, tauri = isTauriRuntim
   return tauri ? configuredBase.trim().replace(/\/+$/, '') : browserRuntimeBase()
 }
 
+export const REMOTE_WINDOW_ID = new URLSearchParams(window.location.search).get('remote')
+export const IS_REMOTE = REMOTE_WINDOW_ID !== null
+const remoteSuffix = IS_REMOTE ? `/_runtime/remote-windows/${encodeURIComponent(REMOTE_WINDOW_ID || 'invalid')}` : ''
+
 export const IS_TAURI = isTauriRuntime()
-export let API_BASE = resolveRuntimeBase(import.meta.env.VITE_MKLINK_API || '', IS_TAURI)
+export let API_BASE = resolveRuntimeBase(import.meta.env.VITE_MKLINK_API || '', IS_TAURI) + remoteSuffix
 export let WS_BASE = IS_TAURI
   ? resolveRuntimeBase(import.meta.env.VITE_MKLINK_WS || '', true)
   : `${window.location.protocol.replace('http', 'ws')}//${window.location.host}${browserRuntimeBase()}`
@@ -46,8 +50,8 @@ export function applyBackendEndpoint(endpoint: BackendEndpoint): void {
   if (!Number.isInteger(endpoint.port) || endpoint.port < 1 || endpoint.port > 65535) {
     throw new Error('Invalid backend port')
   }
-  API_BASE = `http://127.0.0.1:${endpoint.port}`
-  WS_BASE = `ws://127.0.0.1:${endpoint.port}`
+  API_BASE = `http://127.0.0.1:${endpoint.port}${remoteSuffix}`
+  WS_BASE = `ws://127.0.0.1:${endpoint.port}${remoteSuffix}`
   backendPort.value = endpoint.port
 }
 

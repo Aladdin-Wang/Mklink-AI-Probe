@@ -12,7 +12,7 @@ import re
 from typing import Callable, Iterable, Mapping, Optional, Sequence, Tuple, Union
 import uuid
 
-from .models import TargetRecord
+from .models import TargetRecord, MemoryRegion
 from .paths import PackPaths
 from .pyocd_runtime import import_pyocd_attr
 
@@ -431,3 +431,30 @@ def resolve_firmware_algorithms(
         FirmwareAlgorithmSelection(algorithm, tuple(grouped_ranges))
         for algorithm, grouped_ranges in selected.values()
     ]
+
+
+def algorithm_regions(algorithm: object, name: str) -> list[MemoryRegion]:
+    """Use only complete, aligned FLM sector ranges; never invent a last sector."""
+    start = int(algorithm.flash_start)
+    size = int(algorithm.flash_size)
+    sectors = tuple(algorithm.sector_sizes)
+    if size <= 0 or not sectors or sectors[0][0] != 0:
+        return [MemoryRegion(name, start, size, True, True, None)]
+    regions = []
+    for index, (offset, sector_size) in enumerate(sectors):
+        next_offset = sectors[index + 1][0] if index + 1 < len(sectors) else size
+        if not 0 <= offset < next_offset <= size or sector_size <= 0:
+            return [MemoryRegion(name, start, size, True, True, None)]
+        complete_length = ((next_offset - offset) // sector_size) * sector_size
+        if complete_length:
+            regions.append(MemoryRegion(
+                "{}-{}".format(name, index), start + offset,
+                complete_length, True, True, sector_size,
+            ))
+        if complete_length < next_offset - offset:
+            regions.append(MemoryRegion(
+                "{}-{}-partial".format(name, index),
+                start + offset + complete_length,
+                next_offset - offset - complete_length, True, True, None,
+            ))
+    return regions

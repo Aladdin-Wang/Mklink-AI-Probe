@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mklink.watch import resolve_map_source_variable
+from mklink.watch import MapSourceSnapshot
 
 
 def test_resolve_map_source_variable_reads_hpm_ses_float(tmp_path: Path):
@@ -17,7 +17,7 @@ def test_resolve_map_source_variable_reads_hpm_ses_float(tmp_path: Path):
     )
     source.write_text("volatile float vofa_test_sin = 0.0f;\n", encoding="utf-8")
 
-    resolved = resolve_map_source_variable(str(elf), "vofa_test_sin")
+    resolved = MapSourceSnapshot.load(str(elf)).resolve("vofa_test_sin")
 
     assert resolved == (0x00080330, "float", 4)
 
@@ -52,9 +52,10 @@ def test_resolve_map_source_variable_reads_hpm_gcc_split_symbol(tmp_path: Path):
         encoding="utf-8",
     )
 
-    assert resolve_map_source_variable(str(elf), "vofa_test_char") == (
+    snapshot = MapSourceSnapshot.load(str(elf))
+    assert snapshot.resolve("vofa_test_char") == (
         0x012001D8, "uint8_t", 1,
     )
-    assert resolve_map_source_variable(str(elf), "vofa_test_sin") == (
+    assert snapshot.resolve("vofa_test_sin") == (
         0x01280000, "float", 4,
     )

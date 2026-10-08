@@ -15,6 +15,7 @@ REQUIRED_PACKAGES: dict[str, str] = {
 }
 
 GUI_PACKAGES: dict[str, str] = {
+    "httpx": "httpx>=0.27,<1",
     "fastapi": "fastapi>=0.100",
     "uvicorn": "uvicorn>=0.20",
     "websockets": "websockets>=11.0",
@@ -106,7 +107,7 @@ def require_dependencies() -> None:
 def require_gui_dependencies() -> None:
     """检查 GUI/远程服务依赖，缺失则打印安装指引并退出。
 
-    应在使用 serve --backend fastapi 或启动 GUI 前调用。
+    应在使用 serve 或启动 GUI 前调用。
     """
     missing = check_gui_dependencies()
     if not missing:

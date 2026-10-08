@@ -3,15 +3,17 @@
     <section class="page-heading">
       <div>
         <p class="eyebrow">MKLINK.REMOTE</p>
-        <h2>{{ tr('现场机连接', 'Site Agent') }}</h2>
-        <p>{{ tr('让安装了 Skill 的工程师通过 Claude Code、Codex 等 Agent 平台安全连接这台 Windows 现场机。', 'Let engineers using the Skill from Claude Code, Codex, or another agent platform connect securely to this Windows field machine.') }}</p>
+        <h2>{{ tr('远程服务', 'Remote Service') }}</h2>
+        <p>{{ tr('为当前下载器启动远程连接入口，与本地 GUI 和 AI 共用后台。每台下载器使用独立端口和访问令牌。', 'Start remote access for this probe while sharing its backend with the local GUI and AI. Use a separate port and token for each probe.') }}</p>
       </div>
       <div :class="['runtime-badge', runtimeTone]" data-testid="site-agent-runtime">
         <span class="status-dot" />{{ runtimeLabel }}
       </div>
     </section>
 
-    <div v-if="loading" class="panel loading-state">{{ tr('正在读取现场服务配置…', 'Loading Site Agent configuration…') }}</div>
+    <RemoteConnectPanel />
+
+    <div v-if="loading" class="panel loading-state">{{ tr('正在读取远程服务配置…', 'Loading remote service configuration…') }}</div>
     <template v-else>
       <section v-if="errorMessage" class="alert alert-error" role="alert">{{ errorMessage }}</section>
 
@@ -23,13 +25,14 @@
         </article>
         <article class="metric-card">
           <span>{{ tr('探针', 'Probe') }}</span>
-          <strong>{{ status?.probe_connected ? tr('已连接', 'Connected') : tr('未连接', 'Disconnected') }}</strong>
-          <small>{{ tr('与主 GUI 共用同一个设备实例', 'Shared with the main GUI device instance') }}</small>
+          <strong>{{ status?.probe_alias || probeId || tr('未选择下载器', 'No probe selected') }}</strong>
+          <small>{{ status?.probe_connected ? tr('远程目标已连接', 'Remote target connected') : tr('远程目标未连接', 'Remote target not connected') }}</small>
+          <small>{{ tr('与本地 GUI 共用当前下载器', 'Shares this probe with the local GUI') }}</small>
         </article>
         <article class="metric-card">
           <span>{{ tr('访问令牌', 'Access token') }}</span>
           <strong>{{ secrets.token_configured ? `•••• ${secrets.token_fingerprint ?? ''}` : tr('未配置', 'Not configured') }}</strong>
-          <small>{{ tr('仅由 Windows DPAPI 加密保存', 'Encrypted at rest with Windows DPAPI') }}</small>
+          <small>{{ IS_TAURI ? tr('按下载器使用 Windows DPAPI 加密保存', 'Encrypted with Windows DPAPI per probe') : tr('仅本次后台运行有效，不保存到浏览器', 'Valid for this backend run; not stored in the browser') }}</small>
         </article>
       </section>
 
@@ -38,12 +41,8 @@
           <div class="panel-title">
             <div>
               <h3>{{ tr('服务设置', 'Service settings') }}</h3>
-              <p>{{ tr('保存后会重启统一后端，主 GUI 与现场服务仍由同一个 sidecar 承载。', 'Applying changes restarts the unified sidecar that hosts both the main GUI API and Site Agent.') }}</p>
+              <p>{{ tr('启动或停止只影响当前下载器的远程连接，不重启共享后台。更改设置会关闭已有远程连接。', 'Start and stop affect only this probe’s remote connections. The shared backend stays running. Applying settings closes existing remote connections.') }}</p>
             </div>
-            <label class="switch-row">
-              <input v-model="config.enabled" data-testid="site-agent-enabled" type="checkbox">
-              <span>{{ config.enabled ? tr('已启用', 'Enabled') : tr('已停用', 'Disabled') }}</span>
-            </label>
           </div>
 
           <div class="form-grid">
@@ -78,9 +77,10 @@
           </div>
 
           <div class="actions">
-            <button class="btn btn-primary" data-testid="site-agent-save" :disabled="saving" @click="saveAndApply">
-              {{ saving ? tr('正在应用…', 'Applying…') : tr('保存并应用', 'Save & Apply') }}
+            <button class="btn btn-primary" data-testid="site-agent-save" :disabled="saving" @click="saveAndApply(true)">
+              {{ saving ? tr('正在应用…', 'Applying…') : tr('启动 / 应用设置', 'Start / Apply settings') }}
             </button>
+            <button class="btn" data-testid="remote-service-stop" :disabled="saving || !status?.running" @click="saveAndApply(false)">{{ tr('停止远程服务', 'Stop remote service') }}</button>
             <button class="btn" :disabled="refreshing" @click="refreshStatus">{{ tr('刷新状态', 'Refresh status') }}</button>
           </div>
         </article>
@@ -88,25 +88,30 @@
         <aside class="side-stack">
           <article class="panel credential-panel">
             <h3>{{ tr('凭据', 'Credentials') }}</h3>
-            <p>{{ tr('令牌只在生成时复制到剪贴板，界面和后端状态都不会回显明文。', 'The token is copied only when generated; neither the UI nor backend status returns its plaintext.') }}</p>
-            <button class="btn" data-testid="site-agent-token" :disabled="credentialBusy" @click="generateToken">
-              {{ secrets.token_configured ? tr('轮换令牌并复制', 'Rotate & copy token') : tr('生成令牌并复制', 'Generate & copy token') }}
+            <p>{{ tr('访问令牌用于远程握手认证；不要粘贴到公开日志或聊天中。运行中请先停止服务再轮换令牌。', 'Tokens authenticate remote clients. Keep them out of public logs and chats. Stop the service before rotating a token.') }}</p>
+            <button class="btn" data-testid="site-agent-token" :disabled="credentialBusy || !!status?.running" @click="generateToken">
+              {{ secrets.token_configured ? tr('轮换访问令牌', 'Rotate access token') : tr('生成访问令牌', 'Generate access token') }}
             </button>
 
+            <label v-if="generatedToken" class="secret-fields">{{ tr('请复制令牌并妥善保存；离开页面后不再显示。', 'Copy this token now; it will disappear when you leave this page.') }}<input :value="generatedToken" readonly data-testid="generated-token"></label>
             <div v-if="config.transport === 'lan-stcp'" class="secret-fields">
               <label><span>FRP Auth Token</span><input v-model="stcpAuth" type="password" autocomplete="new-password"></label>
               <label><span>STCP Secret</span><input v-model="stcpSecret" type="password" autocomplete="new-password"></label>
-              <button class="btn" :disabled="credentialBusy || !stcpAuth || !stcpSecret" @click="saveStcpCredentials">{{ tr('加密保存 STCP 凭据', 'Encrypt & save STCP credentials') }}</button>
+              <button class="btn" :disabled="credentialBusy || !stcpAuth || !stcpSecret" @click="saveStcpCredentials">{{ tr('保存 STCP 凭据', 'Save STCP credentials') }}</button>
             </div>
           </article>
 
           <article class="panel workflow-panel">
             <h3>{{ tr('工程师连接方式', 'Engineer workflow') }}</h3>
             <ol>
-              <li>{{ tr('在工程师机器安装仓库中的 Mklink Skill。', 'Install the repository Mklink Skill on the engineer machine.') }}</li>
-              <li>{{ tr('在 Claude Code、Codex 等 Agent 平台配置远程地址和刚复制的令牌。', 'Configure the endpoint and copied token in Claude Code, Codex, or another agent platform.') }}</li>
-              <li>{{ tr('先调用健康检查，再按需重连探针和执行烧录、RTT、内存等操作。', 'Run health first, then reconnect the probe and perform flash, RTT, memory, or other operations as needed.') }}</li>
+              <li>{{ tr('先在配置页选择下载器和工程；当前页面只控制这台下载器。', 'Select the probe and project in Config first. This page controls only that probe.') }}</li>
+              <li>{{ tr('本机使用 127.0.0.1；局域网选择本机网卡地址并勾选允许 LAN。为每台下载器指定不同端口。', 'Use 127.0.0.1 locally. For LAN access, select this computer’s network address and allow LAN access. Assign a different port to each probe.') }}</li>
+              <li>{{ tr('生成访问令牌，点击启动，确认状态显示运行中。把下方地址和令牌交给需要连接的客户端。', 'Generate a token, start the service, and confirm Running. Give the address below and token to the connecting client.') }}</li>
+              <li>{{ tr('远程客户端使用 MKLink Skill、CLI 或 MCP：先握手认证，再连接目标并调用能力。此地址是 WebSocket 服务，不能直接作为网页打开。', 'Use MKLink Skill, CLI, or MCP: authenticate, connect the target, then call its capabilities. This WebSocket address is not a browser page.') }}</li>
+              <li>{{ tr('停止服务会等待正在执行的请求结束，再断开远程客户端；本地 GUI、其他下载器和后台保持运行。局域网不通时检查网络与 Windows 防火墙，不要把地址改为 0.0.0.0。', 'Stopping waits for active requests, then disconnects remote clients. Local GUI, other probes, and the backend stay running. If LAN access fails, check the network and Windows Firewall.') }}</li>
             </ol>
+            <p>{{ tr('远程 RTT / SystemView 与本地仪表盘共用采集。连接后先查询服务能力；数据可能因断线或缓冲溢出而丢失，请检查返回的丢失提示。', 'Remote RTT / SystemView shares capture with local dashboards. Query service capabilities after connecting. Disconnections or buffer overflow can lose data; check the returned loss indicators.') }}</p>
+            <p v-if="config.transport === 'lan-stcp'">{{ tr('STCP 还需要工程师端配置配套访问端；本地监听地址不能直接用于跨机访问。', 'STCP also requires a matching visitor on the engineer computer. The local listener address is not a cross-machine endpoint.') }}</p>
             <code>{{ endpoint }}</code>
           </article>
         </aside>
@@ -118,7 +123,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { API_BASE, restartRuntimeBackend } from '../lib/runtimeEndpoint'
+import { API_BASE, IS_TAURI } from '../lib/runtimeEndpoint'
+import RemoteConnectPanel from '../components/config/RemoteConnectPanel.vue'
 import { tr } from '../composables/useLanguage'
 import { useToast } from '../composables/useToast'
 
@@ -142,6 +148,13 @@ interface SecretState {
 }
 
 interface AgentStatus {
+  probe_id?: string
+  probe_alias?: string
+  host?: string
+  port?: number
+  token_configured?: boolean
+  token_fingerprint?: string
+  stcp_credentials_configured?: boolean
   enabled: boolean
   running: boolean
   ready: boolean
@@ -171,6 +184,8 @@ const config = reactive<SiteAgentConfig>({
   stcp_user: '',
   stcp_proxy_name: '',
 })
+const generatedToken = ref('')
+const probeId = ref('')
 const stcpAuth = ref('')
 const stcpSecret = ref('')
 let timer: ReturnType<typeof setInterval> | null = null
@@ -188,76 +203,107 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
+async function serviceRequest<T>(path = '', body?: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${API_BASE}/_runtime/remote-service${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const value = await response.json()
+  if (!response.ok) throw new Error(typeof value.detail === 'string' ? value.detail : `HTTP ${response.status}`)
+  return value as T
+}
+
 async function loadNativeState() {
-  const [saved, secretState, addresses] = await Promise.all([
-    invoke<SiteAgentConfig>('site_agent_config_get'),
-    invoke<SecretState>('site_agent_secret_state'),
-    invoke<string[]>('site_agent_bind_addresses'),
-  ])
-  Object.assign(config, saved)
-  Object.assign(secrets, secretState)
-  bindAddresses.value = addresses.includes(saved.bind_host) ? addresses : [saved.bind_host, ...addresses]
+  const current = await serviceRequest<AgentStatus & Record<string, unknown>>()
+  status.value = current
+  probeId.value = current.probe_id || ''
+  for (const key of ['enabled', 'transport', 'port', 'allow_lan', 'stcp_server_addr', 'stcp_server_port', 'stcp_user', 'stcp_proxy_name']) {
+    if (current[key] !== undefined) Object.assign(config, { [key]: current[key] })
+  }
+  config.bind_host = current.host || '127.0.0.1'
+  if (IS_TAURI) {
+    const [saved, secretState, addresses] = await Promise.all([
+      invoke<SiteAgentConfig>('site_agent_config_get', { probeId: probeId.value }),
+      invoke<SecretState>('site_agent_secret_state', { probeId: probeId.value }),
+      invoke<string[]>('site_agent_bind_addresses'),
+    ])
+    if (!current.running) Object.assign(config, saved)
+    Object.assign(secrets, secretState)
+    bindAddresses.value = addresses
+  } else {
+    Object.assign(secrets, { token_configured: !!current.token_configured, token_fingerprint: current.token_fingerprint || null, stcp_credentials_configured: !!current.stcp_credentials_configured })
+    bindAddresses.value = await serviceRequest<string[]>('/addresses')
+  }
+  if (!bindAddresses.value.includes(config.bind_host)) bindAddresses.value.unshift(config.bind_host)
 }
 
 async function refreshStatus() {
   refreshing.value = true
   try {
-    const response = await fetch(`${API_BASE}/api/site-agent/status`, { signal: AbortSignal.timeout(3000) })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    status.value = await response.json()
+    status.value = await serviceRequest<AgentStatus>()
   } catch (error) {
     status.value = { enabled: config.enabled, running: false, ready: false, probe_connected: false, last_error: message(error) }
-  } finally {
-    refreshing.value = false
-  }
+  } finally { refreshing.value = false }
 }
 
-async function restartUnifiedSidecar() {
-  await restartRuntimeBackend()
-  window.setTimeout(() => void refreshStatus(), 700)
-}
-
-async function saveAndApply() {
+async function saveAndApply(enabled: boolean) {
   saving.value = true
   try {
-    await invoke('site_agent_config_save', { config: { ...config } })
-    await restartUnifiedSidecar()
-    toast.success(tr('现场服务配置已应用', 'Site Agent configuration applied'))
+    config.enabled = enabled
+    if (!enabled) {
+      status.value = await serviceRequest<AgentStatus>('/stop', {})
+      if (IS_TAURI) await invoke('site_agent_config_save', { probeId: probeId.value, config: { ...config } })
+    } else {
+      let payload: Record<string, unknown>
+      if (IS_TAURI) {
+        await invoke('site_agent_config_save', { probeId: probeId.value, config: { ...config } })
+        payload = await invoke('site_agent_runtime_settings', { probeId: probeId.value })
+      } else {
+        const { schema: _schema, bind_host, ...settings } = config
+        payload = { ...settings, host: bind_host }
+        if (stcpAuth.value) payload.stcp_auth_token = stcpAuth.value
+        if (stcpSecret.value) payload.stcp_secret = stcpSecret.value
+      }
+      status.value = await serviceRequest<AgentStatus>('', payload)
+    }
+    toast.success(enabled ? tr('远程服务已启动', 'Remote service started') : tr('远程服务已停止', 'Remote service stopped'))
   } catch (error) {
-    toast.error(tr('应用现场服务配置失败：', 'Failed to apply Site Agent configuration: ') + message(error))
-  } finally {
-    saving.value = false
-  }
+    toast.error(tr('应用远程服务设置失败：', 'Failed to apply remote service settings: ') + message(error))
+    await refreshStatus()
+  } finally { saving.value = false }
 }
 
 async function generateToken() {
   credentialBusy.value = true
   try {
-    const result = await invoke<{ fingerprint: string }>('site_agent_generate_token_and_copy')
-    Object.assign(secrets, await invoke<SecretState>('site_agent_secret_state'))
-    toast.success(tr(`新令牌已复制（指纹 ${result.fingerprint}）`, `New token copied (fingerprint ${result.fingerprint})`), 8000)
-    if (config.enabled) await restartUnifiedSidecar()
-  } catch (error) {
-    toast.error(tr('生成访问令牌失败：', 'Failed to generate access token: ') + message(error))
-  } finally {
-    credentialBusy.value = false
-  }
+    await refreshStatus()
+    if (status.value?.running) throw new Error(tr('请先停止远程服务', 'Stop remote service first'))
+    if (IS_TAURI) {
+      await invoke('site_agent_generate_token_and_copy', { probeId: probeId.value })
+      Object.assign(secrets, await invoke<SecretState>('site_agent_secret_state', { probeId: probeId.value }))
+      toast.success(tr('令牌已复制并加密保存', 'Token copied and encrypted'))
+    } else {
+      const result = await serviceRequest<{ token: string; fingerprint: string }>('/token', { confirm: true })
+      generatedToken.value = result.token
+      secrets.token_configured = true
+      secrets.token_fingerprint = result.fingerprint
+    }
+  } catch (error) { toast.error(message(error)) }
+  finally { credentialBusy.value = false }
 }
 
 async function saveStcpCredentials() {
   credentialBusy.value = true
   try {
-    await invoke('site_agent_stcp_credentials_configure', { authToken: stcpAuth.value, secretKey: stcpSecret.value })
-    stcpAuth.value = ''
-    stcpSecret.value = ''
-    Object.assign(secrets, await invoke<SecretState>('site_agent_secret_state'))
-    toast.success(tr('STCP 凭据已加密保存', 'STCP credentials encrypted and saved'))
-    if (config.enabled && config.transport === 'lan-stcp') await restartUnifiedSidecar()
-  } catch (error) {
-    toast.error(tr('保存 STCP 凭据失败：', 'Failed to save STCP credentials: ') + message(error))
-  } finally {
-    credentialBusy.value = false
-  }
+    if (IS_TAURI) {
+      await invoke('site_agent_stcp_credentials_configure', { probeId: probeId.value, authToken: stcpAuth.value, secretKey: stcpSecret.value })
+      stcpAuth.value = ''; stcpSecret.value = ''
+      Object.assign(secrets, await invoke<SecretState>('site_agent_secret_state', { probeId: probeId.value }))
+    }
+    toast.success(tr('凭据将在下次启动时应用', 'Credentials will apply on the next start'))
+  } catch (error) { toast.error(message(error)) }
+  finally { credentialBusy.value = false }
 }
 
 onMounted(async () => {
@@ -266,7 +312,7 @@ onMounted(async () => {
     await refreshStatus()
     timer = window.setInterval(() => void refreshStatus(), 3000)
   } catch (error) {
-    toast.error(tr('读取现场服务配置失败：', 'Failed to load Site Agent configuration: ') + message(error))
+    status.value = { enabled: false, running: false, ready: false, probe_connected: false, last_error: tr('请先选择下载器并打开共享后台。', 'Select a probe and open its shared backend first.') + ' ' + message(error) }
   } finally {
     loading.value = false
   }

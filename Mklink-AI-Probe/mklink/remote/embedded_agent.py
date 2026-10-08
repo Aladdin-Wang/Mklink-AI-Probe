@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from dataclasses import dataclass, replace
+from typing import Any, Mapping
 
 from mklink.remote.agent import AgentConfig, SiteAgent
 from mklink.remote.dispatcher import OperationDispatcher
-from mklink.remote.resource_manager import ResourceManager
 
 
 def _boolean(value: str | None, *, default: bool = False) -> bool:
@@ -89,6 +88,8 @@ class EmbeddedAgentSettings:
         return settings
 
     def validate(self) -> None:
+        if self.enabled and not self.token:
+            raise ValueError("Remote service access token is required")
         AgentConfig(
             host=self.host,
             port=self.port,
@@ -125,22 +126,19 @@ class EmbeddedAgentSettings:
 
 
 class EmbeddedSiteAgentController:
-    """Own the listener and tunnel while borrowing GUI device state."""
+    """Own a remote listener; target access uses the hosting shared runtime."""
 
     def __init__(
         self,
         settings: EmbeddedAgentSettings,
         *,
         project_root: str,
-        resource_manager: ResourceManager,
-        device_getter: Callable[[], Any | None],
-        device_reconnector: Callable[[AgentConfig], Any | None],
+        runtime_info: dict | None = None,
     ):
         self.settings = settings
         self.project_root = project_root
-        self._resource_manager = resource_manager
-        self._device_getter = device_getter
-        self._device_reconnector = device_reconnector
+        self.runtime_info = runtime_info
+        self._control_lock = asyncio.Lock()
         self._agent: SiteAgent | None = None
         self._dispatcher: OperationDispatcher | None = None
         self._transport: Any | None = None
@@ -168,9 +166,37 @@ class EmbeddedSiteAgentController:
         )
 
     async def start(self) -> None:
+        async with self._control_lock:
+            await self._start()
+
+    async def stop(self) -> None:
+        async with self._control_lock:
+            await self._stop()
+
+    async def configure(self, changes: Mapping) -> dict:
+        async with self._control_lock:
+            settings = replace(self.settings, **changes)
+            settings.validate()
+            if settings.enabled and (not self.runtime_info or self.runtime_info.get('probe_id') == 'lobby'):
+                raise ValueError('Select a physical probe shared runtime before starting remote service')
+            await self._stop()
+            self.settings = settings
+            try:
+                await self._start()
+            except Exception:
+                self._last_error = self._last_error or "Remote service failed to start"
+                await self._stop()
+                raise
+            return self.status()
+
+    async def _start(self) -> None:
         if not self.settings.enabled or self._task is not None:
             return
-        self._dispatcher = OperationDispatcher(self.project_root)
+        if not self.runtime_info or self.runtime_info.get('probe_id') == 'lobby':
+            self._last_error = 'Remote service requires a physical probe shared runtime'
+            return
+        self._dispatcher = OperationDispatcher(self.project_root,
+            runtime_probe=self.runtime_info['probe_id'], runtime_info=self.runtime_info)
         self._transport = self._create_transport()
 
         def ready(_status: dict[str, Any]) -> None:
@@ -191,14 +217,14 @@ class EmbeddedSiteAgentController:
             ),
             ready_callback=ready,
         )
+        from mklink.remote.gui_bridge import GuiBridge
         self._agent = SiteAgent(
             config,
-            device_factory=lambda **_kwargs: None,
+            device_factory=self._dispatcher.connect_target,
             capability_provider=self._dispatcher.capabilities,
             request_dispatcher=self._dispatcher.dispatch,
-            device_getter=self._device_getter,
-            device_reconnector=self._device_reconnector,
-            resource_manager=self._resource_manager,
+            client_closed=self._dispatcher.client_closed,
+            gui_bridge=GuiBridge(self.runtime_info),
         )
         self._stopping = False
         self._last_error = None
@@ -215,10 +241,10 @@ class EmbeddedSiteAgentController:
                 raise RuntimeError("Site Agent listener stopped during startup")
             await asyncio.sleep(0.01)
         self._last_error = "Site Agent listener startup timed out"
-        await self.stop()
+        await self._stop()
         raise RuntimeError(self._last_error)
 
-    async def stop(self) -> None:
+    async def _stop(self) -> None:
         self._stopping = True
         task, agent = self._task, self._agent
         if agent is not None:
@@ -232,11 +258,15 @@ class EmbeddedSiteAgentController:
         if self._transport is not None:
             self._transport.close()
         if self._dispatcher is not None:
-            self._dispatcher.close()
+            await asyncio.to_thread(self._dispatcher.close)
         self._task = None
         self._agent = None
         self._transport = None
         self._dispatcher = None
+
+    @property
+    def active_connections(self) -> int:
+        return self._agent.active_connections if self._agent is not None else 0
 
     def status(self) -> dict[str, Any]:
         result = self.settings.public()

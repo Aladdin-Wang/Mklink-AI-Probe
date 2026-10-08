@@ -110,7 +110,13 @@ async function applySpeed(): Promise<void> {
       body: JSON.stringify({ profile: speedProfile.value }),
     })
     const payload = await response.json()
-    if (!response.ok) throw new Error(typeof payload.detail === 'string' ? payload.detail : response.statusText)
+    if (!response.ok) {
+      const detail = payload.detail
+      if (Array.isArray(detail?.busy) && detail.busy.length) {
+        throw new Error(tr('请先停止采集，再应用调试速率。', 'Stop acquisition before applying the debug speed.'))
+      }
+      throw new Error(typeof detail === 'string' ? detail : detail?.message || response.statusText)
+    }
     speedDirty.value = false
     speedMessage.value = tr('已应用；可开始采样', 'Applied; ready to sample')
   } catch (error: any) {

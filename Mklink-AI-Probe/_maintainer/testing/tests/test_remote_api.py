@@ -24,6 +24,83 @@ def _route_endpoint(app, path):
     return find_route(app, path).endpoint
 
 
+@pytest.mark.parametrize('shared', [False, True])
+@pytest.mark.parametrize('connected', [None, False, True])
+def test_project_is_fixed_for_backend_lifetime(tmp_path, monkeypatch, shared, connected):
+    from mklink.runtime_api import install_runtime
+
+    original = tmp_path / 'original'
+    requested = tmp_path / 'requested'
+    original.mkdir()
+    requested.mkdir()
+    app = create_app(auth_token=None, project_root=str(original))
+    state = app.state.mklink_state
+    device = None if connected is None else SimpleNamespace(connected=connected)
+    previous = {'axf': str(original / 'firmware.axf')}
+    state.update(device=device, last_device_connection=previous)
+    roots = []
+    def discover(root):
+        roots.append(root)
+        return [SimpleNamespace(target='CHIP', key='chip', public=lambda: {'project': root})]
+    monkeypatch.setattr('mklink.peripheral_watch.discover_svd_targets', discover)
+    if shared:
+        install_runtime(app, {'port': 8765, 'token': 'test-secret', 'instance_id': 'test-instance'})
+    try:
+        with TestClient(app, base_url='http://127.0.0.1:8765',
+                        headers={'X-Auth-Token': 'test-secret'}) as client:
+            catalog = client.get('/api/dash/superwatch/peripherals/targets').json()
+            response = client.put('/api/project-root', json={'path': str(requested)})
+            assert response.status_code == 405, response.text
+            assert client.get('/api/project-root').json() == {'project_root': str(original)}
+            assert client.get('/api/dash/superwatch/peripherals/targets').json() == catalog
+            assert roots == [str(original)]
+            assert state['device'] is device and state['last_device_connection'] is previous
+            assert app.state.site_agent.project_root == str(original)
+    finally:
+        state['device'] = None  # Fixture devices have no physical connection to close.
+
+
+def test_resources_status_preserves_owner_without_legacy_session_routes(tmp_path):
+    from mklink.remote.resource_manager import ResourceGroup
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    manager = app.state.mklink_state['resource_manager']
+    lease = manager.acquire(ResourceGroup.MKLINK_BRIDGE, 'user:dashboard:rtt')
+    assert not any(getattr(route, 'path', '').startswith('/api/session/') for route in app.routes)
+    with TestClient(app) as client:
+        assert client.get('/api/resources/status').json() == manager.get_status()
+        for action in ['acquire', 'release']:
+            response = client.post('/api/session/' + action, json={'session_id': 'unused'})
+            assert response.status_code in (404, 405)
+            assert manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is lease
+
+
+@pytest.mark.parametrize('operation', ['halt', 'resume', 'step'])
+def test_debug_control_keeps_event_loop_responsive_until_worker_finishes(tmp_path, operation):
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    workers = []
+    def run():
+        workers.append(threading.get_ident())
+        entered.set()
+        release.wait(3)
+        return SimpleNamespace(halted=operation != 'resume')
+    setattr(device, operation, run)
+    app.state.mklink_state['device'] = device
+    async def scenario():
+        task = asyncio.create_task(_route_endpoint(app, '/api/device/'+operation)())
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            assert workers[0] != threading.get_ident()
+            assert not task.done()
+        finally:
+            release.set()
+            result = await task
+        assert result == {'halted':operation != 'resume'}
+        assert app.state.mklink_state['resource_manager'].get_status() == {}
+    asyncio.run(scenario())
+
+
 def test_debug_speed_four_profiles_persist_only_after_success(tmp_path):
     from unittest.mock import Mock
     from mklink.project_config import load_config
@@ -43,6 +120,54 @@ def test_debug_speed_four_profiles_persist_only_after_success(tmp_path):
         result=client.post('/api/device/debug-speed',json={'profile':'high'})
         assert result.status_code==400
         assert load_config(str(tmp_path))['debug_speed']=='ultra'
+
+
+def test_shared_debug_speed_reuses_validation_persistence_and_capture_gate(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from mklink.project_config import load_config
+    from mklink.runtime_api import install_runtime
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device.port = 'COM9'
+    device._bridge = SimpleNamespace(_ctx=SimpleNamespace(swd_clock_hz=10000000))
+    device.set_debug_speed = Mock(return_value={'profile': 'low', 'clock_hz': 4000000})
+    app.state.mklink_state['device'] = device
+    info = {'port': 8765, 'token': 'test-secret', 'instance_id': 'test-instance'}
+    control = install_runtime(app, info)
+    managers = {name: SimpleNamespace(running=False) for name in ('rtt', 'superwatch', 'systemview')}
+    monkeypatch.setattr('mklink.remote.dashboards.get_managers', lambda: managers)
+    monkeypatch.setattr('mklink.probes.inventory', lambda: [])
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]) as stop, TestClient(
+        app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': info['token']}
+    ) as client:
+        session = client.post('/_runtime/attach', json={}).json()['session_id']
+        def call(capability, arguments=None):
+            return client.post('/_runtime/call', json={
+                'session_id': session, 'capability': capability, 'arguments': arguments or {}})
+        managers['rtt'].running = True
+        assert call('debug_speed').json()['profile'] == 'medium'
+        assert call('set_debug_speed', {'profile': 'low'}).status_code == 409
+        assert client.post('/api/device/debug-speed', json={'profile': 'low'}).status_code == 409
+        assert managers['rtt'].running
+        stop.assert_not_called()
+        device.set_debug_speed.assert_not_called()
+        managers['rtt'].running = False
+        assert call('set_debug_speed', {'profile': 'invalid'}).status_code == 400
+        device.set_debug_speed.assert_not_called()
+        assert call('set_debug_speed', {'profile': 'low', 'save': 'false'}).status_code == 422
+        device.set_debug_speed.assert_not_called()
+        temporary = call('set_debug_speed', {'profile': 'low', 'save': False})
+        assert temporary.status_code == 200 and temporary.json()['saved'] is False
+        assert 'debug_speed' not in (load_config(str(tmp_path)) or {})
+        device.set_debug_speed.assert_called_once_with('low')
+        device.set_debug_speed.reset_mock()
+        assert call('set_debug_speed', {'profile': 'low'}).status_code == 200
+        device.set_debug_speed.assert_called_once_with('low')
+        assert load_config(str(tmp_path))['debug_speed'] == 'low'
+        device.set_debug_speed.side_effect = ValueError('firmware profile unconfirmed')
+        assert call('set_debug_speed', {'profile': 'high'}).status_code == 400
+        assert load_config(str(tmp_path))['debug_speed'] == 'low'
+        assert not control.operation_lock.locked()
 
 
 def test_flash_failure_is_request_scoped_and_releases_lease(tmp_path):
@@ -78,6 +203,70 @@ def test_source_reload_stops_dependents_before_parsing(tmp_path):
         asyncio.run(app.state.check_file_sources())
     assert order == ["stop", "parse"]
     assert app.state.mklink_state["file_source_change"]["rtt_addr"] == "0x20000020"
+
+
+def test_shared_source_reload_defers_without_losing_changes(tmp_path, monkeypatch):
+    from mklink.runtime_api import install_runtime, Session
+    from mklink.remote.dashboards import get_managers
+    device, axf = _connected_symbol_device(tmp_path)
+    device._axf = str(axf)
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state['device'] = device
+    control = install_runtime(app, {'port': 8765, 'token': 'fixture', 'instance_id': 'fixture'})
+    active = ['rtt']
+    monkeypatch.setattr('mklink.remote.dashboards.active_bridge_dashboards', lambda: list(active))
+    order = []
+    def parse(*args, **kwargs):
+        order.append('parse')
+        device.symbol_catalog = SymbolCatalog.from_dwarf(device._dwarf_info, axf_path=str(axf), ram_ranges=[])
+        return {'loaded': True}
+    device.parse_axf = parse
+    async def scenario():
+        control.sessions['ai'] = Session(str(tmp_path), str(axf))
+        axf.write_bytes(b'new')
+        await app.state.check_file_sources()
+        event = dict(app.state.mklink_state['file_source_change'])
+        assert event['state'] == 'deferred' and event['pending']
+        control.sessions.clear()
+        await app.state.check_file_sources()
+        assert app.state.mklink_state['file_source_change']['sequence'] == event['sequence']
+        active.clear()
+        # A job, an attaching client and a one-shot operation must also defer it.
+        control.jobs.jobs['busy'] = {'state': 'running', 'job_id': 'busy'}
+        await app.state.check_file_sources()
+        control.jobs.jobs.clear()
+        async with control.attach_lock:
+            await app.state.check_file_sources()
+        async with control.operation_lock:
+            await app.state.check_file_sources()
+        assert order == []
+        await app.state.check_file_sources()
+        applied = app.state.mklink_state['file_source_change']
+        assert applied['state'] == 'applied' and not applied['pending']
+        assert applied['sequence'] != event['sequence']
+        await app.state.check_file_sources()
+        assert order == ['parse']  # Shared reload never implicitly stops another acquisition.
+        assert control.last_operation['path'] == 'reload-file-sources'
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', side_effect=lambda **kw: order.append('stop') or []), patch.object(get_managers()['superwatch'], '_runtime', None), patch('mklink.project_config.ensure_rtt_config_updated', return_value={'rtt_addr': '0x20000020'}):
+        asyncio.run(scenario())
+
+
+def test_failed_source_reload_requires_new_content_before_automatic_retry(tmp_path):
+    from unittest.mock import Mock
+    device, axf = _connected_symbol_device(tmp_path)
+    device._axf = str(axf)
+    device.parse_axf = Mock(side_effect=ValueError('incomplete build'))
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state['device'] = device
+    axf.write_bytes(b'broken')
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]):
+        asyncio.run(app.state.check_file_sources())
+        asyncio.run(app.state.check_file_sources())
+        assert device.parse_axf.call_count == 1, str(app.state.mklink_state['file_source_change'])
+        assert app.state.mklink_state['file_source_change']['state'] == 'failed'
+        axf.write_bytes(b'new content')
+        asyncio.run(app.state.check_file_sources())
+        assert device.parse_axf.call_count == 2
 
 
 def _request(client, path, responses, key):
@@ -335,6 +524,73 @@ def test_browser_symbol_upload_rejects_an_unsupported_suffix(tmp_path):
     assert not (tmp_path / ".mklink" / "uploads" / "file-sources").exists()
 
 
+@pytest.mark.parametrize('failure', [PermissionError('workspace denied'), OSError('disk full')])
+def test_browser_symbol_upload_reports_storage_error(tmp_path, monkeypatch, failure):
+    from mklink.remote import api
+    def fail(*args):
+        raise failure
+    monkeypatch.setattr(api, '_store_uploaded_file_source', fail)
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post('/api/files/symbol', files={'file': ('firmware.axf', b'elf', 'application/octet-stream')})
+    assert response.status_code == 503
+    assert str(tmp_path) in response.json()['detail']
+    assert str(failure) in response.json()['detail']
+
+
+@pytest.mark.parametrize('owner', ['user:dashboard:rtt', 'ai:capture'])
+def test_shared_native_target_lease_does_not_preempt_existing_owner(tmp_path, owner):
+    from mklink.remote.api import target_debug_lease
+    from mklink.remote.resource_manager import ResourceManager, ResourceGroup, ResourceError
+
+    resources = ResourceManager()
+    state = {'shared_runtime': True, 'resource_manager': resources}
+    lease = resources.acquire(ResourceGroup.TARGET_DEBUG, owner)
+    with pytest.raises(ResourceError):
+        with target_debug_lease(state, 'test-read'):
+            pytest.fail('Shared native operation preempted acquisition')
+    assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is lease
+    resources.release(owner)
+    with target_debug_lease(state, 'test-read'):
+        assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG).owner == 'user:api:test-read'
+    assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
+
+
+@pytest.mark.parametrize('owner', ['user:dashboard:rtt', 'ai:capture'])
+@pytest.mark.parametrize('worker', ['running', 'stopping', 'lease-only'])
+def test_shared_config_clock_never_stops_or_preempts_acquisition(tmp_path, monkeypatch, owner, worker):
+    from unittest.mock import Mock
+    from mklink.project_config import save_config
+    from mklink.runtime_api import install_runtime
+    from mklink.remote.resource_manager import ResourceGroup
+
+    save_config(str(tmp_path), {'swd_clock': '10000000'})
+    config_path = tmp_path / '.mklink' / 'config.json'
+    original = config_path.read_bytes()
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device._flash = SimpleNamespace(set_swd_clock=Mock())
+    state = app.state.mklink_state
+    state['device'] = device
+    manager = SimpleNamespace(running=worker == 'running', stop=Mock())
+    if worker == 'stopping':
+        manager._thread = SimpleNamespace(is_alive=lambda: True)
+    monkeypatch.setattr('mklink.remote.dashboards.get_managers', lambda: {'rtt': manager})
+    stop = Mock(side_effect=AssertionError('Shared operation stopped acquisition'))
+    monkeypatch.setattr('mklink.remote.dashboards.stop_bridge_dashboards', stop)
+    resources = state['resource_manager']
+    lease = resources.acquire(ResourceGroup.TARGET_DEBUG, owner)
+    install_runtime(app, {'port':8765, 'token':'test-secret', 'instance_id':'test-instance'})
+    with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token':'test-secret'}) as client:
+        response = client.put('/api/config', json={'swd_clock':'4000000'})
+        assert response.status_code == 409, response.text
+        assert config_path.read_bytes() == original
+        assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is lease
+        device._flash.set_swd_clock.assert_not_called()
+        stop.assert_not_called()
+        manager.stop.assert_not_called()
+
+
 def test_browser_map_upload_uses_the_map_only_endpoint(tmp_path):
     app = create_app(auth_token=None, project_root=str(tmp_path))
     with TestClient(app, raise_server_exceptions=False) as client:
@@ -380,6 +636,26 @@ def test_rtt_find_uses_explicit_source_without_persisting_project_config(tmp_pat
     }
     diagnose.assert_called_once_with(str(source))
     save_rtt_config.assert_not_called()
+
+
+@pytest.mark.parametrize('explicit', [False, True])
+def test_rtt_find_new_gui_uses_loaded_symbols_and_honors_explicit_source(tmp_path, explicit):
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state['device'] = SimpleNamespace(
+        connected=True, axf_status={'loaded': True, 'axf_path': 'active.axf'},
+    )
+    result = SimpleNamespace(addr='0x20001000', source='binary', details=[], warnings=[])
+    with patch('mklink.rtt_addr.diagnose_rtt_addr', return_value=result) as diagnose, patch(
+        'mklink.project_config.load_keil_project',
+        side_effect=AssertionError('loaded source must bypass unrelated project discovery'),
+    ), patch('mklink.project_config.save_rtt_config') as save:
+        response = asyncio.run(_route_endpoint(app, '/api/rtt-find')(
+            source_path='selected.axf' if explicit else None,
+        ))
+    expected = 'selected.axf' if explicit else 'active.axf'
+    diagnose.assert_called_once_with(expected)
+    assert response['source_path'] == expected and response['found']
+    save.assert_not_called()
 
 
 def test_rtt_find_runs_symbol_diagnosis_outside_the_event_loop_thread(tmp_path):
@@ -662,6 +938,70 @@ def _connected_large_array_device(tmp_path):
         ram_ranges=[(0x20000000, 0x20010000)],
     )
     return device, axf
+
+
+@pytest.mark.parametrize('operation', ['read', 'write'])
+@pytest.mark.parametrize('change', ['replace', 'remove', 'same_metadata'])
+def test_variable_access_rejects_changed_source_without_reloading_or_io(
+    tmp_path, monkeypatch, operation, change,
+):
+    import os
+    from unittest.mock import Mock
+    from mklink.device import Device
+    from mklink._types import DeviceState
+    from mklink.runtime_api import install_runtime
+
+    fixture, axf = _connected_symbol_device(tmp_path)
+    device = Device(axf=str(axf), project_root=str(tmp_path))
+    device._connected = True
+    device._port = 'COM9'
+    device._bridge = SimpleNamespace(state=DeviceState.READY, idcode=0, current_mcu='fixture')
+    device._dwarf_info = fixture._dwarf_info
+    catalog = device._symbol_catalog = fixture.symbol_catalog
+    device.read_memory = Mock(return_value=b'\0' * 4)
+    device.write_memory = Mock()
+    # An accidental reload must be visible even if its parser would have failed.
+    device.reparse_axf_atomically = Mock(return_value=catalog)
+    device.close = lambda: None
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state['device'] = device
+    control = install_runtime(app, {'port': 8765, 'token': 'test-secret', 'instance_id': 'fixture'})
+    managers = {name: SimpleNamespace(running=False) for name in ('rtt', 'superwatch', 'systemview')}
+    monkeypatch.setattr('mklink.remote.dashboards.get_managers', lambda: managers)
+    monkeypatch.setattr('mklink.probes.inventory', lambda: [])
+    with TestClient(app, base_url='http://127.0.0.1:8765',
+                    headers={'X-Auth-Token': 'test-secret'}) as client:
+        session = client.post('/_runtime/attach', json={}).json()['session_id']
+        if change == 'remove':
+            axf.unlink()
+        else:
+            before = axf.stat()
+            axf.write_bytes(b'new' if change == 'same_metadata' else b'new source')
+            if change == 'same_metadata':
+                os.utime(axf, ns=(before.st_atime_ns, before.st_mtime_ns))
+        arguments = {'name': 'gain', **({'value': 1} if operation == 'write' else {})}
+        for path, body in [
+            (f'/api/device/{operation}-variable', arguments),
+            ('/_runtime/call', {'session_id': session,
+                               'capability': f'{operation}_variable', 'arguments': arguments}),
+        ]:
+            response = client.post(path, json=body)
+            assert response.status_code == 409, response.text
+            assert 'AXF' in response.text and 'reparse' in response.text
+        device.reparse_axf_atomically.assert_not_called()
+        device.read_memory.assert_not_called()
+        device.write_memory.assert_not_called()
+        assert device.symbol_catalog is catalog
+        assert list(control.sessions) == [session]
+        assert not control.operation_lock.locked()
+        assert app.state.mklink_state['resource_manager'].get_status() == {}
+        # Restoring the exact source permits access without replacing the catalog.
+        axf.write_bytes(b'axf')
+        os.utime(axf, ns=(catalog.fingerprint.mtime_ns, catalog.fingerprint.mtime_ns))
+        response = client.post('/api/device/read-variable', json={'name': 'gain'})
+        assert response.status_code == 200 and response.json()['value'] == 0.0
+        device.read_memory.assert_called_once_with(0x20000010, 4)
+        device.reparse_axf_atomically.assert_not_called()
 
 
 def test_symbol_catalog_api_lists_valid_variables_immediately(tmp_path):
@@ -1304,3 +1644,42 @@ def test_built_web_asset_graph_uses_fresh_cache_namespace():
             response = client.get(path)
             assert response.status_code == 200, path
             assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.parametrize('selected_id', ['bound-probe', 'other-probe'])
+def test_shared_restore_last_keeps_symbols_but_never_restores_old_com(tmp_path, selected_id):
+    device, axf = _connected_symbol_device(tmp_path)
+    device.port = 'COM_NEW'
+    device.axf_status = {'loaded': True, 'axf_path': str(axf)}
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.shared_runtime = SimpleNamespace(prune=lambda: None, target_sessions={})
+    state = app.state.mklink_state
+    state['shared_probe_id'] = 'bound-probe'
+    state['last_device_connection'] = {'port': 'COM_OLD', 'axf': str(axf), 'mcu': 'stm32f1', 'elf_backend': 'builtin'}
+    with patch('mklink.probes.select_probe', return_value={'probe_id': selected_id, 'port': 'COM_NEW'}), patch('mklink.connect', return_value=device) as connect, TestClient(app) as client:
+        response = client.post('/api/device/connect', json={'restore_last': True})
+    if selected_id != 'bound-probe':
+        assert response.status_code == 409
+        connect.assert_not_called()
+    else:
+        assert response.status_code == 200, response.text
+        args = connect.call_args.kwargs
+        assert args['port'] == 'COM_NEW' and args['preferred_port'] is None
+        assert args['axf'] == str(axf) and args['mcu'] == 'stm32f1' and args['elf_backend'] == 'builtin'
+
+
+def test_shared_restore_last_on_live_device_does_not_change_symbols(tmp_path):
+    from mklink.remote.dashboards import get_managers
+    device, axf = _connected_symbol_device(tmp_path)
+    device.port = 'COM_NEW'
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.shared_runtime = SimpleNamespace(prune=lambda: None, target_sessions={'existing': object()})
+    state = app.state.mklink_state
+    state.update(device=device, shared_probe_id='bound-probe', last_device_connection={'port':'COM_OLD','axf':'old.axf'})
+    get_managers()['superwatch']._device = device
+    with patch('mklink.probes.select_probe', return_value={'probe_id':'bound-probe','port':'COM_NEW'}), patch.object(device, 'parse_axf') as parse, patch('mklink.connect') as connect, TestClient(app) as client:
+        response = client.post('/api/device/connect', json={'restore_last': True})
+    assert response.status_code == 200, response.text
+    assert response.json()['status'] == 'already_connected'
+    parse.assert_not_called()
+    connect.assert_not_called()

@@ -26,6 +26,27 @@ from mklink.remote.resource_manager import ResourceGroup
 from route_utils import find_route
 
 
+def test_lobby_offline_status_and_catalog_never_select_hardware(monkeypatch):
+    from mklink import probes
+    from mklink.remote import offline_download_api
+    monkeypatch.setattr(probes, '_bound_probe', 'lobby')
+    monkeypatch.setattr(probes, 'select_probe', lambda *a, **k: pytest.fail('Lobby selected hardware'))
+    roots = []
+    def catalog(paths, part, root):
+        roots.append(root)
+        return [{'file_name': 'local.flm', 'on_probe': False}]
+    monkeypatch.setattr(offline_download_api, 'discover_algorithms', catalog)
+    with TestClient(create_app(auth_token=None, project_root='.')) as client:
+        status = client.get('/api/offline-download/status')
+        algorithms = client.get('/api/offline-download/algorithms', params={'part_number': 'STM32F103RE'})
+    assert status.status_code == 200
+    assert status.json()['available'] is False
+    assert status.json()['disk_path'] is None
+    assert 'Select a physical probe' in status.json()['reason']
+    assert algorithms.status_code == 200 and algorithms.json()[0]['on_probe'] is False
+    assert roots == [None]
+
+
 def _config(model="V4"):
     return {
         "model": model,
@@ -530,7 +551,8 @@ def test_offline_security_rejects_unvalidated_target_and_accepts_board_voltage()
         parse_offline_config(payload)
 
 @pytest.mark.parametrize("model", ["V2", "V3", "V4"])
-def test_hpm_offline_script_uses_rom_api_without_flm(model):
+@pytest.mark.parametrize("image_format", ["bin", "hex"])
+def test_hpm_offline_script_uses_rom_api_without_flm(model, image_format):
     payload = {
         "model": model,
         "script_name": "hpm-offline.py",
@@ -542,21 +564,28 @@ def test_hpm_offline_script_uses_rom_api_without_flm(model):
         "algorithms": [],
         "firmwares": [{
             "id": "app",
-            "file_name": "app.bin",
-            "format": "bin",
+            "file_name": "app." + image_format,
+            "format": image_format,
             "base_address": "0x80000400",
             "algorithm_id": "",
             "upload_index": 0,
         }],
     }
 
+    if model != "V4":
+        with pytest.raises(OfflineDownloadError, match="HPM targets require V4"):
+            parse_offline_config(payload)
+        return
     config = parse_offline_config(payload)
     script = generate_offline_script(config)
 
     assert config.algorithms == ()
     assert "import hpm" in script
     assert 'hpm.board("hpm5301evklite")' in script
-    assert 'hpm.program("app.bin", 0x80000400)' in script
+    if image_format == "bin":
+        assert 'hpm.program("app.bin", 0x80000400)' in script
+    else:
+        assert 'hpm.program_hex("app.hex")' in script
     assert "load.flm" not in script
     assert "cmd.set_reset()" not in script
     assert "cmd.cpu_run()" not in script
@@ -684,7 +713,7 @@ def test_deploy_never_creates_a_staging_directory_on_the_probe_disk(tmp_path, mo
         path.write_bytes(bytes([index]))
         algorithm_sources.append(path)
 
-    real_copy2 = __import__("shutil").copy2
+    from mklink.file_content import copy_verified as real_copy2
 
     def assert_clean_probe_disk(source, destination):
         assert not any(
@@ -693,7 +722,7 @@ def test_deploy_never_creates_a_staging_directory_on_the_probe_disk(tmp_path, mo
         )
         return real_copy2(source, destination)
 
-    monkeypatch.setattr("mklink.offline_download.shutil.copy2", assert_clean_probe_disk)
+    monkeypatch.setattr("mklink.offline_download.copy_verified", assert_clean_probe_disk)
     deploy_offline_bundle(
         config,
         disk,
@@ -719,7 +748,7 @@ def test_deploy_removes_existing_probe_files_before_copying_replacements(tmp_pat
         path.write_bytes(bytes([index]))
         algorithm_sources.append(path)
 
-    real_copy2 = __import__("shutil").copy2
+    from mklink.file_content import copy_verified as real_copy2
 
     def reject_in_place_overwrite(source, destination):
         destination = Path(destination)
@@ -727,7 +756,7 @@ def test_deploy_removes_existing_probe_files_before_copying_replacements(tmp_pat
             raise PermissionError("probe file must be removed before replacement")
         return real_copy2(source, destination)
 
-    monkeypatch.setattr("mklink.offline_download.shutil.copy2", reject_in_place_overwrite)
+    monkeypatch.setattr("mklink.offline_download.copy_verified", reject_in_place_overwrite)
     deploy_offline_bundle(
         config,
         disk,
@@ -1257,7 +1286,8 @@ def test_trigger_api_streams_device_output_before_the_terminal_result(monkeypatc
     assert messages[-1]["result"]["status"] == "completed"
 
 
-def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
+@pytest.mark.parametrize('shared', [False, True])
+def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes(monkeypatch, shared):
     allow_finish = threading.Event()
 
     class Bridge:
@@ -1279,6 +1309,10 @@ def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
 
     app = create_app(auth_token=None, project_root=".")
     app.state.mklink_state["device"] = Device()
+    if shared:
+        from types import SimpleNamespace
+        app.state.shared_runtime = SimpleNamespace(info={'probe_id':'test-probe'})
+        monkeypatch.setattr('mklink.probes.select_probe', lambda _: {'port':'TEST_CDC'})
     manager = app.state.mklink_state["resource_manager"]
     route = find_route(app, "/api/offline-download/trigger")
 
@@ -1299,12 +1333,15 @@ def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
         )
         iterator = response.body_iterator
         await iterator.__anext__()
-        await iterator.aclose()
+        closing = asyncio.create_task(iterator.aclose())
+        await asyncio.sleep(.01)
+        assert not closing.done()
         await asyncio.sleep(0)
         assert manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is not None
         assert manager.get_active_lease(ResourceGroup.TARGET_DEBUG) is not None
 
         allow_finish.set()
+        await closing
         for _ in range(100):
             if manager.get_status() == {}:
                 break
@@ -1373,7 +1410,8 @@ def test_deploy_rejects_uploaded_bin_outside_target_flash(tmp_path, monkeypatch)
     assert list(disk.iterdir()) == []
 
 
-def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch):
+@pytest.mark.parametrize("recovery_failure", [False, True])
+def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch, recovery_failure):
     disk = tmp_path / "MICROKEEN"
     disk.mkdir()
     payload = _config()
@@ -1398,6 +1436,12 @@ def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch):
         ("flm_files", ("external.flm", b"external", "application/octet-stream")),
     ]
 
+    if recovery_failure:
+        from mklink.offline_download import OfflineRecoveryError
+        def incomplete_rollback(*args, **kwargs):
+            raise OfflineRecoveryError(tmp_path / "retained-backup")
+        monkeypatch.setattr("mklink.remote.offline_download_api.deploy_offline_bundle", incomplete_rollback)
+
     with patch("mklink.discovery.find_microkeen_disk", return_value=str(disk)), TestClient(app) as client:
         response = client.post(
             "/api/offline-download/deploy",
@@ -1405,6 +1449,12 @@ def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch):
             files=files,
         )
 
+    if recovery_failure:
+        assert response.status_code == 500
+        assert response.json()["detail"]["code"] == "OFFLINE_RECOVERY_REQUIRED"
+        assert "Recovery files retained at:" in response.json()["detail"]["message"]
+        assert "retained-backup" in response.json()["detail"]["recovery_directory"]
+        return
     assert response.status_code == 200, response.text
     assert (disk / "boot.bin").read_bytes() == b"current-0"
     assert (disk / "rt-thread.hex").read_bytes() == b"current-1"
@@ -1484,3 +1534,130 @@ def test_locked_changed_file_reports_name_and_rolls_back_earlier_changes(tmp_pat
     assert (disk / 'app.hex').read_bytes() == b'old-app'
     assert (disk / 'Device.FLM').read_bytes() == b'old-flm'
     assert not (disk / 'script.py').exists()
+
+
+@pytest.mark.parametrize('rollback_error', [None, OSError, KeyboardInterrupt])
+def test_deploy_retains_backups_only_when_rollback_is_incomplete(tmp_path, monkeypatch, rollback_error):
+    from mklink import offline_download as offline
+    disk = tmp_path / 'disk'; disk.mkdir()
+    stage = tmp_path / 'stage'; stage.mkdir()
+    (disk/'app.bin').write_bytes(b'original')
+    monkeypatch.setattr(offline.tempfile, 'mkdtemp', lambda **_: str(stage))
+    copy = offline.copy_verified
+    writes = []
+    def failing_copy(source, destination):
+        source, destination = Path(source), Path(destination)
+        if destination == disk/'app.bin':
+            writes.append(source)
+            if source.parent.name == 'files':
+                destination.write_bytes(b'partial')
+                raise OSError('disk disconnected during write')
+            if rollback_error is not None:
+                raise rollback_error('rollback interrupted')
+        return copy(source, destination)
+    monkeypatch.setattr(offline, 'copy_verified', failing_copy)
+    expected = (offline.OfflineDownloadError if rollback_error is None else
+                offline.OfflineRecoveryError if rollback_error is OSError else KeyboardInterrupt)
+    with pytest.raises(expected):
+        offline._transactional_copy(disk, [(Path('app.bin'), None, b'replacement')])
+    assert len(writes) == 2  # Initial write and one restore, never deployment replay.
+    if rollback_error is None:
+        assert (disk/'app.bin').read_bytes() == b'original'
+        assert not stage.exists()
+    else:
+        assert (stage/'backup/app.bin').read_bytes() == b'original'
+        if rollback_error is OSError:
+            manifest = json.loads((stage/'recovery.json').read_text())
+            assert manifest['rollback_errors'] == ['restore: app.bin']
+            assert manifest['backups'] == ['backup/app.bin'] or manifest['backups'] == ['backup\\app.bin']
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_rollback_removes_copied_readonly_file(tmp_path, monkeypatch, existing):
+    import os
+    import shutil
+    import mklink.offline_download as offline
+    if os.name != "nt":
+        pytest.skip("Windows read-only file deletion semantics")
+    disk = tmp_path / "disk"
+    disk.mkdir()
+    source = tmp_path / "app.bin"
+    source.write_bytes(b"replacement")
+    source.chmod(0o444)
+    destination = disk / "app.bin"
+    if existing:
+        destination.write_bytes(b"original")
+    original_copy = offline.copy_verified
+    def copy_with_later_failure(src, dst, *args, **kwargs):
+        if Path(dst) == disk / "script.py":
+            raise OSError("later deployment failure")
+        result = original_copy(src, dst, *args, **kwargs)
+        # Model a probe exposing a read-only file before a later operation fails.
+        if Path(dst) == disk / "app.bin":
+            Path(dst).chmod(0o444)
+        return result
+    monkeypatch.setattr(offline, "copy_verified", copy_with_later_failure)
+    try:
+        with pytest.raises(offline.OfflineDownloadError) as error:
+            offline._transactional_copy(disk, [
+                (Path("app.bin"), source, None),
+                (Path("script.py"), None, b"script"),
+            ])
+        assert not isinstance(error.value, offline.OfflineRecoveryError)
+        if existing:
+            assert destination.read_bytes() == b"original"
+        else:
+            assert not destination.exists()
+    finally:
+        source.chmod(0o666)
+        if destination.exists():
+            destination.chmod(0o666)
+
+
+def test_successful_deploy_cleans_readonly_staged_files(tmp_path):
+    import os
+    import mklink.offline_download as offline
+    if os.name != "nt":
+        pytest.skip("Windows read-only file deletion semantics")
+    disk = tmp_path / "disk"
+    disk.mkdir()
+    source = tmp_path / "app.bin"
+    source.write_bytes(b"firmware")
+    source.chmod(0o444)
+    try:
+        assert offline._transactional_copy(disk, [(Path("app.bin"), source, None)]) == ["app.bin"]
+        assert (disk / "app.bin").read_bytes() == b"firmware"
+    finally:
+        source.chmod(0o666)
+        if (disk / "app.bin").exists():
+            (disk / "app.bin").chmod(0o666)
+
+@pytest.mark.parametrize('corrupt_restore', [False, True])
+def test_transaction_readback_failure_rolls_back_or_preserves_recovery(tmp_path, monkeypatch, corrupt_restore):
+    from mklink import offline_download as offline, file_content
+    disk = tmp_path / 'disk'; disk.mkdir()
+    destination = disk / 'app.bin'
+    destination.write_bytes(b'original')
+    stage = tmp_path / 'stage'; stage.mkdir()
+    monkeypatch.setattr(offline.tempfile, 'mkdtemp', lambda **_: str(stage))
+    sync = file_content.sync_file
+    writes = []
+    def corrupt_after_write(stream):
+        sync(stream)
+        if Path(stream.name) == destination:
+            writes.append(destination.read_bytes())
+            if len(writes) == 1 or corrupt_restore:
+                stream.seek(0)
+                stream.write(b'corrupt!')
+                sync(stream)
+    monkeypatch.setattr(file_content, 'sync_file', corrupt_after_write)
+    expected = offline.OfflineRecoveryError if corrupt_restore else offline.OfflineDownloadError
+    with pytest.raises(expected):
+        offline._transactional_copy(disk, [(Path('app.bin'), None, b'replacement')])
+    assert writes == [b'replacement', b'original']
+    if corrupt_restore:
+        assert (stage / 'backup/app.bin').read_bytes() == b'original'
+        assert json.loads((stage / 'recovery.json').read_text())['rollback_errors'] == ['restore: app.bin']
+    else:
+        assert destination.read_bytes() == b'original'
+        assert not stage.exists()

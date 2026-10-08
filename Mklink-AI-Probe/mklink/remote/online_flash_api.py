@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mklink.cmsis_dap.algorithm_catalog import algorithm_regions
+
 import asyncio
 import base64
 import hashlib
@@ -672,32 +674,6 @@ def _flash_algorithm_payload(record: object) -> Dict[str, object]:
     return payload
 
 
-def _builtin_algorithm_regions(algorithm: object, name: str) -> List[MemoryRegion]:
-    """Use only complete, aligned FLM sector ranges; never invent a last sector."""
-    start = int(algorithm.flash_start)
-    size = int(algorithm.flash_size)
-    sectors = tuple(algorithm.sector_sizes)
-    if size <= 0 or not sectors or sectors[0][0] != 0:
-        return [MemoryRegion(name, start, size, True, True, None)]
-    regions = []
-    for index, (offset, sector_size) in enumerate(sectors):
-        next_offset = sectors[index + 1][0] if index + 1 < len(sectors) else size
-        if not 0 <= offset < next_offset <= size or sector_size <= 0:
-            return [MemoryRegion(name, start, size, True, True, None)]
-        complete_length = ((next_offset - offset) // sector_size) * sector_size
-        if complete_length:
-            regions.append(MemoryRegion(
-                "{}-{}".format(name, index), start + offset,
-                complete_length, True, True, sector_size,
-            ))
-        if complete_length < next_offset - offset:
-            regions.append(MemoryRegion(
-                "{}-{}-partial".format(name, index),
-                start + offset + complete_length,
-                next_offset - offset - complete_length, True, True, None,
-            ))
-    return regions
-
 
 def _builtin_geometry_is_ambiguous(part_number: str) -> bool:
     from mklink.cmsis_dap.builtin_flm_bundle import discover_builtin_flm_algorithms
@@ -747,7 +723,7 @@ def _target_flash_configuration(
         base_regions = tuple(
             region for region in base_regions
             if region.end <= chosen.flash_start or region.start >= end
-        ) + tuple(_builtin_algorithm_regions(chosen, "selected-flm"))
+        ) + tuple(algorithm_regions(chosen, "selected-flm"))
     if services.custom_flms is None:
         return base_regions, (), ()
     custom_regions = tuple(services.custom_flms.regions(part_number))
@@ -1363,6 +1339,19 @@ def _start_job_with_configuration(
         return job_id, services.job_manager.get(job_id)
 
 
+def wait_online_job(services: OnlineFlashServices, job_id: str) -> dict:
+    """Observe a real online worker to terminal state, without holding HTTP admission."""
+    snapshot = services.job_manager.wait(job_id)
+    messages = tuple(str(event.message)[:512] for event in services.job_manager.events(job_id)
+                     if event.event == 'log' and event.message)[-20:]
+    return {
+        'status': 'succeeded' if snapshot.state is JobState.SUCCEEDED else 'failed',
+        'online_job_id': job_id, 'online_state': snapshot.state.value, 'messages': messages,
+        'job': _safe_job_snapshot(snapshot),
+        'error_code': snapshot.error_code, 'error_message': snapshot.error_message,
+    }
+
+
 def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     router = APIRouter(prefix="/api/online-flash", tags=["online-flash"])
 
@@ -1376,10 +1365,10 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         from mklink.hpm_config import is_hpm_target
 
         target = await _blocking(_resolved_target, services.catalog, part_number) if part_number.strip() else None
-        if target and is_hpm_target(target.part_number) and source.suffix.casefold() != ".bin":
+        if target and is_hpm_target(target.part_number) and source.suffix.casefold() not in (".bin", ".hex"):
             _raise_http(FlashError(
                 FlashErrorCode.FILE_FORMAT_ERROR,
-                "HPM ROM API only supports BIN firmware",
+                "HPM ROM API supports BIN and HEX firmware",
             ))
         if target:
             regions, fingerprint, _paths = await _blocking(
@@ -1452,8 +1441,18 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         return payload
 
     @router.get("/probes")
-    async def probes() -> object:
-        return _json_primitive(await _blocking(_enumerate_probes, services.probe_provider))
+    async def probes(request: Request) -> object:
+        control = getattr(request.app.state, 'shared_runtime', None)
+        serial = None
+        if control is not None:
+            presence = control.presence()
+            if presence['status'] != 'present':
+                return []
+            serial = presence['probe']['serial_number'].casefold()
+        records = await _blocking(_enumerate_probes, services.probe_provider)
+        if serial is not None:
+            records = [record for record in records if record.unique_id.casefold() == serial]
+        return _json_primitive(records)
 
     @router.get("/targets")
     async def targets(
@@ -1905,18 +1904,20 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         }
 
     @router.post("/jobs")
-    async def job_start(body: JobBody) -> object:
-        if not body.probe_id or not body.target_part:
-            raise HTTPException(status_code=422, detail="probe_id and target_part are required")
-        await _blocking(_selected_probe, services.probe_provider, body.probe_id)
-        target = await _blocking(_resolved_target, services.catalog, body.target_part)
-        job_id, snapshot = await _blocking(
-            _start_job_with_configuration,
-            services,
-            body,
-            target,
-        )
-        return {"job_id": job_id, "job": _safe_job_snapshot(snapshot)}
+    async def job_start(body: JobBody, request: Request) -> object:
+        async def start():
+            if not body.probe_id or not body.target_part:
+                raise HTTPException(status_code=422, detail="probe_id and target_part are required")
+            await _blocking(_selected_probe, services.probe_provider, body.probe_id)
+            target = await _blocking(_resolved_target, services.catalog, body.target_part)
+            job_id, snapshot = await _blocking(
+                _start_job_with_configuration, services, body, target)
+            return {"job_id": job_id, "job": _safe_job_snapshot(snapshot)}
+        control = getattr(request.app.state, 'shared_runtime', None)
+        if control is not None:
+            return await control.jobs.record_online_start(
+                request.headers.get('X-MKLink-Request-Id'), body.model_dump(), start)
+        return await start()
 
     @router.get("/jobs/active")
     async def job_active() -> object:
@@ -2000,7 +2001,7 @@ def default_target_memory_provider(
         algorithms = discover_builtin_flm_algorithms(part_number)
         regions = []
         for algorithm_index, algorithm in enumerate(algorithms):
-            regions.extend(_builtin_algorithm_regions(algorithm, "daplink-flm-{}".format(algorithm_index)))
+            regions.extend(algorithm_regions(algorithm, "daplink-flm-{}".format(algorithm_index)))
         if regions:
             return regions
     except (ImportError, OSError, TypeError, ValueError):

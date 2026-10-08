@@ -107,6 +107,12 @@ def pdsc_targets(
     return results
 
 
+def list_svd_targets(project_root: str = ".", query: str = "") -> dict:
+    """Offline installed-description index; does not select or open a probe."""
+    return {"targets": [target.public() for target in discover_svd_targets(project_root)
+                        if query.casefold() in target.target.casefold()]}
+
+
 def discover_svd_targets(project_root: str) -> list[SvdTarget]:
     """Inspect installed Packs only; never download or guess SVD filenames."""
     from mklink.project_config import load_project_info
@@ -399,9 +405,9 @@ def read_item(device, item):
     return value
 
 
-def capture_items(device, items, *, duration=1.0, period=0.01):
+def capture_items(device, items, *, duration=1.0, period=0.01, cancelled=None):
     import math, time
-    from .dump_memory import DumpMemoryStreamSession
+    from .dump_memory import DumpMemoryStreamSession, check_capture_cancelled
     from .superwatch import build_read_blocks, compile_frame_decoder
 
     if not math.isfinite(duration) or not 0 < duration <= 30:
@@ -418,6 +424,7 @@ def capture_items(device, items, *, duration=1.0, period=0.01):
     if not 1 <= len(blocks) <= 15:
         raise ValueError("Capture supports 1..15 register regions")
     decoder = compile_frame_decoder(items, blocks)
+    check_capture_cancelled(cancelled)
     session = DumpMemoryStreamSession(
         device._bridge, [(b.address, b.size) for b in blocks], period
     )
@@ -425,13 +432,21 @@ def capture_items(device, items, *, duration=1.0, period=0.01):
     invalid = 0
     try:
         session.start()
-        begin = time.monotonic()
-        while time.monotonic() - begin < duration:
+        # start() sends the command; firmware still has to attach and produce
+        # its first frame. Keep that bounded startup outside the sample window.
+        deadline = time.monotonic() + 2.0
+        collecting = False
+        while time.monotonic() < deadline:
+            check_capture_cancelled(cancelled)
             for frame in session.read_frames(max_bytes=1024 * 1024):
+                check_capture_cancelled(cancelled)
                 values = decoder.decode(frame)
                 if frame.get("flags") or values is None:
                     invalid += 1
                     continue
+                if not collecting:
+                    collecting = True
+                    deadline = time.monotonic() + duration
                 if len(rows) >= 100000:
                     raise ValueError(
                         "Capture result limit reached; reduce duration or rate"

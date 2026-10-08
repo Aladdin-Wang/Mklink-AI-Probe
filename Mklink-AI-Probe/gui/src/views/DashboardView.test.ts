@@ -32,7 +32,7 @@ const toastMock = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   useRoute: () => ({ query: routerMock.query }),
 }))
 
@@ -515,7 +515,7 @@ describe('DashboardView layout classes', () => {
       },
     })
 
-    expect(wrapper.text()).not.toContain('VOFA+')
+    expect(wrapper.find('[data-testid=vofa-page]').exists()).toBe(false)
     expect(wrapper.find('.rtt-route-probe').exists()).toBe(true)
     const rttButton = wrapper.findAll('button').find(button => button.text() === 'RTT View')
     expect(rttButton?.classes()).toContain('active')

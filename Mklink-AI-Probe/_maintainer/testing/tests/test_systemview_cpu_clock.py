@@ -228,3 +228,20 @@ def test_dashboard_runtime_cpu_clock_overrides_project_default_and_init():
     mgr._note_init_cpu_freq([{"kind": "init", "cpu_freq": 816_000_000}])
     assert mgr._parser.cpu_freq == 360_000_000
     assert mgr._cpu_freq_source == "hpm_core_clock"
+
+
+def test_dashboard_backfills_time_using_independent_timestamp_clock():
+    mgr = SystemViewStreamManager()
+    mgr._parser = mgr._create_parser()
+    mgr._parser.set_cpu_freq(72_000_000, lock=True)
+    mgr._parser._post_process({
+        'kind': 'init', 'sys_freq': 1_000_000, 'cpu_freq': 72_000_000,
+        'delta_ticks': 0, 't_ticks': 0,
+    })
+    events = [{'t_ticks': 2500, 'delta_ticks': 500},
+              {'t_ticks': 5000, 't_us': 5000, 'cpu_delta_us': 123}]
+    mgr._ensure_event_time_fields(events)
+    assert events[0]['t_us'] == 2500
+    assert events[0]['cpu_delta_us'] == 500
+    assert events[1]['t_us'] == 5000
+    assert events[1]['cpu_delta_us'] == 123

@@ -1,8 +1,8 @@
 """Lifecycle entry point for the standalone Windows Site Agent package.
 
-The packaged ``start`` process is the Site Agent.  It deliberately does not
-spawn a supervisor or worker, which gives field operators a single foreground
-process with ordinary console and service-manager ownership semantics.
+The packaged ``start`` process is the foreground remote listener. It has no
+supervisor worker; target operations may attach to or start an independent
+shared runtime which outlives the listener and serves other GUI/AI clients.
 """
 
 from __future__ import annotations
@@ -223,17 +223,9 @@ def _start(args: argparse.Namespace, token: str | None) -> int:
     from mklink.remote.dispatcher import OperationDispatcher
 
     ready_file = args.ready_file
-    dispatcher = OperationDispatcher(args.project_root)
+    dispatcher = OperationDispatcher(args.project_root, runtime_probe=args.device_port)
     transport = _stcp_session(args, token)
 
-    def device_factory(*, port: str | None = None, axf: str | None = None):
-        import mklink
-
-        return mklink.connect(
-            port=port,
-            axf=axf,
-            project_root=args.project_root,
-        )
 
     def on_ready(status: dict[str, Any]) -> None:
         tunnel = (
@@ -287,9 +279,10 @@ def _start(args: argparse.Namespace, token: str | None) -> int:
     )
     agent = SiteAgent(
         config,
-        device_factory,
+        dispatcher.connect_target,
         capability_provider=dispatcher.capabilities,
         request_dispatcher=dispatcher.dispatch,
+        client_closed=dispatcher.client_closed,
     )
     previous = _install_signal_handlers(agent)
     try:
@@ -389,7 +382,24 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(list(argv) if argv is not None else None)
+    values = list(sys.argv[1:] if argv is None else argv)
+    from mklink.internal_process import dispatch_internal_process
+    internal_result = dispatch_internal_process(values)
+    if internal_result is not None:
+        return internal_result
+    if values[:1] == ["runtime"]:
+        # ensure_runtime launches the current frozen executable with this contract.
+        parser = _SecretSafeArgumentParser(prog="mklink-remote-agent runtime", allow_abbrev=False)
+        parser.add_argument("command", choices=["serve"])
+        parser.add_argument("--project-root", default=".")
+        parser.add_argument("--port", type=int, default=8765)
+        parser.add_argument("--probe-id", default="lobby")
+        runtime_args = parser.parse_args(values[1:])
+        from mklink.runtime import serve_runtime
+        serve_runtime(project_root=runtime_args.project_root, port=runtime_args.port,
+                      probe_id=runtime_args.probe_id)
+        return 0
+    args = build_parser().parse_args(values)
     try:
         if args.timeout <= 0:
             raise ValueError("timeout must be positive")

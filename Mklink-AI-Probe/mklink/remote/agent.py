@@ -41,10 +41,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class AgentDispatchContext:
-    """Minimal public services supplied to an injected operation dispatcher."""
+    """Services for a dispatcher; client_id identifies a socket, not authorization.
+
+    None is reserved for direct in-process dispatch without a socket lifetime.
+    """
 
     device: Any | None
     resource_manager: ResourceManager
+    client_id: str | None = None
 
 
 class CapabilityProvider(Protocol):
@@ -182,7 +186,10 @@ class SiteAgent:
 
     It is intentionally public so a package wrapper can request a cooperative
     stop without owning the asyncio loop.  Device creation is serialized, but
-    health and status never attempt a probe connection.
+    health and status never attempt a probe connection.  The device factory
+    accepts port and axf keyword arguments; a failed call is never retried.
+    Dispatchers accept method, params and context. client_closed runs once after
+    a socket's in-flight dispatch settles, including cancellation and rejection.
     """
 
     def __init__(
@@ -191,15 +198,20 @@ class SiteAgent:
         device_factory: Callable[..., Any],
         *,
         capability_provider: CapabilityProvider | None = None,
-        request_dispatcher: RequestDispatcher | Callable[..., Any] | None = None,
+        request_dispatcher: RequestDispatcher | None = None,
+        client_closed: Callable[[str], Any] | None = None,
         device_getter: Callable[[], Any | None] | None = None,
         device_reconnector: Callable[[AgentConfig], Any | None] | None = None,
         resource_manager: ResourceManager | None = None,
+        gui_bridge=None,
     ):
+        self.active_connections = 0
         self.config = config
+        self._gui_bridge = gui_bridge
         self._device_factory = device_factory
         self._capability_provider = capability_provider
         self._request_dispatcher = request_dispatcher
+        self._client_closed = client_closed
         self._device: Any | None = None
         self._device_getter = device_getter
         self._device_reconnector = device_reconnector
@@ -239,7 +251,7 @@ class SiteAgent:
         capabilities = {
             "agent.lifecycle": Capability(
                 True,
-                detail="health/status/ports/reconnect/stop",
+                detail="health/status/ports/connect/reconnect/stop",
             ),
             "probe.connection": Capability(
                 True,
@@ -266,6 +278,8 @@ class SiteAgent:
                 raise AgentOperationError(
                     "Capability provider failed",
                 ) from None
+        if self._gui_bridge is not None:
+            capabilities['gui.bridge'] = Capability(available=True, version='1')
         return Handshake(
             protocol_version=PROTOCOL_VERSION,
             mklink_version=str(mklink_version),
@@ -329,9 +343,18 @@ class SiteAgent:
     def reconnect(self) -> dict[str, Any]:
         """Open/reopen a probe without interrupting the listener."""
 
+        return self._connect_target(force=True)
+
+    def connect(self) -> dict[str, Any]:
+        """Attach if needed without replacing another client's live target."""
+        return self._connect_target(force=False)
+
+    def _connect_target(self, *, force: bool) -> dict[str, Any]:
         with self._target_lifecycle.lifecycle():
             if self._target_lifecycle.closing:
                 return {"connected": False, "error": "Agent is stopping"}
+            if not force and self._device_connected():
+                return {"connected": True, "reused": True}
             if self._device_reconnector is not None:
                 try:
                     self._device_reconnector(self.config)
@@ -344,14 +367,6 @@ class SiteAgent:
             try:
                 kwargs = {"port": self.config.device_port, "axf": self.config.axf}
                 self._device = self._device_factory(**kwargs)
-            except TypeError:
-                # Small injected test factories commonly take no configuration.
-                try:
-                    self._device = self._device_factory()
-                except (Exception, SystemExit):
-                    self._device = None
-                    self._last_error = "Device connection failed"
-                    return {"connected": False, "error": self._last_error}
             except (Exception, SystemExit):
                 self._device = None
                 self._last_error = "Device connection failed"
@@ -404,6 +419,19 @@ class SiteAgent:
             except BaseException:
                 pass
         raise cancellation
+
+    @classmethod
+    async def _invoke_lower_level(cls, callback, *arguments):
+        async def invoke():
+            call = getattr(callback, "__call__", callback)
+            is_async = inspect.iscoroutinefunction(callback) or (
+                call is not callback and inspect.iscoroutinefunction(call)
+            )
+            result = callback(*arguments) if is_async else await asyncio.to_thread(callback, *arguments)
+            return await result if inspect.isawaitable(result) else result
+
+        # Shield both phases, including a sync callback returning an awaitable.
+        return await cls._wait_for_lower_level(invoke())
 
     def _close_device_locked(self) -> None:
         device, self._device = self._device, None
@@ -476,6 +504,21 @@ class SiteAgent:
         return 0
 
     async def _handle_connection(self, websocket: Any, *_path: Any) -> None:
+        client_id = secrets.token_hex(16)
+        self.active_connections += 1
+        try:
+            await self._serve_connection(websocket, client_id)
+        finally:
+            try:
+                if self._client_closed is not None:
+                    try:
+                        await self._invoke_lower_level(self._client_closed, client_id)
+                    except Exception:
+                        logger.exception("Site agent client cleanup failed; not retried")
+            finally:
+                self.active_connections -= 1
+
+    async def _serve_connection(self, websocket: Any, client_id: str) -> None:
         from websockets.exceptions import ConnectionClosed
 
         authenticated = False
@@ -511,7 +554,10 @@ class SiteAgent:
                 else:
                     if not authenticated:
                         raise AuthenticationError()
-                    response = result_envelope(await self._dispatch(request), request_id)
+                    if request.method == 'gui.tunnel' and self._gui_bridge is not None:
+                        await self._gui_bridge(websocket, request)
+                        return
+                    response = result_envelope(await self._dispatch(request, client_id=client_id), request_id)
                 await websocket.send(json.dumps(response, separators=(",", ":")))
             except asyncio.TimeoutError:
                 await websocket.close(code=1008, reason="Handshake timeout")
@@ -541,15 +587,15 @@ class SiteAgent:
             raise AuthenticationError()
         return True
 
-    async def _dispatch(self, request: RequestEnvelope) -> Any:
+    async def _dispatch(self, request: RequestEnvelope, *, client_id: str | None = None) -> Any:
         handlers: dict[str, Callable[[], Any]] = {
             "agent.health": self.health,
             "agent.status": self.status,
             "agent.ports": self.ports,
             "agent.stop": self.request_stop,
         }
-        if request.method == "agent.reconnect":
-            return await asyncio.to_thread(self.reconnect)
+        if request.method in {"agent.connect", "agent.reconnect"}:
+            return await self._invoke_lower_level(self.connect if request.method == "agent.connect" else self.reconnect)
         handler = handlers.get(request.method)
         if handler is not None:
             result = handler()
@@ -569,45 +615,11 @@ class SiteAgent:
             context = AgentDispatchContext(
                 device=self._current_device(),
                 resource_manager=self._resources,
+                client_id=client_id,
             )
-            try:
-                parameters = inspect.signature(dispatcher).parameters.values()
-                positional = [
-                    parameter
-                    for parameter in parameters
-                    if parameter.kind in (
-                        inspect.Parameter.POSITIONAL_ONLY,
-                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                    )
-                ]
-                accepts_context = len(positional) >= 3 or any(
-                    parameter.kind is inspect.Parameter.VAR_POSITIONAL
-                    for parameter in parameters
-                )
-            except (TypeError, ValueError):
-                accepts_context = True
-            arguments = (
-                (request.method, request.params, context)
-                if accepts_context
-                else (request.method, request.params)
+            return await self._invoke_lower_level(
+                dispatcher, request.method, request.params, context,
             )
-            call = getattr(dispatcher, "__call__", dispatcher)
-            is_async = inspect.iscoroutinefunction(dispatcher) or (
-                call is not dispatcher
-                and inspect.iscoroutinefunction(call)
-            )
-            if is_async:
-                result = dispatcher(*arguments)
-            else:
-                result = await self._wait_for_lower_level(
-                    asyncio.to_thread(
-                        dispatcher,
-                        *arguments,
-                    )
-                )
-            if inspect.isawaitable(result):
-                result = await self._wait_for_lower_level(result)
-            return result
         except ProtocolError:
             raise
         except Exception:
@@ -616,17 +628,13 @@ class SiteAgent:
             self._target_lifecycle.leave_dispatch()
 
 
-def _default_device_factory(*, port: str | None = None, axf: str | None = None) -> Any:
-    import mklink
-    return mklink.connect(port=port, axf=axf)
-
-
 def run_agent(
     config: AgentConfig,
     *,
-    device_factory: Callable[..., Any] = _default_device_factory,
+    device_factory: Callable[..., Any],
     capability_provider: CapabilityProvider | None = None,
-    request_dispatcher: RequestDispatcher | Callable[..., Any] | None = None,
+    request_dispatcher: RequestDispatcher | None = None,
+    client_closed: Callable[[str], Any] | None = None,
 ) -> int:
     """Run a direct Site Agent and return ``0`` after a cooperative stop."""
 
@@ -637,6 +645,7 @@ def run_agent(
             device_factory,
             capability_provider=capability_provider,
             request_dispatcher=request_dispatcher,
+            client_closed=client_closed,
         ).serve()
     )
 

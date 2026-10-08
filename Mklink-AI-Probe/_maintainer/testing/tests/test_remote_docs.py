@@ -39,6 +39,7 @@ HIGH_RISK_OPERATIONS = {
 MCP_TOOLS = {
     "remote_sites",
     "remote_status",
+    "remote_connect",
     "remote_capabilities",
     "remote_call",
     "remote_upload",
@@ -234,7 +235,7 @@ def test_every_documented_engineer_and_field_command_matches_real_parsers():
 
     engineer_commands = _documented_commands("python -m mklink remote")
     field_commands = _documented_commands(r".\mklink-remote-agent.exe")
-    assert len(engineer_commands) == 17
+    assert len(engineer_commands) == 19
     assert len(field_commands) == 9
 
     remote_parser = build_remote_parser()

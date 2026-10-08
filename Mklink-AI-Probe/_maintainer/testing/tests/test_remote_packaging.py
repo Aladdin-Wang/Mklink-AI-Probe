@@ -270,6 +270,16 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
     expected = {record["path"]: record for record in manifest["files"]}
     with zipfile.ZipFile(artifact) as archive:
         assert archive.testzip() is None
+        builtin_root = "mklink-remote-agent/_internal/mklink/builtin_flm/"
+        builtin_manifest = json.loads(archive.read(builtin_root + "manifest.json"))
+        assert builtin_manifest['target_count'] == 7059
+        assert builtin_manifest['blob_count'] == 2224
+        builtin_blobs = {builtin_root + row['file']: row for row in builtin_manifest['blobs']}
+        assert len(builtin_blobs) == 2224
+        for name, blob in builtin_blobs.items():
+            payload = archive.read(name)
+            assert len(payload) == blob['size']
+            assert hashlib.sha256(payload).hexdigest() == blob['sha256']
         infos = [info for info in archive.infolist() if not info.is_dir()]
         assert len(infos) == surfaces["zip_members"]
         assert len(infos) == surfaces["bundle_files"]
@@ -293,7 +303,6 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
                 ".axf",
                 ".bin",
                 ".elf",
-                ".flm",
                 ".hex",
                 ".jpg",
                 ".jpeg",
@@ -302,6 +311,8 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
                 ".png",
                 ".screenshot",
             }
+            if Path(relative).suffix.casefold() == ".flm":
+                assert info.filename in builtin_blobs
             data = archive.read(info)
             assert info.CRC == (zlib.crc32(data) & 0xFFFFFFFF)
             record = expected[relative]
@@ -318,17 +329,21 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
     )
     entries = _recursive_archive_entries(executable)
     assert len(entries) == surfaces["archive_entries"]
-    assert len(entries) > surfaces["bundle_files"]
+    # Algorithm blobs are external bundle files. Their count is independent
+    # of the executable's Python archive; verify recursive code traversal
+    # directly instead of comparing unrelated totals.
+    assert any("::" in name and code is not None for name, _data, code in entries)
     names = [name for name, _data, _code in entries]
     assert hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest() == (
         manifest["audit"]["archive_names_sha256"]
     )
     prohibited = re.compile(
-        r"(?i)(?:^|[.:/\\])(?:fastmcp|pyinstaller|fastapi|starlette|uvicorn)"
+        r"(?i)(?:^|[.:/\\])(?:fastmcp|pyinstaller)"
         r"(?:$|[.:/\\])"
-        r"|mklink\.(?:mcp_server|remote\.(?:api|mcp|stream_api))"
-        r"|mklink\.cmsis_dap\.builtin_(?:flm|pack)_bundle"
+        r"|mklink\.(?:mcp_server|remote\.mcp)"
     )
+    assert any("mklink.runtime_api" in name for name in names)
+    assert any("uvicorn" in name for name in names)
     for name, data, code in entries:
         assert not prohibited.search(name), name
         assert "direct_url.json" not in name.casefold(), name
@@ -364,9 +379,9 @@ def test_dependency_isolation_fresh_wheel_and_installed_metadata(
     assert len(report_websockets) == len(EXPECTED_WEBSOCKETS_REQUIREMENTS)
     assert set(report_websockets) == EXPECTED_WEBSOCKETS_REQUIREMENTS
     installed = set(report["installed"])
+    assert {"fastapi", "starlette", "uvicorn", "httpx", "python-multipart"} <= installed
     assert installed.isdisjoint(
         {
-            "fastapi",
             "fastmcp",
             "pyinstaller",
             "pyside6",
@@ -404,7 +419,7 @@ def test_dependency_isolation_fresh_wheel_and_installed_metadata(
             item
             for item in requirements
             if item.casefold().startswith(
-                ("fastmcp", "fastapi", "pyinstaller", "pyqt", "pyside")
+                ("fastmcp", "pyinstaller", "pyqt", "pyside")
             )
         ]
         assert optional_forbidden

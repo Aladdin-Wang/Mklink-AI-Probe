@@ -143,14 +143,14 @@ def test_peripheral_api_requires_a_discovered_chip_and_preserves_active_capture(
 
     async def verify():
         with pytest.raises(HTTPException) as error:
-            await select(target_id='not-listed')
-        assert error.value.status_code == 404
+            await select(target_id='not-listed', chip=None, svd=None)
+        assert error.value.status_code == 422
         assert (await targets(q='CHIP'))['targets'][0]['target'] == 'CHIP'
-        assert (await select(target_id=target.key))['selection']['target'] == 'CHIP'
+        assert (await select(target_id=target.key, chip=None, svd=None))['selection']['target'] == 'CHIP'
         manager._running = True
         manager._stop_event.clear()
         with pytest.raises(HTTPException) as error:
-            await select(target_id=target.key)
+            await select(target_id=target.key, chip=None, svd=None)
         assert error.value.status_code == 409
         assert manager.running
 

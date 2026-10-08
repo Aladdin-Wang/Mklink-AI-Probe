@@ -14,13 +14,9 @@ from mklink.remote.dashboards import VofaStreamManager
 from mklink.remote.stream_hub import StreamHub
 from mklink.vofa_viewer import (
     VOFA_SAMPLE_MAJOR_FLOAT32,
-    VOFA_MAX_FAST_CHANNELS,
-    VOFA_MAX_PRECISE_CHANNELS,
-    build_vofa_command,
     build_vofa_read_groups,
     decode_vofa_samples,
     encode_vofa_samples,
-    validate_vofa_repl_command,
     normalize_vofa_channels,
 )
 from mklink.dump_memory import MAGIC
@@ -42,76 +38,20 @@ def _discrete_channels(count):
     ]
 
 
-def _precise_variables(count):
-    return [
-        value
-        for index in range(count)
-        for value in (f"0x{0x20000000 + index * 4:08X}", "float")
-    ]
-
-
-def test_vofa_command_builder_keeps_fast_and_precise_limits_independent():
-    precise_command, _args, precise_count, precise_mode = build_vofa_command(
-        _precise_variables(VOFA_MAX_PRECISE_CHANNELS), 0.001,
-    )
-    assert precise_command.startswith("vofa.send(")
-    assert precise_count == 15
-    assert precise_mode == "precise"
-
-    with pytest.raises(ValueError, match="at most 15"):
-        build_vofa_command(_precise_variables(16), 0.001)
-
-    fast_command, _args, fast_count, fast_mode = build_vofa_command(
-        ["0x20000000", str(VOFA_MAX_FAST_CHANNELS)], 0.001,
-    )
-    assert fast_command == "vofa.send(0x20000000, 16, 0.001)"
-    assert fast_count == 16
-    assert fast_mode == "fast"
-
-    with pytest.raises(ValueError, match="between 1 and 16"):
-        build_vofa_command(["0x20000000", "17"], 0.001)
-
-
-def test_vofa_command_limit_counts_utf8_bytes_not_python_characters():
-    long_type = "测" * 160
-    visible_command = f'vofa.send(0x20000000, "{long_type}", 0.001)'
-    assert len(visible_command) < 511
-    assert len(visible_command.encode("utf-8")) > 511
-
-    with pytest.raises(ValueError, match="UTF-8 bytes"):
-        validate_vofa_repl_command(visible_command)
-
-
 @pytest.mark.parametrize("variables, message", [
-    (["0x20000000);reboot()#", "float"], "invalid 32-bit address"),
-    (["0x20000000", "float\");reboot();#"], "unsupported type"),
-    (["0x20000000", "float"], "finite non-negative"),
-])
-def test_vofa_command_builder_rejects_code_injection_and_non_finite_period(
-    variables, message,
-):
-    period = float("nan") if message == "finite non-negative" else 0.001
-    with pytest.raises(ValueError, match=message):
-        build_vofa_command(variables, period)
-
-
-@pytest.mark.parametrize("variables, message", [
-    (_precise_variables(16), "at most 15"),
+    ([value for index in range(16) for value in (hex(0x20000000 + index * 4096), "float")], "at most 15"),
     (["0x20000000", "测" * 160], "unsupported type"),
 ])
 def test_cli_rejects_unsafe_vofa_before_port_discovery(
     monkeypatch, capsys, variables, message,
 ):
-    from mklink import cli
-
-    def unexpected_port(_port):
-        raise AssertionError("unsafe VOFA request reached port discovery")
-
-    monkeypatch.setattr(cli, "_resolve_port", unexpected_port)
-    exit_code = cli._cli_vofa(None, variables, 0.001, False)
-
-    assert exit_code == 2
-    assert message in capsys.readouterr().out
+    import sys
+    from mklink import cli, runtime_cli
+    monkeypatch.setattr(runtime_cli, 'RuntimeClient', lambda **kw: pytest.fail('invalid VOFA reached backend'))
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'vofa', *variables])
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert message in str(error.value).lower().replace('vofa ', '')
 
 
 def test_vofa_dump_stream_selection_uses_15_group_safe_boundary(monkeypatch):
@@ -146,26 +86,12 @@ def test_vofa_dump_stream_selection_uses_15_group_safe_boundary(monkeypatch):
     finally:
         dump_manager.stop()
 
-    class ReadDevice:
-        _bridge = object()
-
-        def read_memory(self, address, size):
-            return bytes(size)
-
-    read_manager = VofaStreamManager()
-    read_manager.start(ReadDevice(), _discrete_channels(16), interval=0.001)
-    try:
-        deadline = time.perf_counter() + 1.0
-        while (
-            read_manager.get_status()["completed_samples"] < 1
-            and time.perf_counter() < deadline
-        ):
-            time.sleep(0.001)
-        status = read_manager.get_status()
-        assert status["completed_samples"] >= 1
-        assert status["acquisition_mode"] == "read-memory"
-    finally:
-        read_manager.stop()
+    rejected = VofaStreamManager()
+    with pytest.raises(ValueError, match='at most 15'):
+        rejected.start(dump_device, _discrete_channels(16), interval=.001)
+    assert rejected._thread is None and not rejected.running
+    with pytest.raises(ValueError, match='host polling'):
+        rejected.start(object(), _channels(1), interval=.001)
 
 
 def test_vofa_status_exposes_binary_stream_stats():
@@ -193,6 +119,10 @@ def test_running_manager_uses_probe_dump_stream_and_exposes_integrity_metrics():
 
         def _write_raw(self, data):
             self.writes.append(data)
+
+        def _stop_stream_and_sync(self, command):
+            self._write_raw(command)
+            return True
 
         def drain_stream_bytes(self, max_bytes=None):
             return self.chunks.pop(0) if self.chunks else b""
@@ -291,7 +221,7 @@ def test_channel_validation_normalizes_documented_aliases_atomically():
     assert [channel["name"] for channel in manager.get_status()["channels"]] == ["flag", "count"]
 
 
-def test_cycle_reads_each_group_once_and_publishes_aligned_sample_with_flag():
+def test_complete_frame_publishes_aligned_sample_with_flag():
     async def scenario():
         hub = StreamHub(max_batches_per_client=4)
         queue = hub.subscribe()
@@ -302,25 +232,15 @@ def test_cycle_reads_each_group_once_and_publishes_aligned_sample_with_flag():
             {"name": "far", "addr": 0x20001000, "type": "int16_t", "size": 2},
         ]
 
-        class Device:
-            def __init__(self):
-                self.reads = []
-
-            def read_memory(self, address, size):
-                self.reads.append((address, size))
-                if address == 0x20000000:
-                    return struct.pack("<If", 7, 3.5)
-                return struct.pack("<hxx", -9)
-
-        device = Device()
         manager.configure(channels)
-        assert manager.collect_cycle(device) is True
+        assert manager._accept_dump_frame({'format': 'OLD', 'timestamp_us': 1, 'regions': [(0, struct.pack('<If', 7, 3.5)),
+                                                       (1, struct.pack('<hxx', -9))]}) is True
         await asyncio.sleep(0)
         batch = queue.get_nowait()
         queue.task_done()
         hub.unsubscribe(queue)
 
-        assert device.reads == [(0x20000000, 8), (0x20001000, 4)]
+        assert [(group.address, group.size) for group in manager._read_groups] == [(0x20000000, 8), (0x20001000, 4)]
         assert batch.flags == VOFA_SAMPLE_MAJOR_FLOAT32
         assert batch.item_count == 1
         assert decode_vofa_samples(batch.payload, 3) == [(7.0, 3.5, -9.0)]
@@ -336,28 +256,17 @@ def test_failed_group_discards_whole_cycle_without_channel_misalignment():
         {"name": "b", "addr": 0x20001000, "type": "float", "size": 4},
     ])
 
-    class Device:
-        def read_memory(self, address, size):
-            if address == 0x20001000:
-                raise OSError("target read failed")
-            return struct.pack("<f", 1.0)
-
-    assert manager.collect_cycle(Device()) is False
+    assert manager._accept_dump_frame({'format': 'OLD', 'timestamp_us': 1, 'regions': [(0, struct.pack('<f', 1.0))]}) is False
     assert hub.stats().produced_items == 0
     assert manager.get_status()["read_errors"] == 1
 
 
 @pytest.mark.parametrize("returned_size", [3, 5])
-def test_cycle_rejects_any_non_exact_aligned_memory_read(returned_size):
+def test_frame_rejects_any_non_exact_aligned_region(returned_size):
     manager = VofaStreamManager(batch_samples=1)
     manager.configure([{"name": "a", "addr": 0x20000001, "type": "uint8_t", "size": 1}])
 
-    class Device:
-        def read_memory(self, address, size):
-            assert (address, size) == (0x20000000, 4)
-            return bytes(returned_size)
-
-    assert manager.collect_cycle(Device()) is False
+    assert manager._accept_dump_frame({'format': 'OLD', 'timestamp_us': 1, 'regions': [(0, bytes(returned_size))]}) is False
     assert manager.get_status()["completed_samples"] == 0
     assert manager.get_status()["read_errors"] == 1
 
@@ -366,31 +275,22 @@ def test_non_finite_device_values_are_sanitized_before_sse_history_and_binary():
     manager = VofaStreamManager(batch_samples=1)
     manager.configure(_channels(1))
 
-    class Device:
-        def read_memory(self, address, size):
-            return struct.pack("<f", math.nan)
-
-    assert manager.collect_cycle(Device()) is True
+    assert manager._accept_dump_frame({'format': 'OLD', 'timestamp_us': 1, 'regions': [(0, struct.pack('<f', math.nan))]}) is True
     assert manager._history[-1]["ch0"] == 0.0
     assert manager._pending_samples == []
 
 
-def test_rate_uses_completed_reads_over_elapsed_not_requested_interval():
+def test_rate_uses_completed_samples_over_elapsed_not_requested_interval():
     now = [100.0]
-
-    class Device:
-        def read_memory(self, address, size):
-            now[0] += 0.1
-            return struct.pack("<f", now[0])
 
     manager = VofaStreamManager(clock=lambda: now[0], batch_samples=8)
     manager.configure(_channels(1), interval=0.000001)
     for _ in range(5):
-        assert manager.collect_cycle(Device()) is True
+        now[0] += .1
+        assert manager._accept_dump_frame({'format': 'OLD', 'timestamp_us': 1, 'regions': [(0, struct.pack('<f', now[0]))]}) is True
 
     status = manager.get_status()
     assert status["completed_samples"] == 5
-    assert status["completed_reads"] == 5
     assert status["actual_rate"] == 10.0
     assert status["interval"] == 0.000001
 
@@ -398,15 +298,11 @@ def test_rate_uses_completed_reads_over_elapsed_not_requested_interval():
 def test_rate_window_resets_across_a_long_pause_and_recovers_to_active_rate():
     now = [0.0]
 
-    class Device:
-        def read_memory(self, address, size):
-            now[0] += 0.1
-            return struct.pack("<f", now[0])
-
     manager = VofaStreamManager(clock=lambda: now[0], batch_samples=32)
     manager.configure(_channels(1))
     for _ in range(5):
-        assert manager.collect_cycle(Device()) is True
+        now[0] += .1
+        assert manager._accept_dump_frame({'format': 'OLD', 'timestamp_us': 1, 'regions': [(0, struct.pack('<f', now[0]))]}) is True
     assert manager.get_status()["actual_rate"] == pytest.approx(10.0)
 
     manager.pause()
@@ -414,7 +310,8 @@ def test_rate_window_resets_across_a_long_pause_and_recovers_to_active_rate():
     assert manager.get_status()["actual_rate"] == 0.0
     manager.resume()
     for _ in range(5):
-        assert manager.collect_cycle(Device()) is True
+        now[0] += .1
+        assert manager._accept_dump_frame({'format': 'OLD', 'timestamp_us': 1, 'regions': [(0, struct.pack('<f', now[0]))]}) is True
     assert manager.get_status()["actual_rate"] == pytest.approx(10.0)
 
 
@@ -541,12 +438,25 @@ def test_zero_interval_api_normalizes_before_start_and_reports_current_interval(
         assert status_response.json()["interval"] == pytest.approx(0.000001)
 
 
+class _DumpDevice:
+    connected = True
+    def __init__(self):
+        class Bridge:
+            def _enter_stream(self, state): pass
+            def _write_raw(self, data): pass
+            def _exit_stream(self): pass
+            def _stop_stream_and_sync(self, command): return True
+            def drain_stream_bytes(self, max_bytes=None):
+                time.sleep(.001)
+                return _dump_frame(100, struct.pack('<f', 1.0))
+        self._bridge = Bridge()
+    def close(self): pass
+
+
 def test_paused_60_second_interval_stop_is_interruptible():
     manager = VofaStreamManager(batch_samples=1)
 
-    class Device:
-        def read_memory(self, address, size):
-            return bytes(size)
+    Device = _DumpDevice
 
     real_sleep = time.sleep
     blocked_sleep = threading.Event()
@@ -584,11 +494,7 @@ def test_paused_60_second_interval_stop_is_interruptible():
 def test_paused_stop_endpoint_releases_lease_without_waiting_for_long_interval():
     from mklink.remote.dashboards import get_managers
 
-    class Device:
-        connected = True
-
-        def read_memory(self, address, size):
-            return bytes(size)
+    Device = _DumpDevice
 
     app = create_app(auth_token=None, project_root=".")
     app.state.mklink_state["device"] = Device()
@@ -690,9 +596,7 @@ def test_app_shutdown_stops_its_active_vofa_producer():
     app = create_app(auth_token=None, project_root=".")
     manager = get_managers()["vofa"]
 
-    class Device:
-        def read_memory(self, address, size):
-            return struct.pack("<f", 1.0)
+    Device = _DumpDevice
 
     manager.start(Device(), _channels(1), interval=0.001)
     try:

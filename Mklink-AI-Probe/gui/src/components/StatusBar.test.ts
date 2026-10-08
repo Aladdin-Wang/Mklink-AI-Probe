@@ -14,10 +14,6 @@ vi.mock('../composables/useMklinkApi', () => ({
   useMklinkApi: () => ({ deviceStatus }),
 }))
 
-vi.mock('../composables/useMklinkWs', () => ({
-  useMklinkWs: () => ({ wsConnected: ref(false) }),
-}))
-
 vi.mock('../composables/useBackendHealth', () => ({
   useBackendHealth: () => ({
     backendState: ref('alive'),

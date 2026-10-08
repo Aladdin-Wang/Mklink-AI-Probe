@@ -1,68 +1,41 @@
-"""Modbus 从站地址扫描器。"""
-
+"""Address scan orchestration shared by local and runtime clients."""
 from __future__ import annotations
 
 from typing import Callable
 
-from mklink.modbus._client import ModbusClient, ModbusError, ModbusSlaveError
+
+def validate_scan_range(start_addr: int, end_addr: int, probe_register: int = 0) -> None:
+    from mklink.modbus._session import validate_slave, validate_transaction
+    validate_slave(start_addr)
+    validate_slave(end_addr)
+    validate_transaction(3, probe_register, quantity=1)
+    if end_addr < start_addr:
+        raise ValueError('Scan end address must be greater than or equal to start')
 
 
 def scan_slaves(
-    client: ModbusClient,
+    probe: Callable[[int, int], dict],
     start_addr: int = 1,
     end_addr: int = 247,
     probe_register: int = 0,
     on_progress: Callable[[int, int, str | None], None] | None = None,
 ) -> list[int]:
-    """顺序扫描 Modbus 从站地址。
+    """Probe each address once; the transport owns serialization and timing.
 
-    使用 FC03 读取 1 个保持寄存器来探测。即使从站返回异常（如地址非法），
-    也说明从站存在。只有完全无响应（超时）才判定为不存在。
-
-    扫描期间自动将底层客户端超时压缩到 0.15 秒、重试设为 0，
-    以避免无响应地址长时间阻塞（247 地址全扫约 40 秒）。
-    扫描结束后恢复原始参数。
-
-    Args:
-        client: 已连接的 ModbusClient
-        start_addr: 扫描起始地址
-        end_addr: 扫描结束地址
-        probe_register: 探测用的寄存器地址
-        on_progress: 进度回调 (current_addr, total, result_msg)
-
-    Returns:
-        响应的从站地址列表
+    A valid exception response proves presence. Transport/session failures abort
+    the scan rather than being silently converted into absent devices.
     """
-    # 保存原始参数，切换到快速扫描模式
-    raw = client.raw_client
-    orig_timeout = raw.comm_params.timeout_connect
-    orig_retries = raw.retries
-    raw.comm_params.timeout_connect = 0.15
-    raw.retries = 0
-
+    validate_scan_range(start_addr, end_addr, probe_register)
     found: list[int] = []
     total = end_addr - start_addr + 1
-
-    try:
-        for i, addr in enumerate(range(start_addr, end_addr + 1)):
-            try:
-                client.read_holding_registers(probe_register, 1, slave=addr)
-                found.append(addr)
-                msg = f"[OK] 从站 {addr} 响应"
-            except ModbusSlaveError:
-                # 从站返回异常响应（如非法地址），说明从站存在
-                found.append(addr)
-                msg = f"[OK] 从站 {addr} 存在（返回异常码）"
-            except ModbusError:
-                msg = None
-            except Exception:
-                msg = None
-
-            if on_progress:
-                on_progress(i + 1, total, msg)
-    finally:
-        # 恢复原始参数
-        raw.comm_params.timeout_connect = orig_timeout
-        raw.retries = orig_retries
-
+    for i, addr in enumerate(range(start_addr, end_addr + 1)):
+        result = probe(addr, probe_register)
+        msg = None
+        if result['responded']:
+            found.append(addr)
+            msg = f"[OK] 从站 {addr} 响应"
+            if result.get('exception_code') is not None:
+                msg = f"[OK] 从站 {addr} 存在（返回异常码 {result['exception_code']}）"
+        if on_progress:
+            on_progress(i + 1, total, msg)
     return found

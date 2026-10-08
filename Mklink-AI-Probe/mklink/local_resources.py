@@ -13,37 +13,114 @@ import re
 import signal
 import subprocess
 import time
+import threading
 from typing import Any
 
 
-def _temp_dir() -> str:
-    return os.environ.get("TEMP", "/tmp")
+def port_lock_dir() -> str:
+    """One per-user namespace, independent of process scratch/runtime directories.
+
+    MKLINK_LOCK_DIR is for explicitly isolated tests/deployments; every process
+    accessing the same ports must share it. It is never derived from TEMP.
+    """
+    override = os.environ.get('MKLINK_LOCK_DIR')
+    if override:
+        return os.path.abspath(override)
+    from mklink.web_entry import platform_data_dir
+    return str(platform_data_dir().parent / 'locks')
 
 
 def _safe_port_name(port: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", port.upper())
+    from mklink.usb_interfaces import canonical_serial_port
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", canonical_serial_port(port).upper())
 
 
 def serial_lock_path(port: str) -> str:
-    lock_dir = os.path.join(_temp_dir(), "mklink_serial_locks")
+    lock_dir = port_lock_dir()
     return os.path.join(lock_dir, f"serial_{_safe_port_name(port)}.lock")
 
 
 def serial_lock_paths(port: str | None = None) -> list[str]:
     if port:
         return [serial_lock_path(port)]
-    lock_dir = os.path.join(_temp_dir(), "mklink_serial_locks")
-    return sorted(glob.glob(os.path.join(lock_dir, "*.lock")))
+    lock_dir = port_lock_dir()
+    return sorted(glob.glob(os.path.join(lock_dir, "serial_*.lock")))
 
 
-def mklink_bridge_lock_path() -> str:
-    return os.path.join(_temp_dir(), "mklink_serial_lock")
+# ---------------------------------------------------------------------------
+# Shared cross-process lock for CMD, UART and Modbus ports
+# ---------------------------------------------------------------------------
+class _PortLock:
+    """Cross-process advisory lock for one serial port."""
+
+    _guard = threading.Lock()
+
+    def __init__(self, port: str):
+        self._path = serial_lock_path(port)
+        self._fd = None
+        self._locked = False
+
+    @classmethod
+    def from_path(cls, path: str):
+        """Use an enumerated registry path for conservative resource cleanup."""
+        lock = cls.__new__(cls)
+        lock._path, lock._fd, lock._locked = path, None, False
+        return lock
+
+    def acquire(self) -> bool:
+        if self._locked:
+            return True
+        with self._guard:
+            try:
+                os.makedirs(os.path.dirname(self._path), exist_ok=True)
+                fd = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o600)
+                self._fd = os.fdopen(fd, "r+b")
+                if os.fstat(fd).st_size == 0:
+                    self._fd.write(b"\0")
+                    self._fd.flush()
+                self._fd.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Keep the lock byte intact, and PID outside the locked range.
+                self._write_owner(os.getpid())
+            except OSError:
+                if self._fd is not None:
+                    self._fd.close()  # Also releases any acquired OS lock.
+                self._fd = None
+                return False
+            self._locked = True
+            return True
+
+    def _write_owner(self, pid: int) -> None:
+        self._fd.seek(1)
+        self._fd.truncate()
+        self._fd.write(str(pid).encode('ascii'))
+        self._fd.flush()
+
+    def release(self) -> None:
+        if not self._locked or self._fd is None:
+            return
+        try:
+            self._write_owner(0)
+        finally:
+            # Closing the descriptor releases the OS lock, even if metadata
+            # cleanup fails. Keep the file so all waiters lock the same inode.
+            self._fd.close()
+            self._fd = None
+            self._locked = False
 
 
 def _read_owner_pid(path: str) -> int | None:
     try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            raw = f.read().strip()
+        with open(path, "rb") as f:
+            # Byte zero is OS-locked on Windows. Metadata must be readable
+            # without touching that byte, including from another process.
+            f.seek(1)
+            raw = f.read(32).decode('ascii', errors='ignore').strip()
     except OSError:
         return None
     if not raw.isdigit():
@@ -133,52 +210,41 @@ def _terminate_pid(pid: int) -> bool:
     return not _pid_exists(pid)
 
 
-def _cleanup_lock_file(path: str, *, resource: str, force: bool = False) -> dict[str, Any]:
-    info: dict[str, Any] = {
-        "resource": resource,
-        "path": path,
-        "exists": os.path.exists(path),
-        "owner_pid": None,
-        "owner_alive": False,
-        "action": "missing",
-    }
-    if not info["exists"]:
+def _cleanup_port_lock(path: str, *, force: bool) -> dict[str, Any]:
+    """Clear metadata only after acquiring the same OS lock; never unlink it.
+
+    Unlinking a POSIX lock file can create two independently locked inodes.
+    A PID is diagnostic metadata, not proof that the OS lock is available.
+    """
+    info = _inspect_lock_file(path)
+    info['action'] = 'missing'
+    if not info['exists']:
         return info
-
-    owner_pid = _read_owner_pid(path)
-    owner_alive = _pid_exists(owner_pid)
-    info["owner_pid"] = owner_pid
-    info["owner_alive"] = owner_alive
-
-    if owner_alive:
-        if force and owner_pid is not None and owner_pid != os.getpid():
-            if _terminate_pid(owner_pid):
-                info["owner_alive"] = False
-                try:
-                    os.remove(path)
-                    info["action"] = "terminated_owner"
-                except OSError:
-                    info["action"] = "owner_terminated_lock_left"
-                return info
-            info["action"] = "terminate_failed"
+    owner, alive = info['owner_pid'], info['owner_alive']
+    terminated = False
+    if alive:
+        if not force or owner == os.getpid():
+            info['action'] = 'live_owner'
             return info
-        info["action"] = "live_owner"
+        terminated = _terminate_pid(owner)
+        if not terminated:
+            info['action'] = 'terminate_failed'
+            return info
+        info['owner_alive'] = False
+    lock = _PortLock.from_path(info['path'])
+    if not lock.acquire():
+        info['action'] = 'locked_or_unavailable'
         return info
-
-    try:
-        os.remove(path)
-        info["action"] = "removed_stale_lock"
-    except OSError as exc:
-        info["action"] = "remove_failed"
-        info["error"] = str(exc)
+    lock.release()
+    info['action'] = 'terminated_owner' if terminated else 'cleared_stale_lock'
     return info
 
 
-def _inspect_lock_file(path: str, *, resource: str) -> dict[str, Any]:
+def _inspect_lock_file(path: str) -> dict[str, Any]:
     owner_pid = _read_owner_pid(path) if os.path.exists(path) else None
     owner_alive = _pid_exists(owner_pid)
     return {
-        "resource": resource,
+        "resource": "serial_port",
         "path": path,
         "exists": os.path.exists(path),
         "owner_pid": owner_pid,
@@ -186,29 +252,12 @@ def _inspect_lock_file(path: str, *, resource: str) -> dict[str, Any]:
     }
 
 
-def stop_inprocess_serial_dashboard() -> list[str]:
-    """Stop an in-process serial SSE dashboard manager if one exists."""
-    try:
-        import mklink.remote.dashboards as dashboards
-
-        manager = getattr(dashboards, "_managers", {}).get("serial")
-        if manager:
-            manager.stop()
-            return ["serial"]
-    except Exception:
-        return []
-    return []
-
-
 def local_resource_status(port: str | None = None) -> dict[str, Any]:
     """Inspect local lock files without requiring FastAPI."""
     return {
         "port": port,
-        "mklink_bridge": _inspect_lock_file(
-            mklink_bridge_lock_path(), resource="mklink_bridge",
-        ),
         "serial_locks": [
-            _inspect_lock_file(path, resource="serial_port")
+            _inspect_lock_file(path)
             for path in serial_lock_paths(port)
         ],
     }
@@ -218,31 +267,19 @@ def release_serial_resources(
     *,
     port: str | None = None,
     force: bool = False,
-    include_mklink_bridge: bool = True,
 ) -> dict[str, Any]:
     """Release local serial resources without starting FastAPI.
 
-    Default behavior is conservative: stale lock files are removed, but live
+    Default behavior is conservative: stale port metadata is cleared, but live
     owner processes are reported rather than killed.  Use ``force=True`` only
-    when the caller explicitly wants to terminate the owner process.
+    when the caller explicitly wants to terminate the owner process. Current
+    port lock files are retained to preserve the OS lock identity.
     """
-    result: dict[str, Any] = {
+    return {
         "port": port,
         "force": force,
-        "stopped": stop_inprocess_serial_dashboard(),
-        "mklink_bridge": None,
-        "serial_locks": [],
+        "serial_locks": [
+            _cleanup_port_lock(path, force=force)
+            for path in serial_lock_paths(port)
+        ],
     }
-
-    if include_mklink_bridge:
-        result["mklink_bridge"] = _cleanup_lock_file(
-            mklink_bridge_lock_path(),
-            resource="mklink_bridge",
-            force=force,
-        )
-
-    result["serial_locks"] = [
-        _cleanup_lock_file(path, resource="serial_port", force=force)
-        for path in serial_lock_paths(port)
-    ]
-    return result

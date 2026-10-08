@@ -17,7 +17,17 @@ function frame(
   streamType = StreamType.WAVEFORM,
   timestampNs = 1_000_000_000n,
   flags = 0,
+  port = 'COM7', session = '11'.repeat(16),
 ): ArrayBuffer {
+  if (streamType === StreamType.SERIAL) {
+    const name = new TextEncoder().encode(port)
+    const wrapped = new Uint8Array(17 + name.length + payload.length)
+    wrapped.set(session.match(/../g)!.map(value => parseInt(value, 16)))
+    wrapped[16] = name.length
+    wrapped.set(name, 17)
+    wrapped.set(payload, 17 + name.length)
+    payload = wrapped
+  }
   const buffer = new ArrayBuffer(36 + payload.byteLength)
   const bytes = new Uint8Array(buffer)
   bytes.set([0x4d, 0x4b, 0x53, 0x54])
@@ -110,12 +120,59 @@ function setup() {
 }
 
 describe('StreamDecoder worker controller', () => {
+  it('filters serial ports before decoding without treating other ports as loss', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 100, channelCount: 1, decoderMode: 'serial-terminal' })
+    decoder.handle({ type: 'serial-port', port: 'A' })
+    const input = new TextEncoder().encode('温')
+    const chunks = [input.slice(0, 1), new TextEncoder().encode('WRONG'), input.slice(1)]
+    chunks.forEach((data, index) => decoder.handle({ type: 'frame', buffer: frame(
+      BigInt(index + 1), data.length, data, StreamType.SERIAL, 1n, SERIAL_RX_BYTES,
+      index === 1 ? 'B' : 'A'), connectionGeneration: 1, frameTicket: index + 1 }))
+    expect(messages.filter(m => m.type === 'serial-terminal')).toEqual([
+      { type: 'serial-terminal', sequence: 3n, text: '温', port: 'A', session: '11'.repeat(16) },
+    ])
+    expect(messages.at(-1)).toMatchObject({ transportDroppedBatches: 0, bufferedSamples: 3 })
+  })
+
+  it.each(['port', 'session'])('discards partial serial bytes across a %s change', change => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 100, channelCount: 1, decoderMode: 'serial-terminal' })
+    decoder.handle({ type: 'serial-port', port: 'A' })
+    decoder.handle({ type: 'frame', buffer: frame(1n, 1, Uint8Array.of(0xe6), StreamType.SERIAL,
+      1n, SERIAL_RX_BYTES, 'A'), connectionGeneration: 1, frameTicket: 1 })
+    if (change === 'port') decoder.handle({ type: 'serial-port', port: 'B' })
+    decoder.handle({ type: 'frame', buffer: frame(2n, 2, new TextEncoder().encode('OK'), StreamType.SERIAL,
+      1n, SERIAL_RX_BYTES, change === 'port' ? 'B' : 'A', '22'.repeat(16)), connectionGeneration: 1, frameTicket: 2 })
+    expect(messages.filter(m => m.type === 'serial-terminal')).toEqual([
+      { type: 'serial-terminal', sequence: 2n, text: 'OK', port: change === 'port' ? 'B' : 'A', session: '22'.repeat(16) },
+    ])
+  })
+
+  it('does not concatenate old session line fragments or decode before selecting a port', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 100, channelCount: 1, decoderMode: 'serial-log' })
+    const send = (seq: number, text: string, session: string) => {
+      const data = new TextEncoder().encode(text)
+      decoder.handle({ type: 'frame', buffer: frame(BigInt(seq), data.length, data, StreamType.SERIAL,
+        1n, SERIAL_RX_BYTES, 'A', session), connectionGeneration: 1, frameTicket: seq })
+    }
+    send(1, 'HIDDEN\n', '11'.repeat(16))
+    decoder.handle({ type: 'serial-port', port: 'A' })
+    send(2, 'old fragment', '11'.repeat(16))
+    send(3, 'NEW\n', '22'.repeat(16))
+    const lines = messages.filter(m => m.type === 'serial-lines')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatchObject({ port: 'A', session: '22'.repeat(16), lines: [{ ascii: 'NEW\n' }] })
+  })
+
   it('incrementally decodes serial RX in terminal mode without TX echo or log output', () => {
     const { decoder, messages } = setup()
     const encoded = new TextEncoder().encode('温度')
     decoder.handle({
       type: 'configure', capacity: 8, channelCount: 1, decoderMode: 'serial-terminal',
     })
+    decoder.handle({ type: 'serial-port', port: 'COM7' })
     decoder.handle({
       type: 'frame', buffer: frame(
         1n, 2, encoded.slice(0, 2), StreamType.SERIAL, 10n, SERIAL_RX_BYTES,
@@ -133,7 +190,7 @@ describe('StreamDecoder worker controller', () => {
     })
 
     expect(messages.filter(message => message.type === 'serial-terminal'))
-      .toEqual([{ type: 'serial-terminal', sequence: 2n, text: '温度' }])
+      .toEqual([{ type: 'serial-terminal', sequence: 2n, text: '温度', port: 'COM7', session: '11'.repeat(16) }])
     expect(messages.some(message => message.type === 'serial-lines')).toBe(false)
     expect(messages.at(-1)).toMatchObject({
       type: 'telemetry', bufferedSamples: 8, acceptedFrames: 3,
@@ -146,6 +203,7 @@ describe('StreamDecoder worker controller', () => {
     decoder.handle({
       type: 'configure', capacity: 1, channelCount: 1, decoderMode: 'serial-log',
     })
+    decoder.handle({ type: 'serial-port', port: 'COM7' })
     decoder.handle({
       type: 'frame', buffer: frame(
         1n, 2, encoder.encode('OK'), StreamType.SERIAL, 10n, SERIAL_RX_BYTES,
@@ -165,11 +223,11 @@ describe('StreamDecoder worker controller', () => {
     const batches = messages.filter(message => message.type === 'serial-lines')
     expect(batches).toEqual([
       {
-        type: 'serial-lines', sequence: 2n,
+        type: 'serial-lines', sequence: 2n, port: 'COM7', session: '11'.repeat(16),
         lines: [{ timestampNs: 10n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
       },
       {
-        type: 'serial-lines', sequence: 3n,
+        type: 'serial-lines', sequence: 3n, port: 'COM7', session: '11'.repeat(16),
         lines: [{ timestampNs: 30n, direction: 'TX', rawHex: 'ABCD', ascii: '��' }],
       },
     ])
@@ -328,6 +386,43 @@ describe('StreamDecoder worker controller', () => {
     decoder.handle({ type: 'waveform-detail', enabled: true })
     send(4n, [5])
     expect(messages.filter(message => message.type === 'waveform-batch')).toHaveLength(1)
+  })
+
+  it('keeps paused history after live wrap, exports it, and releases it on resume/reset', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 3, channelCount: 1, waveformSummaryOnly: true })
+    const metadata = new TextEncoder().encode(JSON.stringify({ version: 1, channels: [{ name: 'a' }] }))
+    decoder.handle({ type: 'frame', buffer: frame(1n, 0, metadata, StreamType.SUPERWATCH, 1n, 0x02), connectionGeneration: 1, frameTicket: 1 })
+    const send = (sequence: bigint, values: number[]) => decoder.handle({
+      type: 'frame', buffer: frame(sequence, values.length, floats(...values), StreamType.SUPERWATCH, sequence * 1_000_000n, 0x01),
+      connectionGeneration: 1, frameTicket: Number(sequence),
+    })
+    send(2n, [0, 1, 2])
+    send(3n, [3]) // freeze a wrapped ring, not just contiguous storage
+    decoder.handle({ type: 'waveform-freeze', frozen: true })
+    send(4n, [4, 5, 6])
+    decoder.handle({ type: 'waveform-capacity', capacity: 2, requestId: 10 })
+    decoder.handle({ type: 'waveform-freeze', frozen: true }) // idempotent, never replace the pause snapshot
+    decoder.handle({ type: 'visible-range', requestId: 1, start: 0, end: 10, pixelWidth: 100 })
+    const envelope = messages.at(-1)
+    if (envelope?.type !== 'render-envelope') throw new Error('expected envelope')
+    expect(Array.from(new Float32Array(envelope.values))).toEqual([1, 2, 3])
+    const retainedTimes = new Float64Array(envelope.times)
+    expect(envelope.frozenStartMs).toBe(retainedTimes[0])
+    expect(envelope.frozenEndMs).toBe(retainedTimes[retainedTimes.length - 1])
+    decoder.handle({ type: 'history-snapshot', requestId: 2 })
+    const snapshot = messages.at(-1)
+    if (snapshot?.type !== 'history-snapshot') throw new Error('expected snapshot')
+    expect(Array.from(new Float32Array(snapshot.values))).toEqual([1, 2, 3])
+    decoder.handle({ type: 'waveform-freeze', frozen: false })
+    decoder.handle({ type: 'history-snapshot', requestId: 3 })
+    const live = messages.at(-1)
+    if (live?.type !== 'history-snapshot') throw new Error('expected live snapshot')
+    expect(Array.from(new Float32Array(live.values))).toEqual([5, 6])
+    decoder.handle({ type: 'waveform-freeze', frozen: true })
+    decoder.handle({ type: 'reset' })
+    decoder.handle({ type: 'history-snapshot', requestId: 4 })
+    expect(messages.at(-1)).toMatchObject({ type: 'history-snapshot', itemCount: 0 })
   })
 
   it('rejects stale metadata, nonfinite samples, bad flags, and reset clears versions', () => {
@@ -533,6 +628,25 @@ describe('StreamDecoder worker controller', () => {
     expect(maxEnvelopePoints).toBeLessThanOrEqual(2 * 320 * channelCount)
     expect(elapsedMs).toBeLessThan(60_000)
   }, 70_000)
+  it('resizes numeric history without resetting frame sequence or accepting invalid capacities', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 4, channelCount: 2 })
+    decoder.handle({ type: 'frame', buffer: frame(7n, 4, floats(1, 10, 2, 20, 3, 30, 4, 40), StreamType.WAVEFORM, 5_000_000n, 1), connectionGeneration: 1, frameTicket: 1 })
+    decoder.handle({ type: 'waveform-capacity', capacity: 2 })
+    expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 2, acceptedFrames: 1, lastSequence: 7n })
+    decoder.handle({ type: 'waveform-capacity', capacity: 8 })
+    for (const capacity of [0, 1, 2.5, 1_000_001, NaN]) {
+      decoder.handle({ type: 'waveform-capacity', capacity })
+      expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_CONFIG' })
+    }
+    decoder.handle({ type: 'history-snapshot', requestId: 1 })
+    const snapshot = messages.at(-1)
+    if (snapshot?.type !== 'history-snapshot') throw new Error('missing snapshot')
+    expect(Array.from(new Float32Array(snapshot.values))).toEqual([3, 30, 4, 40])
+    decoder.handle({ type: 'frame', buffer: frame(8n, 1, floats(5, 50), StreamType.WAVEFORM, 6_000_000n, 1), connectionGeneration: 1, frameTicket: 2 })
+    expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 3, acceptedFrames: 2, lastSequence: 8n, transportDroppedBatches: 0 })
+  })
+
   it('emits each VOFA sample-major batch as a transferable typed envelope', () => {
     const { decoder, messages, transfers } = setup()
     decoder.handle({ type: 'configure', capacity: 16, channelCount: 2 })
@@ -809,6 +923,8 @@ describe('StreamDecoder worker controller', () => {
   it('decodes SystemView records and returns only prefiltered visible intervals', () => {
     const { decoder, messages, transfers } = setup()
     decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
+    expect((decoder as any).systemViewEvents).toBeNull()
+    expect((decoder as any).systemViewIntervals).toBeNull()
     decoder.handle({
       type: 'frame',
       buffer: frame(1n, 4, systemViewRecords(
@@ -834,6 +950,15 @@ describe('StreamDecoder worker controller', () => {
       visible.taskIds, visible.contextTypes, visible.starts, visible.ends,
       visible.startTicks, visible.endTicks,
     ])
+    expect((decoder as any).systemViewEvents.capacity).toBe(8)
+    decoder.handle({ type: 'reset' })
+    expect((decoder as any).systemViewEvents).toBeNull()
+    expect((decoder as any).systemViewIntervals).toBeNull()
+    decoder.handle({ type: 'frame', buffer: frame(1n, 1, systemViewRecords(
+      { kind: 4, taskId: 3, ticks: 100n, timeUs: 100 },
+    ), StreamType.SYSTEMVIEW), connectionGeneration: 2, frameTicket: 1 })
+    decoder.handle({ type: 'visible-range', requestId: 10, start: 0, end: 20, pixelWidth: 100 })
+    expect(messages.at(-1)).toMatchObject({ type: 'systemview-visible', eventCount: 1 })
   })
 
   it('rejects malformed SystemView record payloads', () => {
@@ -1121,6 +1246,35 @@ describe('StreamDecoder worker controller', () => {
       backendDroppedItems: 40,
       backendDroppedBytes: 160,
     })
+  })
+
+  it('keeps the old numeric history when scratch allocation fails during reconfiguration', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
+    decoder.handle({ type: 'frame', buffer: frame(1n, 1, floats(42), StreamType.WAVEFORM, 1_000_000n, 1), connectionGeneration: 1, frameTicket: 1 })
+    const allocation = vi.spyOn(globalThis, 'Int32Array').mockImplementationOnce(function () {
+      throw new RangeError('test allocation failure')
+    } as any)
+    try {
+      decoder.handle({ type: 'configure', capacity: 16, channelCount: 2 })
+      expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_CONFIG' })
+    } finally { allocation.mockRestore() }
+    decoder.handle({ type: 'history-snapshot', requestId: 1 })
+    const snapshot = messages.at(-1)
+    if (snapshot?.type !== 'history-snapshot') throw new Error('missing snapshot')
+    expect(snapshot.channelCount).toBe(1)
+    expect(Array.from(new Float32Array(snapshot.values))).toEqual([42])
+    expect((decoder as any).systemViewEvents).toBeNull()
+    expect((decoder as any).systemViewIntervals).toBeNull()
+  })
+
+  it('acknowledges requested capacities with actual retained capacity on failure', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
+    decoder.handle({ type: 'waveform-capacity', requestId: 4, capacity: 16 })
+    expect(messages.at(-1)).toEqual({ type: 'waveform-capacity-result', requestId: 4, capacity: 16 })
+    decoder.handle({ type: 'waveform-capacity', requestId: 5, capacity: 0 })
+    expect(messages.at(-1)).toMatchObject({ type: 'waveform-capacity-result', requestId: 5, capacity: 16, error: expect.any(String) })
   })
 
   it('rejects invalid configuration and numeric frame layouts as worker errors', () => {

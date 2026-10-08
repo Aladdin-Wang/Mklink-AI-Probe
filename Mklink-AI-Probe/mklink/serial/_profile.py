@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 __all__ = ["ProfileError", "load_profile", "validate_profile", "save_profile", "find_profile"]
@@ -18,12 +19,18 @@ class ProfileError(Exception):
     """Profile loading or validation error."""
 
 
+def _finite_number(value) -> bool:
+    try:
+        return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def _is_hex_string(s: str) -> bool:
-    if not isinstance(s, str) or len(s) == 0 or len(s) % 2 != 0:
+    if not isinstance(s, str) or not s:
         return False
     try:
-        bytes.fromhex(s)
-        return True
+        return bool(bytes.fromhex(s))
     except ValueError:
         return False
 
@@ -47,9 +54,9 @@ def _validate_frame(frame: dict) -> list[str]:
         if not isinstance(lf, dict):
             errors.append("frame.length_field must be a dict")
         else:
-            if "offset" not in lf or not isinstance(lf["offset"], int):
-                errors.append("frame.length_field.offset must be an int")
-            if "size" not in lf or lf.get("size") not in (1, 2):
+            if type(lf.get('offset')) is not int or lf['offset'] < 0:
+                errors.append("frame.length_field.offset must be an int >= 0")
+            if type(lf.get('size')) is not int or lf['size'] not in (1, 2):
                 errors.append("frame.length_field.size must be 1 or 2")
             if "includes_header" not in lf or not isinstance(lf["includes_header"], bool):
                 errors.append("frame.length_field.includes_header must be a bool")
@@ -59,13 +66,13 @@ def _validate_frame(frame: dict) -> list[str]:
         if not isinstance(crc, dict):
             errors.append("frame.crc must be a dict")
         else:
-            if "algorithm" not in crc or crc.get("algorithm") not in _VALID_CRC_ALGORITHMS:
+            if not isinstance(crc.get('algorithm'), str) or crc['algorithm'] not in _VALID_CRC_ALGORITHMS:
                 errors.append(
                     f"frame.crc.algorithm must be one of: {', '.join(sorted(_VALID_CRC_ALGORITHMS))}"
                 )
             if "offset" not in crc or not isinstance(crc["offset"], int):
                 errors.append("frame.crc.offset must be an int")
-            if "scope" not in crc or crc.get("scope") not in _VALID_CRC_SCOPES:
+            if not isinstance(crc.get('scope'), str) or crc['scope'] not in _VALID_CRC_SCOPES:
                 errors.append(
                     f"frame.crc.scope must be one of: {', '.join(sorted(_VALID_CRC_SCOPES))}"
                 )
@@ -85,21 +92,26 @@ def _validate_field(field: dict, index: int) -> list[str]:
         errors.append(f"{prefix}.name is required and must be a string")
     if "offset" not in field or not isinstance(field["offset"], int) or field.get("offset", -1) < 0:
         errors.append(f"{prefix}.offset is required and must be an int >= 0")
-    if "size" not in field or field.get("size") not in _VALID_FIELD_SIZES:
+    if type(field.get('size')) is not int or field['size'] not in _VALID_FIELD_SIZES:
         errors.append(f"{prefix}.size is required and must be one of: 1, 2, 4")
-    if "type" not in field or field.get("type") not in _VALID_FIELD_TYPES:
+    if not isinstance(field.get('type'), str) or field['type'] not in _VALID_FIELD_TYPES:
         errors.append(
             f"{prefix}.type is required and must be one of: {', '.join(sorted(_VALID_FIELD_TYPES))}"
         )
+    elif field.get('size') != {'uint8':1, 'int8':1, 'uint16':2, 'int16':2,
+                              'uint32':4, 'int32':4, 'float32':4}[field['type']]:
+        errors.append(f'{prefix}.size does not match its type')
 
-    if "scale" in field and not isinstance(field["scale"], (int, float)):
-        errors.append(f"{prefix}.scale must be a number")
+    if "scale" in field and not _finite_number(field['scale']):
+        errors.append(f"{prefix}.scale must be a finite number")
     if "unit" in field and not isinstance(field["unit"], str):
         errors.append(f"{prefix}.unit must be a string")
-    if "endian" in field and field["endian"] not in _VALID_ENDIANS:
+    if "endian" in field and (not isinstance(field['endian'], str) or field['endian'] not in _VALID_ENDIANS):
         errors.append(f"{prefix}.endian must be 'little' or 'big'")
 
     if "enum" in field:
+        if field.get('type') == 'float32':
+            errors.append(f'{prefix}.enum requires an integer field')
         enum = field["enum"]
         if not isinstance(enum, dict):
             errors.append(f"{prefix}.enum must be a dict")
@@ -108,6 +120,9 @@ def _validate_field(field: dict, index: int) -> list[str]:
                 if not isinstance(key, str) or not key.startswith("0x"):
                     errors.append(f"{prefix}.enum keys must be hex strings (e.g. '0x01')")
                     break
+            if any(not isinstance(value, (str, int, float, bool)) or
+                   isinstance(value, float) and not math.isfinite(value) for value in enum.values()):
+                errors.append(f'{prefix}.enum values must be finite scalar values')
 
     return errors
 

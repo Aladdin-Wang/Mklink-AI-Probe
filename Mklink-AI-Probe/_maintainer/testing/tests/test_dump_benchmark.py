@@ -9,7 +9,7 @@ def run_frames(monkeypatch,frames,size):
     session.read_frames.return_value=frames
     session.stats={'parser_crc_errors':0,'parser_dropped_frames':0,'firmware_flagged_frames':0}
     monkeypatch.setattr('mklink.dump_memory.DumpMemoryStreamSession',lambda *a,**k:session)
-    ticks=iter([0,.1,2])
+    ticks=iter([0,.1,.1,3])
     monkeypatch.setattr('mklink.dump_benchmark.time.monotonic',lambda:next(ticks))
     dev=SimpleNamespace(_require_connected=Mock(),set_debug_speed=Mock(),
         _bridge=SimpleNamespace(_ctx=SimpleNamespace(swd_clock_hz=20000000)))
@@ -21,7 +21,7 @@ def test_b1_uses_first_block_time_and_counts_only_complete_samples(monkeypatch):
     for ts in (0,100000,200000,300000,400000):
         for block in (0,1):
             frames.append({'flags':0,'timestamp_us':ts+block*1000,'regions':[(0,b'x'*2048)],
-                           'format':'B1','block_index':block,'block_count':2})
+                           'total_size':4096,'block_size':2048,'block_crc_ok':True,'format':'B1','block_index':block,'block_count':2})
     dev,session=run_frames(monkeypatch,frames,4096)
     r=measure(dev,[(0x90000,4096)],duration=1)
     assert r['samples']==3 and r['sample_hz']==10
@@ -31,7 +31,7 @@ def test_b1_uses_first_block_time_and_counts_only_complete_samples(monkeypatch):
 
 def test_missing_b1_block_stops_and_fails(monkeypatch):
     frames=[{'flags':0,'timestamp_us':0,'regions':[(0,b'x'*2048)],
-             'format':'B1','block_index':1,'block_count':2}]
+             'total_size':4096,'block_size':2048,'block_crc_ok':True,'format':'B1','block_index':1,'block_count':2}]
     dev,session=run_frames(monkeypatch,frames,4096)
     with pytest.raises(RuntimeError,match='sequence'): measure(dev,[(0x90000,4096)],duration=1)
     session.stop.assert_called_once()
@@ -43,3 +43,17 @@ def test_invalid_measurement_never_touches_device(kwargs):
     with pytest.raises(ValueError):measure(dev,[(0x90000,4)],**kwargs)
     dev._require_connected.assert_not_called()
     dev.set_debug_speed.assert_not_called()
+
+
+@pytest.mark.parametrize('before_start', [False, True])
+def test_measurement_cooperative_cancel_confirms_stop(monkeypatch, before_start):
+    dev, session = run_frames(monkeypatch, [], 4)
+    checks = iter([before_start, True])
+    with pytest.raises(InterruptedError, match='cancelled'):
+        measure(dev, [(0x90000,4)], duration=1, cancelled=lambda: next(checks))
+    if before_start:
+        session.start.assert_not_called()
+        session.stop.assert_not_called()
+        dev._require_connected.assert_not_called()
+    else:
+        session.stop.assert_called_once()

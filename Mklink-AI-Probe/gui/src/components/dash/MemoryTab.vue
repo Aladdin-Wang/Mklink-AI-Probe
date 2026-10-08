@@ -56,7 +56,8 @@ async function doRead() {
   loading.value = true
   try {
     result.value = await device.readMemory(address.value, size.value) as MemoryReadResult
-    writeAddr.value = result.value.address
+    // A read-back must not redirect the next write away from the user's address.
+    if (!writeAddr.value.trim()) writeAddr.value = result.value.address
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : String(e))
   } finally {

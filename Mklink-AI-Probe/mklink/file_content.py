@@ -6,6 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 import sys
+import tempfile
 
 
 def sha256_file(path: str | Path) -> str:
@@ -76,6 +77,24 @@ def write_verified(path: str | Path, payload: bytes) -> None:
     sync_directory(path.parent)
     if sha256_file(path) != hashlib.sha256(payload).hexdigest():
         raise OSError("Probe-volume file readback does not match source")
+
+
+def write_atomic_chunks(path: str | Path, chunks) -> None:
+    """Save a host export without truncating an existing file on write failure."""
+    path = Path(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.mklink-export-', delete=False) as stream:
+            temporary = Path(stream.name)
+            for chunk in chunks:
+                if stream.write(chunk) != len(chunk):
+                    raise OSError('Incomplete export write')
+            sync_file(stream)
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def copy_verified(source: str | Path, destination: str | Path) -> bool:

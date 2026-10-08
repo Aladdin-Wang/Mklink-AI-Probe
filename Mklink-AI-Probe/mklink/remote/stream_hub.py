@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, Set, Tuple, Union
 
+from mklink.remote.loop_delivery import LoopDelivery
+
 
 BytesLike = Union[bytes, bytearray, memoryview]
 SubscribeCallback = Callable[[Callable[..., int]], None]
@@ -91,6 +93,7 @@ class StreamHub:
         self._owner_loop: Optional[asyncio.AbstractEventLoop] = None
         self._generation = 0
         self._pending_by_generation: Dict[int, int] = {}
+        self._delivery: Optional[LoopDelivery] = None
         self._lock = threading.Lock()
         self._publish_lock = threading.Lock()
         self._last_sequence = 0
@@ -140,7 +143,7 @@ class StreamHub:
                     batch, item_count, flags, stream_type,
                 )
                 queue.protect_initial(published)
-                self._schedule_delivery(published)
+                self._schedule_delivery(published, initial=True)
             return published.sequence
 
         if callback is None:
@@ -255,28 +258,33 @@ class StreamHub:
             payload, sequence, item_count, flags=flags, stream_type=stream_type,
         )
 
-    def _schedule_delivery(self, batch: StreamBatch) -> None:
+    def _schedule_delivery(self, batch: StreamBatch, *, initial=False) -> None:
         with self._lock:
             loop = self._owner_loop
             subscribers = tuple(self._subscribers)
             generation = self._generation
             if loop is None or not subscribers:
                 return
+            delivery = self._delivery
             self._pending_by_generation[generation] = (
                 self._pending_by_generation.get(generation, 0) + 1
             )
-        if loop.is_closed():
-            with self._lock:
-                self._finish_delivery(generation)
-            raise RuntimeError("owner event loop is closed")
-        try:
-            loop.call_soon_threadsafe(
-                self._deliver, generation, batch, subscribers
-            )
-        except Exception:
-            with self._lock:
-                self._finish_delivery(generation)
-            raise
+        if initial:
+            # Subscription runs on the owner loop. Preserve preceding batches
+            # and deliver metadata before admitting new samples for this client.
+            delivery.flush()
+            self._deliver(generation, batch, subscribers)
+        else:
+            delivery.submit((generation, batch, subscribers))
+
+    def _discard_delivery(self, item) -> None:
+        generation, batch, subscribers = item
+        with self._lock:
+            count = sum(queue in self._subscribers for queue in subscribers) if generation == self._generation else 0
+            self._dropped_batches += count
+            self._dropped_items += batch.item_count * count
+            self._dropped_bytes += len(batch) * count
+            self._finish_delivery(generation)
 
     def _deliver(
         self,
@@ -359,6 +367,10 @@ class StreamHub:
         self._generation += 1
         self._owner_loop = loop
         self._pending_by_generation[self._generation] = 0
+        self._delivery = LoopDelivery(
+            loop, self._max_batches_per_client, lambda item: self._deliver(*item),
+            self._discard_delivery,
+        )
 
     def _release_owner_if_idle(self) -> None:
         if self._subscribers:

@@ -31,6 +31,10 @@ class SymbolValueError(SymbolCatalogError):
     """A user value cannot be represented by the selected symbol type."""
 
 
+class SymbolSourceChangedError(SymbolCatalogError):
+    """The loaded catalog no longer describes its source file."""
+
+
 @dataclass(frozen=True)
 class AxfFingerprint:
     size: int
@@ -175,20 +179,54 @@ class SymbolCatalog:
     containers: tuple[SymbolContainerDescriptor, ...] = ()
     _info: DwarfInfo | None = field(default=None, repr=False, compare=False)
     _ram_ranges: tuple[tuple[int, int], ...] = field(default=(), repr=False, compare=False)
+    _map_source: object = field(default=None, repr=False, compare=False)
 
     @cached_property
     def index(self) -> dict[str, SymbolDescriptor]:
         return {item.path: item for item in self.items}
 
-    def by_path(self, path: str) -> SymbolDescriptor | None:
+    @cached_property
+    def _override_roots(self) -> frozenset[str]:
+        return frozenset(item.parent_path for item in self.items
+                         if item.source == "c_override" and item.parent_path)
+
+    def is_overridden(self, path: str) -> bool:
+        return any(path == root or path.startswith(root + ".") or path.startswith(root + "[")
+                   for root in self._override_roots)
+
+    def by_path(self, path: str, *, writable_only: bool = True) -> SymbolDescriptor | None:
         descriptor = self.index.get(path)
         if descriptor is not None:
+            return descriptor if descriptor.writable or not writable_only else None
+        if self.is_overridden(path):
+            return None
+        return self._resolve_descriptor(path, writable_only=writable_only)
+
+    def read_descriptor(self, path: str) -> SymbolDescriptor:
+        descriptor = self.by_path(path, writable_only=False)
+        if descriptor is not None:
             return descriptor
-        return self._resolve_descriptor(path)
+        # A known DWARF aggregate/pointer or an explicitly replaced layout must
+        # never be reinterpreted as a MAP scalar.
+        if (self.is_overridden(path) or (self._info and path in self._info.variables
+                and self._info.variables[path].type_name not in ('', 'unknown'))):
+            raise SymbolCatalogError(f'scalar symbol is unavailable: {path}')
+        try:
+            resolved = self._map_source.resolve(path) if self._map_source else None
+        except SymbolCatalogError:
+            raise
+        except ValueError as error:
+            raise SymbolCatalogError(str(error)) from error
+        if resolved is None:
+            raise SymbolCatalogError(f'scalar symbol is unavailable: {path}')
+        from mklink.watch import TYPE_FORMATS
+        address, type_name, size = resolved
+        fmt = TYPE_FORMATS[type_name][0][-1]
+        kind = 'float' if fmt in 'fd' else 'bool' if fmt == '?' else 'signed' if fmt in 'bhiq' else 'unsigned'
+        return SymbolDescriptor(path, address, type_name, kind, size, writable=False, source='map')
 
     def require(self, path: str, generation: int) -> SymbolDescriptor:
-        if self.fingerprint.sha256 and self.is_stale():
-            raise SymbolCatalogError("AXF content changed; reparse symbols before access")
+        self.require_fresh_source()
         if generation != self.generation:
             raise SymbolCatalogError(
                 f"symbol generation is stale: expected {self.generation}, got {generation}"
@@ -207,18 +245,26 @@ class SymbolCatalog:
         max_elements: int = 4096,
     ) -> tuple[SymbolDescriptor, ...]:
         """Resolve a bounded one-dimensional scalar array slice for snapshots."""
-        node = self._resolve_node(path)
-        if node is None:
-            raise SymbolCatalogError(f"symbol array is unavailable: {path}")
-        shape = self._array_shape(node)
-        if shape is None:
-            raise SymbolCatalogError(f"symbol is not an array: {path}")
-        dimensions, _element_type_offset = shape
-        if len(dimensions) != 1:
-            raise SymbolCatalogError(
-                f"array snapshot requires one dimension: {path}"
-            )
-        total = dimensions[0]
+        if self.is_overridden(path):
+            override = self._override_array(path)
+            if override is None:
+                raise SymbolCatalogError(f"array snapshot requires a scalar one-dimensional array: {path}")
+            total = len(override)
+            descriptor_at = override.__getitem__
+        else:
+            node = self._resolve_node(path)
+            if node is None:
+                raise SymbolCatalogError(f"symbol array is unavailable: {path}")
+            shape = self._array_shape(node)
+            if shape is None:
+                raise SymbolCatalogError(f"symbol is not an array: {path}")
+            dimensions, _element_type_offset = shape
+            if len(dimensions) != 1:
+                raise SymbolCatalogError(
+                    f"array snapshot requires one dimension: {path}"
+                )
+            total = dimensions[0]
+            descriptor_at = lambda index: self._descriptor_from_node(self._array_child(node, index))
         if total <= 0:
             raise SymbolCatalogError(f"symbol array is empty: {path}")
         if not isinstance(start_index, int) or start_index < 0 or start_index >= total:
@@ -237,13 +283,20 @@ class SymbolCatalog:
             )
         descriptors: list[SymbolDescriptor] = []
         for index in range(start_index, start_index + count):
-            descriptor = self._descriptor_from_node(self._array_child(node, index))
+            descriptor = descriptor_at(index)
             if descriptor is None:
                 raise SymbolCatalogError(
                     f"array snapshot elements must be scalar numeric values: {path}"
                 )
             descriptors.append(descriptor)
         return tuple(descriptors)
+
+    def require_fresh_source(self) -> None:
+        if self.is_stale():
+            raise SymbolSourceChangedError(
+                "AXF content changed or is unavailable; explicitly reparse symbols "
+                "and confirm target firmware before variable access"
+            )
 
     def is_stale(self) -> bool:
         try:
@@ -341,6 +394,8 @@ class SymbolCatalog:
                     overlapping=node.overlapping or record.kind == 'union')
                 yield from walk(child, ancestors | {record.offset}, depth + 1)
         for name in sorted(info.variables, key=_natural_path_key):
+            if self.is_overridden(name):
+                continue  # All override leaves were searched in items; never revive DWARF fields.
             node = self._resolve_node(name)
             if node is not None:
                 yield from walk(node)
@@ -366,47 +421,34 @@ class SymbolCatalog:
         offset: int | None = None,
         limit: int = _BROWSE_PAGE_SIZE,
     ) -> tuple[SymbolBrowseNode, ...]:
+        if self.is_overridden(path):
+            children = self._browse_override_children(path)
+            if children:
+                array = self._override_array(path)
+                if array is not None:
+                    return self._browse_array_page(
+                        path, array[0].type_name, array[0].address, len(array),
+                        lambda index: self._leaf_entry(array[index]), offset, limit,
+                    )
+                return children
+            if path in self.index:
+                return ()
+            raise SymbolCatalogError(f"symbol branch is unavailable: {path}")
         node = self._resolve_node(path)
         if node is None or self._info is None:
             raise SymbolCatalogError(f"symbol branch is unavailable: {path}")
-        override_children = self._browse_override_children(path)
-        if override_children:
-            return override_children
 
         array = self._array_shape(node)
         if array is not None:
             dimensions, _element_type_offset = array
-            direct_count = dimensions[0]
-            page_size = max(1, min(int(limit), _BROWSE_PAGE_SIZE))
-            if offset is None and direct_count > page_size:
-                return tuple(
-                    SymbolBrowseNode(
-                        key=f"{node.path}::range:{start}:{min(start + page_size, direct_count) - 1}",
-                        path=node.path,
-                        label=f"[{start}..{min(start + page_size, direct_count) - 1}]",
-                        kind="range",
-                        type_name=node.type_name,
-                        size=0,
-                        address=node.address,
-                        child_count=min(page_size, direct_count - start),
-                        range_start=start,
-                        range_end=min(start + page_size, direct_count) - 1,
-                    )
-                    for start in range(0, direct_count, page_size)
-                )
-            start = max(0, int(offset or 0))
-            stop = min(direct_count, start + page_size)
-            if start >= direct_count:
-                return ()
-            children = (
-                self._browse_entry(self._array_child(node, index))
-                for index in range(start, stop)
+            return self._browse_array_page(
+                node.path, node.type_name, node.address, dimensions[0],
+                lambda index: self._browse_entry(self._array_child(node, index)), offset, limit,
             )
-            return tuple(child for child in children if child is not None)
 
         record = self._record_for(node)
         if record is None:
-            return self._browse_override_children(path)
+            return ()
         children: list[SymbolBrowseNode] = []
         for member in record.members:
             if member.bit_size is not None or not member.name:
@@ -423,6 +465,31 @@ class SymbolCatalog:
             if entry is not None:
                 children.append(entry)
         return tuple(children)
+
+    @staticmethod
+    def _browse_array_page(path, type_name, address, total, child_at, offset, limit):
+        page_size = max(1, min(int(limit), _BROWSE_PAGE_SIZE))
+        if offset is None and total > page_size:
+            return tuple(
+                SymbolBrowseNode(
+                    key=f"{path}::range:{start}:{min(start + page_size, total) - 1}",
+                    path=path, label=f"[{start}..{min(start + page_size, total) - 1}]",
+                    kind="range", type_name=type_name, size=0, address=address,
+                    child_count=min(page_size, total - start), range_start=start,
+                    range_end=min(start + page_size, total) - 1,
+                )
+                for start in range(0, total, page_size)
+            )
+        start = max(0, int(offset or 0))
+        children = (child_at(index) for index in range(start, min(total, start + page_size)))
+        return tuple(child for child in children if child is not None)
+
+    def _override_array(self, path: str) -> tuple[SymbolDescriptor, ...] | None:
+        leaves = tuple(item for item in self.items
+                       if item.source == "c_override" and item.path.startswith(path + "["))
+        if not leaves or any(item.path != f"{path}[{index}]" for index, item in enumerate(leaves)):
+            return None
+        return leaves
 
     def _browse_override_children(self, path: str) -> tuple[SymbolBrowseNode, ...]:
         prefix_dot = path + "."
@@ -448,6 +515,7 @@ class SymbolCatalog:
                 children.append(self._leaf_entry(exact))
                 continue
             first = grouped[child_path][0]
+            array = self._override_array(child_path)
             children.append(SymbolBrowseNode(
                 key=child_path,
                 path=child_path,
@@ -456,7 +524,12 @@ class SymbolCatalog:
                 type_name=first.type_name,
                 size=0,
                 address=first.address,
-                child_count=len(grouped[child_path]),
+                child_count=len({
+                    re.match(r"(?:\.[^.[\]]+|\[\d+\])", item.path[len(child_path):]).group(0)
+                    for item in grouped[child_path]
+                }),
+                array_dimensions=(len(array),) if array else (),
+                snapshot_eligible=array is not None,
             ))
         return tuple(children)
 
@@ -466,6 +539,20 @@ class SymbolCatalog:
         *,
         container: SymbolContainerDescriptor | None = None,
     ) -> SymbolBrowseNode | None:
+        if self.is_overridden(node.path):
+            descriptor = self.index.get(node.path)
+            if descriptor is not None:
+                return self._leaf_entry(descriptor)
+            children = self._browse_override_children(node.path)
+            if not children:
+                return None
+            array = self._override_array(node.path)
+            return SymbolBrowseNode(
+                key=node.path, path=node.path, label=_path_label(node.path), kind="branch",
+                type_name=node.type_name, size=node.size, address=node.address,
+                child_count=len(children), array_dimensions=(len(array),) if array else (),
+                snapshot_eligible=array is not None,
+            )
         if container is not None:
             return SymbolBrowseNode(
                 key=node.path,
@@ -517,20 +604,6 @@ class SymbolCatalog:
                     address=node.address,
                     child_count=readable_members,
                 )
-        if any(
-            item.source == "c_override"
-            and (item.path.startswith(node.path + ".") or item.path.startswith(node.path + "["))
-            for item in self.items
-        ):
-            return SymbolBrowseNode(
-                key=node.path,
-                path=node.path,
-                label=_path_label(node.path),
-                kind="branch",
-                type_name=node.type_name,
-                size=node.size,
-                address=node.address,
-            )
         return None
 
     @staticmethod
@@ -546,17 +619,20 @@ class SymbolCatalog:
             descriptor=descriptor,
         )
 
-    def _resolve_descriptor(self, path: str) -> SymbolDescriptor | None:
-        node = self._resolve_node(path)
-        return self._descriptor_from_node(node) if node is not None else None
+    def _resolve_descriptor(self, path: str, *, writable_only: bool = True) -> SymbolDescriptor | None:
+        node = self._resolve_node(path, writable_only=writable_only)
+        return self._descriptor_from_node(node, writable_only=writable_only) if node is not None else None
 
-    def _descriptor_from_node(self, node: _ResolvedNode) -> SymbolDescriptor | None:
+    def _descriptor_from_node(self, node: _ResolvedNode, *, writable_only: bool = True) -> SymbolDescriptor | None:
         if self._info is None:
             return None
         spec = _resolve_scalar_spec(
             self._info, node.type_offset, type_name=node.type_name, size=node.size,
         )
-        if spec is None or not self._in_ram(node.address, spec.size):
+        if spec is None or not 0 <= node.address <= (1 << 32) - spec.size:
+            return None
+        writable = self._in_ram(node.address, spec.size)
+        if writable_only and not writable:
             return None
         return SymbolDescriptor(
             path=node.path,
@@ -564,14 +640,14 @@ class SymbolCatalog:
             type_name=node.type_name,
             scalar_kind=spec.kind,
             size=spec.size,
-            writable=True,
+            writable=writable,
             enum_values=spec.enum_values,
             enum_signed=spec.enum_signed,
             parent_path=_parent_path(node.path),
             overlapping=node.overlapping,
         )
 
-    def _resolve_node(self, path: str) -> _ResolvedNode | None:
+    def _resolve_node(self, path: str, *, writable_only: bool = True) -> _ResolvedNode | None:
         if self._info is None:
             return None
         tokens = _parse_symbol_path(path)
@@ -590,7 +666,7 @@ class SymbolCatalog:
             type_offset=variable.type_offset,
             size=variable.size,
         )
-        if not self._in_ram(node.address, node.size):
+        if writable_only and not self._in_ram(node.address, node.size):
             return None
         for value, kind in tokens[1:]:
             if kind == "index":
@@ -718,7 +794,10 @@ class SymbolCatalog:
         generation: int = 1,
         ram_ranges: Iterable[tuple[int, int]] = ((0x20000000, 0x40000000),),
         max_leaves_per_root: int = 256,
+        project_root: str | None = None,
     ) -> "SymbolCatalog":
+        from mklink.watch import MapSourceSnapshot
+        map_source = MapSourceSnapshot.load(axf_path, project_root)
         ranges = tuple((int(start), int(end)) for start, end in ram_ranges)
         descriptors: list[SymbolDescriptor] = []
         containers: list[SymbolContainerDescriptor] = []
@@ -891,6 +970,7 @@ class SymbolCatalog:
             containers=tuple(sorted(containers, key=lambda item: _natural_path_key(item.path))),
             _info=info,
             _ram_ranges=ranges,
+            _map_source=map_source,
         )
 
     def with_c_layout(
@@ -901,6 +981,8 @@ class SymbolCatalog:
         *,
         generation: int | None = None,
     ) -> "SymbolCatalog":
+        if not self._in_ram(base_address, layout.size):
+            raise SymbolCatalogError("C layout must fit entirely within a writable memory range")
         prefix_dot = root_path + "."
         prefix_index = root_path + "["
         retained = tuple(
@@ -935,6 +1017,7 @@ class SymbolCatalog:
             containers=tuple(item for item in self.containers if item.path != root_path),
             _info=self._info,
             _ram_ranges=self._ram_ranges,
+            _map_source=self._map_source,
         )
 
 

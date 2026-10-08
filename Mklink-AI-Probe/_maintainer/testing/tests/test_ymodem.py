@@ -14,6 +14,7 @@ from mklink.serial._ymodem import (
     SOH,
     STX,
     YModemCancelled,
+    YModemError,
     YModemSender,
     YModemTimeout,
     crc16_xmodem,
@@ -189,3 +190,69 @@ def test_sender_rejects_header_that_cannot_fit():
 
     with pytest.raises(ValueError, match="128-byte header"):
         sender.send(io.BytesIO(b"x"), "x" * 128, 1)
+
+
+@pytest.mark.parametrize('size', [1, 1024, 1025])
+def test_sender_boundary_payload_and_padding(size):
+    import io
+    receiver = Receiver()
+    raw = bytes(i % 256 for i in range(size))
+    YModemSender(receiver.read, receiver.write).send(io.BytesIO(raw), 'app.bin', size)
+    packets = [p for p in receiver.writes if p[:1] == bytes((STX,))]
+    assert len(packets) == (size + 1023) // 1024
+    transmitted = b''.join(payload(p) for p in packets)
+    assert transmitted[:size] == raw
+    assert transmitted[size:] == bytes((CPMEOF,)) * (len(transmitted) - size)
+    for packet in packets:
+        assert_packet_crc(packet)
+
+
+def test_sender_ack_timeout_retransmits_same_packet_before_advancing():
+    import io
+    receiver = Receiver()
+    dropped = False
+    def write(packet):
+        nonlocal dropped
+        receiver.write(packet)
+        if packet[:1] == bytes((STX,)) and not dropped:
+            dropped = True
+            receiver.responses.clear()
+    progress = []
+    sender = YModemSender(receiver.read, write, packet_timeout=.001,
+                         retries=1, progress_callback=progress.append)
+    raw = b'a' * 1024 + b'b'
+    sender.send(io.BytesIO(raw), 'app.bin', len(raw))
+    packets = [p for p in receiver.writes if p[:1] == bytes((STX,))]
+    assert [p[1] for p in packets] == [1, 1, 2]
+    assert packets[0] == packets[1]
+    assert payload(packets[2])[0:1] == b'b'
+    assert progress[-1].phase == 'completed'
+
+
+def test_sender_truncated_source_cancels_without_sending_fabricated_tail():
+    import io
+    receiver = Receiver()
+    progress = []
+    sender = YModemSender(receiver.read, receiver.write, progress_callback=progress.append)
+    with pytest.raises(YModemError, match='source ended'):
+        sender.send(io.BytesIO(b'a' * 1024), 'app.bin', 1025)
+    assert len([p for p in receiver.writes if p[:1] == bytes((STX,))]) == 1
+    assert receiver.writes[-1] == bytes((CAN, CAN))
+    assert receiver.eot_count == 0
+    assert all(p.phase != 'completed' for p in progress)
+
+
+def test_sender_cancellation_between_blocks_prevents_next_write():
+    import io
+    receiver = Receiver()
+    cancel = threading.Event()
+    def progress(snapshot):
+        if snapshot.sent_bytes == 1024:
+            cancel.set()
+    sender = YModemSender(receiver.read, receiver.write, cancel_event=cancel,
+                         progress_callback=progress)
+    with pytest.raises(YModemCancelled):
+        sender.send(io.BytesIO(b'a' * 1025), 'app.bin', 1025)
+    assert len([p for p in receiver.writes if p[:1] == bytes((STX,))]) == 1
+    assert receiver.writes[-1] == bytes((CAN, CAN))
+    assert receiver.eot_count == 0

@@ -10,6 +10,7 @@ import math
 import re
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Mapping, TypedDict
 from urllib.parse import urlsplit
@@ -278,7 +279,28 @@ class RemoteClient:
         with self._lock:
             if self._negotiated is None or self._websocket is None:
                 raise RemoteConnectionError("Remote client isn't connected")
-            return self._exchange_locked(method, params)
+            if method == 'offline.deploy':
+                descriptor = self._negotiated.capabilities.get('flash.offline')
+                if descriptor is not None and str(descriptor.version) != '2':
+                    raise RemoteConnectionError('Remote service does not support journaled deployment; update it before deploying')
+                params = dict(params)
+                params.setdefault('request_id', uuid.uuid4().hex)
+            try:
+                return self._exchange_locked(method, params)
+            except RemoteClientError as error:
+                if method == 'offline.deploy':
+                    error.request_id = params['request_id']
+                    if isinstance(error, RemoteProtocolError):
+                        error.data.setdefault('request_id', params['request_id'])
+                    error.args = (str(error) + '; query request_id=' + str(params['request_id']) + '; do not replay',)
+                raise
+
+    def job_status(self, *, job_id=None, request_id=None):
+        """Read a retained task without submitting or replaying target work."""
+        if (job_id is None) == (request_id is None):
+            raise ValueError('Supply exactly one job_id or request_id')
+        return self.call('jobs.status', **({'job_id': job_id} if job_id is not None
+                                          else {'request_id': request_id}))
 
     def call_raw(self, method: str, **params: Any) -> Any:
         """Compatibility alias that remains fully public."""
@@ -423,15 +445,22 @@ class RemoteClient:
     def rtt_start(self, addr: str | None = None, **params: Any) -> dict[str, Any]:
         return self.call("rtt_start", addr=addr, **params)
 
-    def rtt_read(self, duration: float = 10.0) -> str:
-        return str(self.call("rtt_read", duration=duration))
+    def rtt_read(self, timeout: float = 1.0) -> dict[str, Any]:
+        return self.call("rtt_read", timeout=timeout)
 
-    def rtt_write(self, data: bytes | str) -> bool:
-        text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data
-        return bool(self.call("rtt_write", data=text))
+    def rtt_read_channel(self, channel: int, cursor: int = 0) -> dict[str, Any]:
+        """Read bounded raw history; retain each channel's returned cursor and loss counts."""
+        return self.call("rtt.read_channel", channel=channel, cursor=cursor)
 
-    def rtt_stop(self) -> str:
-        return str(self.call("rtt_stop"))
+    def rtt_write(self, data: bytes | str, *, channel: int | None = None) -> bool:
+        encoded = data if isinstance(data, bytes) else data.encode('utf-8')
+        arguments = {'data_hex': data.hex()} if isinstance(data, bytes) else {'data': data}
+        if channel is not None:
+            arguments['channel'] = channel
+        return self.call("rtt_write", **arguments)['sent_bytes'] == len(encoded)
+
+    def rtt_stop(self) -> dict[str, Any]:
+        return self.call("rtt_stop")
 
     def wait_for_rtt(self, pattern: str | None = None, *, timeout: float = 10.0) -> str:
         import re
@@ -439,8 +468,12 @@ class RemoteClient:
         deadline = time.monotonic() + timeout
         collected = ""
         while time.monotonic() < deadline:
-            chunk = self.rtt_read(min(2.0, max(0.0, deadline - time.monotonic())))
-            collected += chunk
+            page = self.rtt_read(min(2.0, max(0.0, deadline - time.monotonic())))
+            if page.get('error') or page.get('dropped_bytes') or page.get('missing_batches'):
+                raise RemoteClientError('RTT data was lost or the subscription failed; inspect rtt_read diagnostics')
+            collected += page['text']
+            if len(collected.encode('utf-8')) > 1024 * 1024:
+                raise RemoteClientError('wait_for_rtt exceeded 1 MiB; use bounded rtt_read calls')
             if pattern and (pattern in collected or re.search(pattern, collected)):
                 break
         return collected

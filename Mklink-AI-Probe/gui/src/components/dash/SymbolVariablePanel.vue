@@ -81,7 +81,7 @@
     <div v-if="pinsError" class="stale-banner" role="alert">{{ pinsError }}</div>
 
     <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
-    <div v-else-if="sourceReloaded" class="stale-banner">{{ tr('符号已重载，采集已停止。确认目标已下载对应固件后再启动。', 'Symbols reloaded and acquisition stopped. Confirm matching firmware on the target before restarting.') }}</div>
+    <div v-else-if="sourceReloaded" class="stale-banner">{{ tr('符号已重载；请确认目标上的固件与当前符号文件一致。', 'Symbols reloaded. Confirm that the target firmware matches the current symbol file.') }}</div>
     <SetupHint
       v-if="!deviceConnected"
       kind="device"
@@ -473,12 +473,16 @@ const snapshotCount = ref('128')
 let searchExpansionSnapshot: Set<string> | null = null
 let searchRequest = 0
 
+const browseNodes = computed(() => [
+  ...catalog.browseRoots.value,
+  ...[...catalog.browseChildren.value.values()].flat(),
+])
 const tree = computed(() => {
   if (query.value.trim()) {
-    return buildSymbolTree(searchItems.value, catalog.containers.value)
+    return buildSymbolTree(searchItems.value, catalog.containers.value, browseNodes.value)
   }
   if (selectedOnly.value) {
-    return buildSymbolTree([...selectedDescriptors.value.values()])
+    return buildSymbolTree([...selectedDescriptors.value.values()], [], browseNodes.value)
   }
   return buildBrowseTree(catalog.browseRoots.value, catalog.browseChildren.value)
 })

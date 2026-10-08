@@ -51,7 +51,7 @@ IAR 工程优先用 `IarBuild.exe <project.ewp> -build <configuration>` 编译�
 
 在线烧录使用 `/online-flash` 页面或 `/api/online-flash` REST 工作流，不要用原生串口 `python -m mklink flash` 冒充 pyOCD：
 
-1. 启动 `python -m mklink serve --host 127.0.0.1 --port 8765 --project-root <project>`。
+1. 启动 `python -m mklink gui --no-browser --host 127.0.0.1 --port 8765 --project-root <project>`。
 2. `GET /api/online-flash/probes` 选择 MKLink CMSIS-DAP 探针。
 3. `GET /api/online-flash/targets` 确认精确器件。
 4. `POST /api/online-flash/images/inspect` 上传并检查 HEX/BIN；BIN 必须给基址。
@@ -77,7 +77,7 @@ IAR 工程优先用 `IarBuild.exe <project.ewp> -build <configuration>` 编译�
 
 自动选择优先使用覆盖固件地址范围且标记为默认的内置算法。只有内置源没有精确器件/地址覆盖时才查询已安装 Pack 和自定义目录。用户显式提供 `--flm` 或在界面选择算法时，显式选择覆盖自动顺序；执行前仍校验文件后缀、范围和摘要。
 
-HPM 型号是固定例外：只使用设备端 HPM ROM API 和 BIN，不发现、下载或加载任何 FLM/Pack。
+HPM 型号是固定例外：只使用设备端 HPM ROM API，不发现、下载或加载任何 FLM/Pack。支持 BIN；新版 V4 固件还支持 HEX，使用文件内绝对地址，由工具检查能力并规范化文件。
 
 ## FLM 兼容性
 

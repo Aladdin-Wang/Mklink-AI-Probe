@@ -5,15 +5,18 @@ import type { StreamTelemetry, WorkerOutput } from '../workers/streamDecoder.wor
 import type { DecoderMode } from '../workers/streamDecoder.worker'
 import { API_BASE } from '../lib/runtimeEndpoint'
 
-export type BinaryStreamName = 'systemview' | 'vofa' | 'rtt' | 'rtt-terminal' | 'serial' | 'superwatch'
+export type BinaryStreamName = 'systemview' | 'vofa' | 'rtt' | 'rtt-terminal' | `rtt-${number}` | `rtt-terminal-${number}` | 'serial' | 'superwatch'
 
 export interface BinaryStreamClient {
   start(): void
   stop(): void
   reset(): void
   configure(capacity: number, channelCount: number): void
+  resizeWaveform?(capacity: number, requestId?: number): void
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void
+  selectSerialPort?(port: string): void
   setWaveformDetail?(enabled: boolean): void
+  setWaveformFrozen?(frozen: boolean): void
   requestHistorySnapshot?(requestId: number): void
   dispose(): void
 }
@@ -69,10 +72,33 @@ export function useBinaryStream(
   const serialLines = shallowRef<SerialLines | null>(null)
   const serialTerminal = shallowRef<SerialTerminal | null>(null)
   const error = ref<string | null>(null)
+  let configuredCapacity = options.capacity
+  let capacityRequestId = 0
+  let pendingCapacity: { id: number; resolve: () => void; reject: (error: Error) => void } | null = null
+  let deferredChannelCount: number | null = null
+  let capacityTimer: ReturnType<typeof setTimeout> | null = null
+  let workerFailed = false
+
+  function clearCapacityTimer(): void {
+    if (capacityTimer !== null) clearTimeout(capacityTimer)
+    capacityTimer = null
+  }
+
+  function rejectPendingCapacity(reason: string): void {
+    clearCapacityTimer()
+    const pending = pendingCapacity
+    pendingCapacity = null
+    deferredChannelCount = null
+    pending?.reject(new Error(reason))
+  }
 
   function onState(next: StreamClientState): void {
     state.value = next
     if (next.error) error.value = next.error
+    if (next.fatal) {
+      workerFailed = true
+      rejectPendingCapacity(next.error ?? 'Stream worker failed; reload this view')
+    }
   }
 
   // Full samples remain in the Worker. Only coalesce UI summaries, preserving
@@ -116,6 +142,21 @@ export function useBinaryStream(
       if (message.type === 'channels' || message.type === 'superwatch-metadata') flushPresentation()
     }
     switch (message.type) {
+      case 'waveform-capacity-result': {
+        if (pendingCapacity?.id !== message.requestId) break
+        const pending = pendingCapacity
+        pendingCapacity = null
+        clearCapacityTimer()
+        configuredCapacity = message.capacity
+        if (message.error) pending.reject(new Error(message.error))
+        else pending.resolve()
+        if (deferredChannelCount !== null) {
+          const count = deferredChannelCount
+          deferredChannelCount = null
+          configure(count)
+        }
+        break
+      }
       case 'telemetry':
         telemetry.value = message
         break
@@ -147,10 +188,10 @@ export function useBinaryStream(
         superwatchMetadata.value = message
         break
       case 'serial-lines':
-        serialLines.value = message
+        if (message.port === selectedSerialPort) serialLines.value = message
         break
       case 'serial-terminal':
-        serialTerminal.value = message
+        if (message.port === selectedSerialPort) serialTerminal.value = message
         break
       case 'error':
         error.value = message.message
@@ -158,6 +199,7 @@ export function useBinaryStream(
     }
   }
 
+  let selectedSerialPort = ''
   const createClient = options.createClient ?? (clientOptions => new StreamClient(clientOptions))
   const client = createClient({
     url: streamUrl(stream),
@@ -170,6 +212,13 @@ export function useBinaryStream(
     onState,
     onWorkerMessage,
   })
+
+  function selectSerialPort(port: string): void {
+    selectedSerialPort = port
+    serialLines.value = null
+    serialTerminal.value = null
+    client.selectSerialPort?.(port)
+  }
 
   function start(): void {
     error.value = null
@@ -198,7 +247,28 @@ export function useBinaryStream(
     client.reset()
   }
 
+  function resizeWaveform(capacity: number): Promise<void> {
+    if (!Number.isInteger(capacity) || capacity < 2 || capacity > 1_000_000) throw new RangeError('Invalid waveform capacity')
+    if (pendingCapacity) return Promise.reject(new Error('A capacity change is pending'))
+    if (workerFailed) return Promise.reject(new Error('Stream worker unavailable; reload this view'))
+    if (!client.resizeWaveform) return Promise.reject(new Error('Capacity changes are unavailable'))
+    return new Promise((resolve, reject) => {
+      const id = ++capacityRequestId
+      pendingCapacity = { id, resolve, reject }
+      capacityTimer = setTimeout(() => {
+        // The resize may have executed without a reply. Retire this display
+        // worker rather than continue with an unknown capacity or replay it.
+        client.dispose()
+        onState({ phase: 'error', fatal: true, error: 'Capacity confirmation timed out; reload this view' })
+      }, 5000)
+      try { client.resizeWaveform!(capacity, id) }
+      catch (error) { clearCapacityTimer(); pendingCapacity = null; reject(error) }
+    })
+  }
+
   function configure(nextChannelCount: number): void {
+    if (workerFailed) return
+    if (pendingCapacity) { deferredChannelCount = nextChannelCount; return }
     clearPresentation()
     channelCount.value = nextChannelCount
     telemetry.value = null
@@ -211,7 +281,7 @@ export function useBinaryStream(
     superwatchMetadata.value = null
     serialLines.value = null
     serialTerminal.value = null
-    client.configure(options.capacity, nextChannelCount)
+    client.configure(configuredCapacity, nextChannelCount)
   }
 
   function requestVisibleRange(
@@ -227,13 +297,20 @@ export function useBinaryStream(
     client.setWaveformDetail?.(enabled)
   }
 
+  function setWaveformFrozen(frozen: boolean): void {
+    client.setWaveformFrozen?.(frozen)
+  }
+
   function requestHistorySnapshot(requestId: number): void {
     client.requestHistorySnapshot?.(requestId)
   }
 
   if (options.autoStart) start()
 
-  onUnmounted(() => { clearPresentation(); client.dispose() })
+  onUnmounted(() => {
+    rejectPendingCapacity('Viewer closed')
+    clearPresentation(); client.dispose()
+  })
 
   return {
     state: readonly(state),
@@ -255,8 +332,11 @@ export function useBinaryStream(
     stop,
     reset,
     configure,
+    resizeWaveform,
+    selectSerialPort,
     requestVisibleRange,
     setWaveformDetail,
+    setWaveformFrozen,
     requestHistorySnapshot,
   }
 }

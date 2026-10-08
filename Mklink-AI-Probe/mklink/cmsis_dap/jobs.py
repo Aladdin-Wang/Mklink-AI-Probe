@@ -188,7 +188,7 @@ class OnlineFlashJobManager:
         acquired = False
         try:
             acquired = True
-            resources = [ResourceGroup.TARGET_DEBUG]
+            resources = [ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH]
             if hpm_target:
                 resources.append(ResourceGroup.MKLINK_BRIDGE)
             self._resource_manager.acquire_many(
@@ -355,25 +355,18 @@ class OnlineFlashJobManager:
                 acquire_attempted = True
                 from mklink.hpm_config import is_hpm_target
 
-                resources = [ResourceGroup.TARGET_DEBUG]
+                resources = [ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH]
                 if (
                     is_hpm_target(job.request.target_part)
                     or job.request.reset_mode == "power-cycle"
                 ):
                     resources.append(ResourceGroup.MKLINK_BRIDGE)
-                    self._resource_manager.acquire_many(
-                        resources,
-                        owner,
-                        preempt=job.request.preempt_ai,
-                        preempt_user_dashboard=True,
-                    )
-                else:
-                    self._resource_manager.acquire(
-                        ResourceGroup.TARGET_DEBUG,
-                        owner,
-                        preempt=job.request.preempt_ai,
-                        preempt_user_dashboard=True,
-                    )
+                self._resource_manager.acquire_many(
+                    resources,
+                    owner,
+                    preempt=job.request.preempt_ai,
+                    preempt_user_dashboard=True,
+                )
                 with self._condition:
                     cancelled_after_acquire = job.cancel_requested
 
@@ -719,12 +712,12 @@ class OnlineFlashJobManager:
                 (job.completed_actions + fraction) / len(job.request.actions),
             )
             job.updated_at = time.monotonic()
-            completed = min(job.image.size, round(job.image.size * fraction))
+            completed = min(job.image.payload_size, round(job.image.payload_size * fraction))
             self._emit_locked(
                 job,
                 "progress",
                 message=(
-                    f"[PROGRAM] {completed} / {job.image.size} Bytes "
+                    f"[PROGRAM] {completed} / {job.image.payload_size} Bytes "
                     f"({round(fraction * 100)}%)"
                 ),
                 progress=job.total_progress,
@@ -742,12 +735,12 @@ class OnlineFlashJobManager:
                 (job.completed_actions + fraction) / len(job.request.actions),
             )
             job.updated_at = time.monotonic()
-            verified = min(job.image.size, round(job.image.size * fraction))
+            verified = min(job.image.payload_size, round(job.image.payload_size * fraction))
             self._emit_locked(
                 job,
                 "progress",
                 message=(
-                    f"[VERIFY] {verified} / {job.image.size} Bytes "
+                    f"[VERIFY] {verified} / {job.image.payload_size} Bytes "
                     f"({round(fraction * 100)}%)"
                 ),
                 progress=job.total_progress,

@@ -1,6 +1,9 @@
 /* Attribute selectors outrank lazy-loaded viewer :root defaults. */
 html[data-theme] {
   --panel: var(--surface);
+  --font-display: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
   --on-solid: #fff;
   /* Shared by online pages and dialogs teleported to document.body. */
   --of-bg: var(--bg);
@@ -31,13 +34,13 @@ html[data-theme] {
 }
 html[data-theme="dark"] {
   --on-solid: #17191e;
-  --bg: #101216;
-  --surface: #191d24;
+  --bg: #11151b;
+  --surface: #1a2029;
   --input-bg: #11151b;
   --fg: #e4e8ef;
   --muted: #a9b3c1;
   --dim: #939eae;
-  --border: #343c49;
+  --border: #343e4d;
   --border-subtle: #272e39;
   --accent: #ee9677;
   --accent-light: #f5ac91;
@@ -64,3 +67,12 @@ html[data-theme] .waveform-viewer #minimap-wrap { background: var(--chart-bg); }
 html[data-theme="dark"] .btn-primary { color: #17191e; }
 html[data-theme="dark"] .control-toolbar .btn-primary { color: var(--accent); }
 @media (max-width: 900px) { .theme-setting > span { display: none; } }
+
+/* Consistent keyboard affordances across native controls and embedded tools. */
+button, input, select, textarea { font-family: var(--font-body); }
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:disabled { cursor: not-allowed; }
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto!important; animation-duration: .01ms!important; animation-iteration-count: 1!important; transition-duration: .01ms!important; }
+}

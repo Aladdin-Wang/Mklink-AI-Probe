@@ -14,8 +14,8 @@
           <button :class="['tab-btn', { active: tab === 'superwatch' }]" @click="tab = 'superwatch'">SuperWatch</button>
           <button :class="['tab-btn', { active: tab === 'hardfault' }]" @click="tab = 'hardfault'">HardFault</button>
           <button :class="['tab-btn', { active: tab === 'memory' }]" @click="tab = 'memory'">Memory</button>
-          <button :class="['tab-btn', { active: tab === 'serial' }]" @click="tab = 'serial'">{{ tr('串口助手', 'Serial Assistant') }}</button>
-          <button :class="['tab-btn', { active: tab === 'modbus' }]" @click="tab = 'modbus'">Modbus</button>
+          <button :disabled="IS_REMOTE" :class="['tab-btn', { active: tab === 'serial' }]" @click="tab = 'serial'">{{ tr('串口助手', 'Serial Assistant') }}</button>
+          <button :disabled="IS_REMOTE" :class="['tab-btn', { active: tab === 'modbus' }]" @click="tab = 'modbus'">Modbus</button>
           <button :class="['tab-btn', { active: tab === 'systemview' }]" @click="tab = 'systemview'">RTOS Trace</button>
           <button :class="['tab-btn', { active: tab === 'symbols' }]" @click="tab = 'symbols'">{{ tr('符号表', 'Symbols') }}</button>
         </div>
@@ -29,7 +29,7 @@
             type="button"
             class="device-quick-action"
             :class="{ connected: deviceStatus.connected }"
-            :disabled="connecting || disconnecting"
+            :disabled="IS_REMOTE || connecting || disconnecting"
             :title="deviceStatus.connected ? tr('断开 MKLink 设备', 'Disconnect MKLink device') : tr('使用上次成功配置连接', 'Connect with the last successful settings')"
             data-testid="device-quick-action"
             @click="deviceStatus.connected ? quickDisconnect() : quickConnect()"
@@ -42,7 +42,7 @@
           <button
             type="button"
             class="device-quick-action reset-action"
-            :disabled="!deviceStatus.connected || connecting || disconnecting || resetting || rebootingProbe"
+            :disabled="IS_REMOTE || !deviceStatus.connected || connecting || disconnecting || resetting || rebootingProbe"
             :title="tr('重启 MCU', 'Restart MCU')"
             data-testid="mcu-reset-action"
             @click="quickReset"
@@ -54,7 +54,7 @@
           <button
             type="button"
             class="device-quick-action reset-action"
-            :disabled="!deviceStatus.connected || connecting || disconnecting || resetting || rebootingProbe"
+            :disabled="IS_REMOTE || !deviceStatus.connected || connecting || disconnecting || resetting || rebootingProbe"
             :title="tr('重启 MKLink 探针', 'Reboot MKLink probe')"
             data-testid="reboot-probe"
             @click="quickRebootProbe"
@@ -83,8 +83,8 @@
       <HardFaultTab v-if="tab === 'hardfault'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" />
       <MemoryTab v-if="tab === 'memory'" :device-connected="deviceStatus.connected" />
       <SuperWatchTab v-show="tab === 'superwatch'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" :symbol-error="deviceStatus.axf?.error" />
-      <SerialMonitorTab v-show="tab === 'serial'" />
-      <ModbusTab v-show="tab === 'modbus'" />
+      <SerialMonitorTab v-if="!IS_REMOTE" v-show="tab === 'serial'" />
+      <ModbusTab v-if="!IS_REMOTE" v-show="tab === 'modbus'" />
       <SystemViewTab v-show="tab === 'systemview'" :device-connected="deviceStatus.connected" />
       <SymbolsTab v-if="tab === 'symbols'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" :symbol-error="deviceStatus.axf?.error" />
     </div>
@@ -92,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { LoaderCircle, RefreshCw, RotateCcw, Unplug, Usb, X } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMklinkApi } from '../composables/useMklinkApi'
@@ -108,6 +108,7 @@ import SerialMonitorTab from '../components/dash/SerialMonitorTab.vue'
 import ModbusTab from '../components/dash/ModbusTab.vue'
 import SystemViewTab from '../components/dash/SystemViewTab.vue'
 import { tr } from '../composables/useLanguage'
+import { IS_REMOTE } from '../lib/runtimeEndpoint'
 
 const route = useRoute()
 const router = useRouter()
@@ -124,7 +125,13 @@ const {
 const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
 const dashboardTabs = new Set(['rtt', 'superwatch', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
-const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) ? routeTab : 'rtt')
+const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) && (!IS_REMOTE || !['serial', 'modbus'].includes(routeTab)) ? routeTab : 'rtt')
+watch(() => route.query.tab, value => {
+  if (typeof value === 'string' && dashboardTabs.has(value) && (!IS_REMOTE || !['serial', 'modbus'].includes(value))) tab.value = value
+})
+watch(tab, value => {
+  if (route.query.tab !== value) void router.replace({ query: { ...route.query, tab: value } })
+})
 const resetting = ref(false)
 const rebootingProbe = ref(false)
 

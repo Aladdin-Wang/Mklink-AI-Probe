@@ -275,7 +275,7 @@ describe('SymbolVariablePanel', () => {
       await flushPromises()
       expect(mocks.refreshStatus).toHaveBeenCalledOnce()
       expect(mocks.ensureLoaded).toHaveBeenCalledTimes(2)
-      expect(wrapper.text()).toContain('符号已重载，采集已停止')
+    expect(wrapper.text()).toContain('符号已重载；请确认目标上的固件与当前符号文件一致')
       wrapper.unmount()
       await vi.advanceTimersByTimeAsync(4000)
       expect(mocks.refreshStatus).toHaveBeenCalledOnce()
@@ -570,7 +570,7 @@ describe('SymbolVariablePanel', () => {
     wrapper.unmount()
   })
 
-  it('configures a bounded array snapshot without changing element selection', async () => {
+  it.each([false, true])('configures a bounded array snapshot (search=%s) without changing element selection', async (search) => {
     mocks.browseRoots.value = [{
       key: 'samples', path: 'samples', label: 'samples', kind: 'branch',
       type_name: 'int16_t[]', size: 512 * 2, address: 0x20001000,
@@ -586,6 +586,11 @@ describe('SymbolVariablePanel', () => {
     })
     await flushPromises()
 
+    if (search) {
+      mocks.searchSymbols.mockResolvedValue([{ ...catalogItems[2], path: 'samples[0]', parent_path: 'samples' }])
+      await wrapper.get('[data-testid="variable-search"]').setValue('samples')
+      await flushPromises()
+    }
     await wrapper.get('[data-testid="snapshot-samples"]').trigger('click')
     expect(wrapper.get('[data-testid="array-snapshot-modal"]').exists()).toBe(true)
     await wrapper.get('[data-testid="array-snapshot-start"]').setValue('64')

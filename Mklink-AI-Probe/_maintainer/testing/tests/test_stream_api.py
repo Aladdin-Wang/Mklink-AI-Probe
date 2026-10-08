@@ -39,12 +39,13 @@ def test_create_app_has_an_independent_typed_stream_registry():
     assert first.state.stream_registry is not second.state.stream_registry
     assert set(first.state.stream_registry) == {
         "systemview", "vofa", "rtt", "rtt-terminal", "serial", "superwatch",
-    }
+    } | {f"{prefix}-{ch}" for prefix in ("rtt", "rtt-terminal") for ch in range(8)}
     assert first.state.stream_types == {
         "systemview": StreamType.SYSTEMVIEW,
         "vofa": StreamType.WAVEFORM,
         "rtt": StreamType.RTT_RAW,
         "rtt-terminal": StreamType.RTT_RAW,
+        **{f"{prefix}-{ch}": StreamType.RTT_RAW for prefix in ("rtt", "rtt-terminal") for ch in range(8)},
         "serial": StreamType.SERIAL,
         "superwatch": StreamType.SUPERWATCH,
     }
@@ -63,6 +64,8 @@ def test_create_app_has_an_independent_typed_stream_registry():
         ("vofa", StreamType.WAVEFORM),
         ("rtt", StreamType.RTT_RAW),
         ("rtt-terminal", StreamType.RTT_RAW),
+        ("rtt-1", StreamType.RTT_RAW),
+        ("rtt-terminal-7", StreamType.RTT_RAW),
         ("serial", StreamType.SERIAL),
         ("superwatch", StreamType.SUPERWATCH),
     ],
@@ -341,3 +344,58 @@ def test_send_failure_unsubscribes_client(monkeypatch):
 
     asyncio.run(exercise())
     assert hub.stats().active_clients == 0
+
+@pytest.mark.parametrize('state', ['idle', 'blocked-send', 'send-error', 'cancelled'])
+def test_disconnect_finishes_subscriber_without_waiting_for_send(monkeypatch, state):
+    from mklink.remote.stream_api import stream_websocket
+    from mklink.remote.stream_hub import StreamHub
+
+    async def scenario():
+        baseline = asyncio.all_tasks()
+        received = asyncio.Queue()
+        sending = asyncio.Event()
+        hub = StreamHub(max_batches_per_client=4)
+        other = hub.subscribe()
+        class Peer:
+            calls = 0
+            async def accept(self): pass
+            async def receive(self): return await received.get()
+            async def send_bytes(self, data):
+                self.calls += 1
+                if self.calls > 1:
+                    sending.set()
+                    if state == 'send-error': raise OSError('peer reset')
+                    await asyncio.Event().wait()
+        peer = Peer()
+        monkeypatch.setattr('mklink.remote.stream_api.HEARTBEAT_INTERVAL_SECONDS', 30)
+        task = asyncio.create_task(stream_websocket(peer, 'rtt', {'rtt': hub}, {'rtt': StreamType.RTT_RAW}, None))
+        try:
+            for _ in range(20):
+                if hub.stats().active_clients == 2: break
+                await asyncio.sleep(0)
+            assert hub.stats().active_clients == 2
+            if state != 'idle':
+                hub.publish(b'before', item_count=1)
+                await asyncio.wait_for(sending.wait(), .5)
+                other.get_nowait()
+                other.task_done()
+            if state == 'cancelled':
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            else:
+                received.put_nowait({'type': 'websocket.disconnect', 'code': 1006})
+                await asyncio.wait_for(task, .5)
+            assert hub.stats().active_clients == 1
+            hub.publish(b'after', item_count=1)
+            batch = await asyncio.wait_for(other.get(), .5)
+            assert batch.payload == b'after'
+            other.task_done()
+            await asyncio.sleep(0)
+            assert asyncio.all_tasks() == baseline
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            hub.unsubscribe(other)
+    asyncio.run(scenario())

@@ -28,18 +28,15 @@
       {{ deviceStatus.connected ? tr('已连接', 'Connected') : tr('未连接', 'Disconnected') }}
     </span>
     <span v-if="deviceStatus.idcode" class="badge badge-info">{{ deviceStatus.idcode }}</span>
-    <span v-if="wsConnected" class="badge badge-warn">WS</span>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useMklinkApi } from '../composables/useMklinkApi'
-import { useMklinkWs } from '../composables/useMklinkWs'
 import { useBackendHealth } from '../composables/useBackendHealth'
 import { tr } from '../composables/useLanguage'
 
 const { deviceStatus } = useMklinkApi()
-const { wsConnected } = useMklinkWs()
 const { backendState, backendPort, isTauri, restart } = useBackendHealth()
 
 async function handleRestart() {

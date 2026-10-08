@@ -667,7 +667,7 @@ class HpmRomBackend:
     ) -> None:
         with self._lock:
             device = self._require_device()
-            path, base = self._validated_bin(image)
+            path, base = self._validated_image(image)
             try:
                 flash_options = {
                     "target_part": self._target,
@@ -700,18 +700,29 @@ class HpmRomBackend:
     ) -> None:
         with self._lock:
             device = self._require_device()
-            path, base = self._validated_bin(image)
+            path, base = self._validated_image(image)
             try:
                 with path.open("rb") as stream:
                     offset = 0
                     total = path.stat().st_size
+                    if image.format.casefold() == "hex":
+                        from mklink.hpm_image import decode_hpm_hex
+                        _segments, chunks = decode_hpm_hex(path)
+                        total = sum(len(payload) for _, payload in chunks)
+                        blocks = (
+                            (segment.start + start, payload[start:start + self._verify_chunk_size])
+                            for segment, payload in chunks
+                            for start in range(0, len(payload), self._verify_chunk_size)
+                        )
+                    else:
+                        blocks = (
+                            (base + index * self._verify_chunk_size, payload)
+                            for index, payload in enumerate(iter(lambda: stream.read(self._verify_chunk_size), b""))
+                        )
                     if progress_callback is not None:
                         progress_callback(0.0)
-                    while True:
-                        expected = stream.read(self._verify_chunk_size)
-                        if not expected:
-                            break
-                        actual = self.read_memory(base + offset, len(expected))
+                    for address, expected in blocks:
+                        actual = self.read_memory(address, len(expected))
                         if actual != expected:
                             mismatch = next(
                                 (index for index, pair in enumerate(zip(expected, actual)) if pair[0] != pair[1]),
@@ -720,7 +731,7 @@ class HpmRomBackend:
                             raise FlashError(
                                 FlashErrorCode.VERIFY_FAIL,
                                 "HPM Flash verification failed",
-                                {"address": base + offset + mismatch},
+                                {"address": address + mismatch},
                             )
                         offset += len(expected)
                         if progress_callback is not None:
@@ -826,12 +837,16 @@ class HpmRomBackend:
         return self._device
 
     @staticmethod
-    def _validated_bin(image: ImageInspection) -> Tuple[Path, int]:
-        if image.format.casefold() != "bin":
-            raise FlashError(FlashErrorCode.FILE_FORMAT_ERROR, "HPM ROM API only supports BIN firmware")
+    def _validated_image(image: ImageInspection) -> Tuple[Path, int | None]:
+        if image.format.casefold() not in ("bin", "hex"):
+            raise FlashError(FlashErrorCode.FILE_FORMAT_ERROR, "HPM ROM API supports BIN and HEX firmware")
         path = Path(image.file_path)
         if not path.is_file():
             raise FlashError(FlashErrorCode.FILE_NOT_FOUND, "firmware snapshot file was not found")
+        if image.format.casefold() == "hex":
+            from mklink.hpm_image import decode_hpm_hex
+            decode_hpm_hex(path)
+            return path, None
         if image.base_address is None:
             raise FlashError(FlashErrorCode.BIN_ADDRESS_MISSING, "HPM BIN firmware requires a base address")
         from mklink.hpm_config import normalize_hpm_address
@@ -1253,21 +1268,11 @@ class PyOcdBackend:
                 # with under-reset selected. For example, STM32F1's algorithm
                 # clears Flash latency and assumes reset clocks; running it
                 # after a 72 MHz application can make Flash read back as FF.
-                # The built-in nRF54L algorithm has the same execution-state
-                # assumptions as an imported FLM.  If the application is
-                # running when an online job starts, invoking Init directly
-                # can leave the target in a stale context and pyOCD reports
-                # ``flash init timed out``.  Reset and halt once before any
-                # destructive operation, just as we already do for FLMs.
-                nrf54_builtin = str(session_target).casefold() in {
-                    "nrf54l",
-                    "nrf54lm20a",
-                }
-                self._algorithm_reset_required = (
-                    bool(resolved_flms or resolved_pack)
-                    or security_family == "stm32f103-rdp1"
-                    or nrf54_builtin
-                )
+                # Built-in Cortex-M algorithms have the same execution-state
+                # requirements as Pack/FLM algorithms. Defer the reset until
+                # destructive work; attaching and read-only inspection do not
+                # authorize resetting an application.
+                self._algorithm_reset_required = True
                 self._algorithm_reset_done = False
                 self._connection_arguments = {
                     "probe": probe,
@@ -2522,7 +2527,7 @@ class PyOcdBackend:
                 raise self._mapped_error(exc, FlashErrorCode.PROGRAM_FAIL) from None
 
     def _prepare_algorithm_execution(self, target: Any) -> None:
-        """Reset Pack/imported-FLM targets once before destructive work.
+        """Reset Cortex-M targets once before destructive work.
 
         Attaching to a running RTOS can retain exception/stack/MPU state that
         is unsuitable for a RAM algorithm. Connection and read-only operations

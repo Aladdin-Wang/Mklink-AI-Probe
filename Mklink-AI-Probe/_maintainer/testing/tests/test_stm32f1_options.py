@@ -211,27 +211,33 @@ def test_descriptions_follow_density_and_parse_hex():
     assert low["WRP0"]["allowed_mask"] == 15 and not low["WRP1"]["writable"]
 
 
-def test_cli_mcp_and_web_generate_the_same_guarded_script(capability, tmp_path, capsys):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_cli_mcp_and_web_generate_the_same_guarded_script(capability, tmp_path, capsys, monkeypatch, legacy):
     import asyncio
     import json
     import fastmcp
     from fastapi.testclient import TestClient
-    from mklink import mcp_server
-    from mklink.device_configuration import run_cli
+    import sys
+    from mklink import cli as cli_module, mcp_server, runtime_mcp
     from mklink.remote.api import create_app
 
-    run_cli(
-        SimpleNamespace(
-            action="generate", chip="STM32F103xE", model="V4", set=["DATA0=0x5A"]
-        )
-    )
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Offline generation created a target/runtime session')
+    monkeypatch.setattr('mklink.device.connect', forbidden)
+    monkeypatch.setattr('mklink.runtime_cli.RuntimeClient', forbidden)
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', forbidden)
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'configuration', 'generate', '--chip', 'STM32F103xE', '--set', 'DATA0=0x5A'])
+    cli_module.main()
     cli = json.loads(capsys.readouterr().out)
     with TestClient(create_app(project_root=str(tmp_path))) as client:
         web = client.post("/api/offline-download/preview", json=cli["config"])
         assert web.status_code == 200
         assert web.json()["script"] == cli["script"]
-    server = fastmcp.FastMCP("option-script-contract")
-    mcp_server._register_variable_tools(server)
+    if legacy:
+        server = fastmcp.FastMCP("option-script-contract")
+        mcp_server._register_variable_tools(server)
+    else:
+        server = runtime_mcp.build_server()
 
     async def check():
         async with fastmcp.Client(server) as client:
@@ -240,6 +246,9 @@ def test_cli_mcp_and_web_generate_the_same_guarded_script(capability, tmp_path, 
                 {"part_number": "STM32F103xE", "changes": {"DATA0": 90}, "model": "V4"},
             )
             assert result.data["script"] == cli["script"]
+            invalid = await client.call_tool('configuration_script', {
+                'part_number': 'STM32F103xE', 'changes': {'RDP': 1}}, raise_on_error=False)
+            assert invalid.is_error
 
     asyncio.run(check())
 

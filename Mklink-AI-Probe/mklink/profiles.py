@@ -22,25 +22,29 @@ def load_mcu_profiles(profile_path: str | None = None) -> dict:
 
 
 def match_mcu_by_idcode(idcode: int, profiles: dict) -> str | None:
-    """通过 IDCODE 自动匹配 MCU 配置。"""
+    """仅返回唯一 IDCODE 匹配；同调试端口 ID 的多个器件不能按顺序猜测。"""
     idcode_str = f"0x{idcode:08X}"
-    for key, profile in profiles.items():
-        pattern = profile.get("idcode_pattern", "")
-        if pattern and pattern.upper() == idcode_str.upper():
-            return key
-    return None
+    matches = [key for key, profile in profiles.items()
+               if (profile.get("idcode_pattern") or "").upper() == idcode_str.upper()]
+    # A debug-port IDCODE may describe multiple targets; order is not identity.
+    return matches[0] if len(matches) == 1 else None
 
 
 def match_mcu_by_device(device_name: str, profiles: dict) -> str | None:
-    """通过设备名称前缀匹配 MCU 配置。
+    """按唯一最长设备名称前缀匹配 MCU 配置；同等具体的候选视为歧义。
 
     例如 "N32G435CB" 匹配 device_prefix "N32G43" → 返回 "n32g435"。
     """
     if not device_name:
         return None
     upper = device_name.upper()
+    matches = []
     for key, profile in profiles.items():
         prefix = profile.get("device_prefix", "")
         if prefix and upper.startswith(prefix.upper()):
-            return key
-    return None
+            matches.append((len(prefix), key))
+    if not matches:
+        return None
+    longest = max(length for length, _ in matches)
+    exact = [key for length, key in matches if length == longest]
+    return exact[0] if len(exact) == 1 else None

@@ -10,6 +10,48 @@ if TYPE_CHECKING:
     from mklink.bridge import MKLinkSerialBridge
 
 
+BATCH_READ_MAX_REGIONS = 16
+BATCH_READ_MAX_TOTAL_BYTES = 4096
+
+
+def validate_memory_regions(regions):
+    """Validate a bounded public batch before any target access."""
+    if not isinstance(regions, list) or not regions:
+        raise ValueError("regions must be a non-empty list")
+    if len(regions) > BATCH_READ_MAX_REGIONS:
+        raise ValueError(f"regions must contain at most {BATCH_READ_MAX_REGIONS} entries")
+    pairs = []
+    for index, region in enumerate(regions):
+        if not isinstance(region, dict) or set(region) != {"address", "size"}:
+            raise ValueError(f"regions[{index}] must contain exactly address and size")
+        address, size = region["address"], region["size"]
+        if (type(address) is not int or type(size) is not int
+                or not 1 <= size <= BATCH_READ_MAX_TOTAL_BYTES
+                or not 0 <= address <= 0x100000000 - size):
+            raise ValueError(f"regions[{index}] requires a 32-bit integer address and size between 1 and 4096")
+        pairs.append((address, size))
+    if sum(size for _, size in pairs) > BATCH_READ_MAX_TOTAL_BYTES:
+        raise ValueError(f"total requested bytes must not exceed {BATCH_READ_MAX_TOTAL_BYTES}")
+    return pairs
+
+
+def read_memory_regions(device, regions):
+    """Use Device's existing range merging; reject incomplete results without replay.
+
+    Adjacent/overlapping ranges may share one read. Gaps are never read and
+    output preserves request order. Separate reads are not an atomic snapshot.
+    """
+    pairs = validate_memory_regions(regions)
+    payloads = device.read_memory_regions(pairs)
+    if (len(payloads) != len(pairs)
+            or any(not isinstance(payload, bytes) or len(payload) != size
+                   for (_, size), payload in zip(pairs, payloads))):
+        raise RuntimeError("Incomplete batch memory response; command was not retried")
+    return {"region_count": len(pairs), "total_bytes": sum(size for _, size in pairs),
+            "regions": [{"address": f"0x{address:08X}", "size": size, "hex": payload.hex()}
+                        for (address, size), payload in zip(pairs, payloads)]}
+
+
 _HEX_DUMP_HEADER_RE = re.compile(
     r"^\s*([0-9a-fA-F]{8})\s+00\s+01\s+02\s+03\s+04\s+05\s+06\s+07\s+08\s+09\s+0A\s+0B\s+0C\s+0D\s+0E\s+0F\s*$",
     re.IGNORECASE,

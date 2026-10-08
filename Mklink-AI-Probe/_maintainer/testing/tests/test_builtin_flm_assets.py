@@ -96,7 +96,7 @@ def test_install_bundle_removes_source_provenance(assets_module, monkeypatch, tm
 
 
 def test_repository_local_bundle_is_complete_when_available(assets_module):
-    root = PROJECT_ROOT / "_maintainer" / "local" / "builtin_flm"
+    root = assets_module.default_bundle_root(PROJECT_ROOT)
     if not root.is_dir():
         pytest.skip("repository-local built-in algorithms are not installed")
 

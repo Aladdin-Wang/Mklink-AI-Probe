@@ -13,10 +13,11 @@ from mklink.local_resources import local_resource_status, serial_lock_path
 from mklink.remote import dashboards as dashboard_module
 from mklink.remote.api import create_app
 from mklink.remote.dashboards import SerialStreamManager
-from mklink.remote.stream_protocol import SERIAL_RX_BYTES, SERIAL_TX_BYTES, StreamType
+from mklink.remote.stream_protocol import SERIAL_RX_BYTES, SERIAL_TX_BYTES, StreamType, decode_serial_payload
 from mklink.serial import _monitor as monitor_module
 from mklink.serial._monitor import SerialEvent, SerialMonitor
 from mklink.serial._port import _PortLock
+from test_serial_autoreply import ports
 
 
 class _RecordingHub:
@@ -24,7 +25,9 @@ class _RecordingHub:
         self.batches = []
 
     def publish(self, payload, *, item_count, flags=0, stream_type=None):
-        self.batches.append((bytes(payload), item_count, flags, stream_type))
+        session, port, data = decode_serial_payload(bytes(payload))
+        assert len(session) == 32 and port
+        self.batches.append((data, item_count, flags, stream_type))
         return len(self.batches)
 
     def stats(self):
@@ -41,7 +44,7 @@ def _wait_until(predicate, timeout=1.0):
 
 
 def test_serial_port_lock_releases_owner_and_can_be_reacquired(monkeypatch, tmp_path):
-    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("MKLINK_LOCK_DIR", str(tmp_path))
 
     for _ in range(2):
         lock = _PortLock("COM6")
@@ -59,13 +62,13 @@ def test_serial_port_lock_file_open_error_is_reported_as_unavailable(
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("MKLINK_LOCK_DIR", str(tmp_path))
     lock = _PortLock("COM6")
 
     def fail_open(*_args, **_kwargs):
         raise OSError("lock path unavailable")
 
-    monkeypatch.setattr("builtins.open", fail_open)
+    monkeypatch.setattr("mklink.local_resources.os.open", fail_open)
     assert lock.acquire() is False
 
 
@@ -76,6 +79,9 @@ def test_modbus_start_reports_busy_serial_port(monkeypatch, tmp_path):
 
         def open(self):
             return False
+
+        def close(self):
+            pass
 
     monkeypatch.setattr("mklink.modbus._client.ModbusClient", BusyModbusClient)
     app = create_app(auth_token=None, project_root=str(tmp_path))
@@ -119,7 +125,7 @@ def test_serial_monitor_emits_partial_rx_chunk_before_line_event(monkeypatch):
     monitor = SerialMonitor(
         ports=[{"port": "TEST"}],
         event_callback=events.append,
-        chunk_callback=lambda port, direction, data, timestamp: (
+        chunk_callback=lambda port, direction, data, timestamp, mono: (
             chunks.append((port, direction, data, timestamp)),
             chunk_ready.set(),
         ),
@@ -273,7 +279,7 @@ def test_serial_monitor_routes_protocol_rx_away_from_line_events(monkeypatch):
     monitor = SerialMonitor(
         ports=[{"port": "TEST"}],
         event_callback=events.append,
-        chunk_callback=lambda port, direction, data, _timestamp: chunks.append(
+        chunk_callback=lambda port, direction, data, _timestamp, mono: chunks.append(
             (port, direction, data)
         ),
     )
@@ -349,7 +355,7 @@ def test_serial_monitor_returns_final_ymodem_chunk_banner_to_terminal(monkeypatc
     monitor = SerialMonitor(
         ports=[{"port": "TEST"}],
         event_callback=events.append,
-        chunk_callback=lambda port, direction, data, _timestamp: (
+        chunk_callback=lambda port, direction, data, _timestamp, mono: (
             chunks.append((port, direction, data)),
             banner_seen.set() if data == b"boot ready\r\n" else None,
         ),
@@ -374,60 +380,72 @@ def test_serial_monitor_returns_final_ymodem_chunk_banner_to_terminal(monkeypatc
 
 
 def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypatch):
-    class FakeMonitor:
-        def __init__(self, **kwargs):
-            self.event_callback = kwargs["event_callback"]
-            self.chunk_callback = kwargs["chunk_callback"]
-            self.port_status = {"TEST": "open"}
+    async def scenario():
+        class FakeMonitor:
+            def sequence_status(self): return {}
+            observation_times = {}
+            worker_alive = False
 
-        def start(self):
-            pass
+            def __init__(self, **kwargs):
+                self.event_callback = kwargs["event_callback"]
+                self.chunk_callback = kwargs["chunk_callback"]
+                self.port_status = {"TEST": "open"}
 
-        def stop(self):
-            pass
+            def start(self):
+                pass
 
-        def send(self, _port, _data):
-            return True
+            def stop(self):
+                pass
 
-        def send_all(self, _data):
-            pass
+            def send(self, _port, _data):
+                return True
 
-    monkeypatch.setattr(monitor_module, "SerialMonitor", FakeMonitor)
-    manager = SerialStreamManager()
-    queue = manager._bridge.add_client()
-    config = [{"port": "TEST", "baudrate": 115200}]
-    manager.start(config)
-    monitor = manager._monitor
+            def send_all(self, _data):
+                pass
 
-    raw = b"\x1b[31mready> \xff"
-    monitor.chunk_callback("TEST", "RX", raw, 123.5)
-    monitor.event_callback(SerialEvent(123.5, "TEST", "RX", raw))
+        monkeypatch.setattr(monitor_module, "SerialMonitor", FakeMonitor)
+        manager = SerialStreamManager()
+        queue = manager._bridge.add_client()
+        config = [{"port": "TEST", "baudrate": 115200}]
+        manager.start(config)
+        monitor = manager._monitor
 
-    opening = queue.get_nowait()
-    terminal = queue.get_nowait()
-    log_event = queue.get_nowait()
-    assert opening["event"] == "status"
-    assert terminal == {
-        "event": "terminal",
-        "timestamp": 123.5,
-        "port": "TEST",
-        "direction": "RX",
-        "data_base64": base64.b64encode(raw).decode("ascii"),
-    }
-    assert log_event["event"] == "data"
-    assert manager.get_status()["config"] == config
-    assert manager.get_status()["stats"] == {
-        "rx_count": 1,
-        "tx_count": 0,
-        "rx_bytes": len(raw),
-        "tx_bytes": 0,
-        "bytes_per_sec": float(len(raw)),
-    }
-    manager.stop()
-    manager._bridge.remove_client(queue)
+        raw = b"\x1b[31mready> \xff"
+        monitor.chunk_callback("TEST", "RX", raw, 123.5, 1.0)
+        monitor.event_callback(SerialEvent(123.5, "TEST", "RX", raw))
+
+        await asyncio.sleep(0)
+        opening = queue.get_nowait()
+        terminal = queue.get_nowait()
+        log_event = queue.get_nowait()
+        assert opening["event"] == "status"
+        assert terminal == {
+            "event": "terminal",
+            "timestamp": 123.5,
+            "port": "TEST",
+            "direction": "RX",
+            "data_base64": base64.b64encode(raw).decode("ascii"),
+        }
+        assert log_event["event"] == "data"
+        assert manager.get_status()["config"] == config
+        assert manager.get_status()["stats"] == {
+            "rx_count": 1,
+            "tx_count": 0,
+            "rx_bytes": len(raw),
+            "tx_bytes": 0,
+            "bytes_per_sec": float(len(raw)),
+        }
+        manager.stop()
+        manager._bridge.remove_client(queue)
+
+
+    asyncio.run(scenario())
 
 
 class _YModemMonitor:
+    def sequence_status(self): return {}
+    observation_times = {}
+    worker_alive = False
     mode = "complete"
     entered = threading.Event()
 
@@ -554,25 +572,28 @@ def test_serial_stream_manager_pages_raw_ymodem_protocol_trace(monkeypatch):
 def test_serial_stream_manager_publishes_running_before_fast_ymodem_completion(
     monkeypatch,
 ):
-    manager = _ymodem_manager(monkeypatch, "complete")
-    queue = manager._bridge.add_client()
-    manager.start_ymodem("TEST", b"firmware", "app.bin")
-    _wait_until(lambda: manager.get_ymodem_status()["state"] == "completed")
+    async def scenario():
+        manager = _ymodem_manager(monkeypatch, "complete")
+        queue = manager._bridge.add_client()
+        manager.start_ymodem("TEST", b"firmware", "app.bin")
+        _wait_until(lambda: manager.get_ymodem_status()["state"] == "completed")
 
-    first = queue.get_nowait()
-    second = queue.get_nowait()
-    assert (first["state"], first["active"], first["phase"]) == (
-        "running", True, "waiting",
-    )
-    assert second["event"] == "ymodem"
-    assert second["phase"] in {"transferring", "completed"}
-    events = [second]
-    while not queue.empty():
-        events.append(queue.get_nowait())
-    assert events[-1]["state"] == "completed"
-    assert events[-1]["active"] is False
-    manager._bridge.remove_client(queue)
-    manager.stop()
+        await asyncio.sleep(0)
+        first = queue.get_nowait()
+        second = queue.get_nowait()
+        assert (first["state"], first["active"], first["phase"]) == (
+            "running", True, "waiting",
+        )
+        assert second["event"] == "ymodem"
+        assert second["phase"] in {"transferring", "completed"}
+        events = [second]
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        assert events[-1]["state"] == "completed"
+        assert events[-1]["active"] is False
+        manager._bridge.remove_client(queue)
+        manager.stop()
+    asyncio.run(scenario())
 
 
 def test_serial_stream_manager_resets_finished_ymodem_state_on_new_session(
@@ -603,29 +624,62 @@ def test_serial_stream_manager_rejects_send_and_cancels_active_ymodem(monkeypatc
     manager.stop()
 
 
+def test_ymodem_locks_only_selected_port_through_manager_and_api(ports, monkeypatch, tmp_path):
+    from mklink.serial._ymodem import YModemCancelled
+    entered, release = threading.Event(), threading.Event()
+    def transfer(*args):
+        entered.set()
+        assert release.wait(3)
+        raise YModemCancelled('test transfer ended')
+    monkeypatch.setattr('mklink.serial._ymodem.YModemSender.send', transfer)
+    monkeypatch.setattr(dashboard_module, '_managers', {})
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    manager = app.state.mklink_state['dashboard_managers']['serial']
+    manager.start([{'port': 'COM7'}, {'port': 'COM8'}])
+    a, b = ports.instances[-2:]
+    try:
+        manager.start_ymodem('com7', b'data', 'data.bin')
+        assert entered.wait(1)
+        assert manager.get_ymodem_status()['port'] == 'COM7'
+        assert manager.send('com7', b'blocked') is False
+        assert manager.send('com8', b'peer') is True
+        with TestClient(app) as client:
+            assert client.post('/api/dash/serial/send', json={'port': 'com7', 'data': 'blocked'}).status_code == 409
+            assert client.post('/api/dash/serial/send', json={'port': 'com8', 'data': 'peer-api'}).status_code == 200
+        assert a.writes == [] and [data for data, _ in b.writes] == [b'peer', b'peer-api']
+        assert len(ports.instances) == 2
+    finally:
+        release.set()
+        manager.cancel_ymodem(wait=True)
+        manager.stop()
+
+
 def test_serial_stream_manager_does_not_publish_late_progress_after_cancel(
     monkeypatch,
 ):
-    manager = _ymodem_manager(monkeypatch, "late-progress")
-    queue = manager._bridge.add_client()
-    manager.start_ymodem("TEST", b"firmware", "app.bin")
-    assert _YModemMonitor.entered.wait(1.0)
-    manager.cancel_ymodem(wait=True)
+    async def scenario():
+        manager = _ymodem_manager(monkeypatch, "late-progress")
+        queue = manager._bridge.add_client()
+        manager.start_ymodem("TEST", b"firmware", "app.bin")
+        assert _YModemMonitor.entered.wait(1.0)
+        manager.cancel_ymodem(wait=True)
 
-    events = []
-    while not queue.empty():
-        events.append(queue.get_nowait())
-    cancelling_index = next(
-        index for index, event in enumerate(events)
-        if event.get("phase") == "cancelling"
-    )
-    assert not any(
-        event.get("phase") == "transferring"
-        for event in events[cancelling_index + 1:]
-    )
-    assert events[-1]["state"] == "cancelled"
-    manager._bridge.remove_client(queue)
-    manager.stop()
+        await asyncio.sleep(0)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        cancelling_index = next(
+            index for index, event in enumerate(events)
+            if event.get("phase") == "cancelling"
+        )
+        assert not any(
+            event.get("phase") == "transferring"
+            for event in events[cancelling_index + 1:]
+        )
+        assert events[-1]["state"] == "cancelled"
+        manager._bridge.remove_client(queue)
+        manager.stop()
+    asyncio.run(scenario())
 
 
 def test_serial_stream_manager_records_ymodem_failure(monkeypatch):
@@ -646,6 +700,10 @@ def test_serial_stream_manager_stop_retains_lifecycle_while_worker_is_alive(
     release = threading.Event()
 
     class StuckMonitor:
+        def sequence_status(self): return {}
+        observation_times = {}
+        worker_alive = False
+
         def __init__(self, **_kwargs):
             self.port_status = {"TEST": "open"}
 
@@ -725,7 +783,7 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
     app = create_app(auth_token=None, project_root=str(tmp_path))
     manager = app.state.mklink_state["dashboard_managers"]["serial"]
     monkeypatch.setattr(manager, "_running", True)
-    monkeypatch.setattr("mklink.remote.api._YMODEM_UPLOAD_LIMIT", 8)
+    monkeypatch.setattr("mklink.serial._ymodem.YMODEM_FILE_LIMIT", 8)
     starts = []
     active = {"value": False}
 
@@ -743,47 +801,27 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
         "transfer_id": 1,
         "state": "running",
         "active": active["value"],
+        "port": "TEST",
         "phase": "waiting",
     })
 
     with TestClient(app) as client:
-        empty = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("app.bin", b"", "application/octet-stream")},
-        )
-        oversized = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("app.bin", b"123456789", "application/octet-stream")},
-        )
-        long_name = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("\u6d4b" * 11 + ".bin", b"x", "application/octet-stream")},
-        )
-        boundary = b"ymodem-test-boundary"
-        control_name = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            content=(
-                b"--" + boundary + b"\r\n"
-                b'Content-Disposition: form-data; name="file"; '
-                b'filename="bad\x00name.bin"\r\n'
-                b"Content-Type: application/octet-stream\r\n\r\n"
-                b"x\r\n--" + boundary + b"--\r\n"
-            ),
-            headers={"Content-Type": "multipart/form-data; boundary=ymodem-test-boundary"},
-        )
-        accepted = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("folder/app.bin", b"firmware", "application/octet-stream")},
-        )
-        active["value"] = True
-        duplicate = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("app.bin", b"firmware", "application/octet-stream")},
-        )
-        locked_send = client.post(
-            "/api/dash/serial/send",
-            json={"port": "TEST", "data": "boot\\r", "hex": False},
-        )
+        def upload(name, data):
+            return client.post('/api/dash/serial/ymodem/start',
+                params={'port': 'TEST', 'filename': name}, content=data,
+                headers={'Content-Type': 'application/octet-stream'})
+        empty = upload('app.bin', b'')
+        oversized = upload('app.bin', b'123456789')
+        long_name = upload('测' * 11 + '.bin', b'x')
+        control_name = upload('bad\x01.bin', b'x')
+        obsolete = client.post('/api/dash/serial/ymodem/start?port=TEST&filename=app.bin',
+                               files={'file': ('app.bin', b'x')})
+        assert obsolete.status_code == 415
+        accepted = upload('folder/app.bin', b'firmware')
+        active['value'] = True
+        duplicate = upload('app.bin', b'firmware')
+        locked_send = client.post('/api/dash/serial/send',
+                                  json={'port': 'TEST', 'data': 'boot', 'hex': False})
         active["value"] = False
 
         def race_send(_port, _data):
@@ -818,8 +856,45 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
     )
 
 
+@pytest.mark.parametrize('end', ['oversize', 'disconnect', 'complete'])
+def test_ymodem_stream_without_length_never_starts_partial_file(monkeypatch, tmp_path, end):
+    from starlette.requests import ClientDisconnect
+    monkeypatch.setattr(dashboard_module, '_managers', {})
+    monkeypatch.setattr('mklink.serial._ymodem.YMODEM_FILE_LIMIT', 8)
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    manager = app.state.mklink_state['dashboard_managers']['serial']
+    manager._running = True
+    starts, received = [], []
+    monkeypatch.setattr(manager, 'start_ymodem', lambda *args: starts.append(args) or {'active': True})
+    messages = [{'type': 'http.request', 'body': b'1234', 'more_body': True},
+                {'type': 'http.disconnect'} if end == 'disconnect' else
+                {'type': 'http.request', 'body': b'56789' if end == 'oversize' else b'5678', 'more_body': False}]
+    scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
+             'method': 'POST', 'scheme': 'http', 'path': '/api/dash/serial/ymodem/start',
+             'raw_path': b'/api/dash/serial/ymodem/start', 'query_string': b'port=TEST&filename=app.bin',
+             'headers': [(b'content-type', b'application/octet-stream')],
+             'client': ('127.0.0.1', 1), 'server': ('127.0.0.1', 80), 'root_path': ''}
+    async def receive():
+        assert messages, 'Unexpected extra request read'
+        return messages.pop(0)
+    async def send(message): received.append(message)
+    try:
+        if end == 'disconnect':
+            with pytest.raises(ClientDisconnect): asyncio.run(app(scope, receive, send))
+        else:
+            asyncio.run(app(scope, receive, send))
+            assert received[0]['status'] == (413 if end == 'oversize' else 200)
+        assert starts == ([('TEST', b'12345678', 'app.bin')] if end == 'complete' else [])
+    finally:
+        manager._running = False
+
+
 def test_serial_binary_stream_skips_legacy_formatting_without_sse_clients(monkeypatch):
     class FakeMonitor:
+        def sequence_status(self): return {}
+        observation_times = {}
+        worker_alive = False
+
         def __init__(self, **kwargs):
             self.event_callback = kwargs["event_callback"]
             self.chunk_callback = kwargs["chunk_callback"]
@@ -843,9 +918,9 @@ def test_serial_binary_stream_skips_legacy_formatting_without_sse_clients(monkey
 
     rx = b"\x00\x7f\x80\xff"
     tx = b"AT\r\n"
-    monitor.chunk_callback("TEST", "RX", rx, 1.0)
+    monitor.chunk_callback("TEST", "RX", rx, 1.0, 1.0)
     monitor.event_callback(SerialEvent(1.0, "TEST", "RX", rx))
-    monitor.chunk_callback("TEST", "TX", tx, 2.0)
+    monitor.chunk_callback("TEST", "TX", tx, 2.0, 2.0)
     monitor.event_callback(SerialEvent(2.0, "TEST", "TX", tx))
     manager._byte_batcher.flush()
 
@@ -875,3 +950,40 @@ def test_serial_sse_reconnect_starts_with_current_status():
     payload = asyncio.run(first_event())
     assert '"event": "status"' in payload
     assert '"running": false' in payload
+
+
+@pytest.mark.parametrize('kind', ['rtt', 'systemview', 'superwatch', 'serial', 'modbus', 'vofa'])
+@pytest.mark.parametrize('outcome', ['close', 'snapshot_error'])
+def test_sse_initial_snapshot_always_releases_its_subscription(monkeypatch, kind, outcome):
+    monkeypatch.setattr(dashboard_module, '_managers', {})
+    manager = dashboard_module.get_managers()[kind]
+    bridge = manager._bridge
+    def failing():
+        raise RuntimeError('snapshot unavailable')
+    if outcome == 'snapshot_error':
+        monkeypatch.setattr(manager, 'list_watches' if kind == 'superwatch' else 'get_status', failing)
+    async def scenario():
+        stream = manager.sse_generator()
+        try:
+            if outcome == 'snapshot_error':
+                with pytest.raises(RuntimeError, match='snapshot unavailable'):
+                    await anext(stream)
+            else:
+                await anext(stream)
+                assert bridge.client_count == 1
+        finally:
+            await stream.aclose()
+        assert bridge.client_count == 0
+    asyncio.run(scenario())
+
+
+def test_modbus_sse_unregisters_from_the_original_bridge_after_restart():
+    manager = dashboard_module.ModbusStreamManager()
+    original = manager._bridge
+    async def scenario():
+        stream = manager.sse_generator()
+        await anext(stream)
+        manager._bridge = dashboard_module.AsyncBridge()
+        await stream.aclose()
+        assert original.client_count == manager._bridge.client_count == 0
+    asyncio.run(scenario())

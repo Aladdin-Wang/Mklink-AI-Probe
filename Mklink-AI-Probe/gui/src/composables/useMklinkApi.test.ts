@@ -1,16 +1,68 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMklinkApi } from './useMklinkApi'
+import { sharedRuntime } from './useBackendHealth'
 
 describe('RTT API contracts', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
+    sharedRuntime.value = false
     fetchMock.mockReset()
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({}),
     })
     vi.stubGlobal('fetch', fetchMock)
+  })
+
+  it('uses separate probe and UART inventories', async () => {
+    sharedRuntime.value = true
+    await useMklinkApi().listPorts()
+    await useMklinkApi().listUartPorts()
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/api/ports', '/api/ports/uart'])
+  })
+
+  it('connects the current probe without navigating or restarting the page', async () => {
+    sharedRuntime.value = true
+    const navigate = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ same_runtime: true }) })
+    await useMklinkApi().connectDevice({ port: 'COM9' })
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+      '/api/runtime/select', '/api/device/connect', '/api/device/status',
+    ])
+    expect(navigate).not.toHaveBeenCalled()
+    navigate.mockRestore()
+  })
+
+  it('marks a probe handoff and does not reconnect the previous device', async () => {
+    sharedRuntime.value = true
+    const navigate = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({
+      same_runtime: false, runtime_url: 'http://127.0.0.1:8766/_runtime/open#test-token',
+    }) })
+    await useMklinkApi().connectDevice({ port: 'COM10' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith('http://127.0.0.1:8766/_runtime/open?runtime_transition=probe#test-token')
+    navigate.mockRestore()
+  })
+
+  it('queries an accepted shared reset job without issuing a second reset', async () => {
+    sharedRuntime.value = true
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-one', state: 'running' }) })
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-one', state: 'succeeded', result: { status: 'ok' } }) })
+    expect(await useMklinkApi().resetDevice()).toEqual({ status: 'ok' })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/runtime/jobs/')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/runtime/jobs/job-one')
+    expect(fetchMock.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1)
+    sharedRuntime.value = false
+  })
+
+  it('does not retry an exclusive job with an unknown result', async () => {
+    sharedRuntime.value = true
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-unknown', state: 'unknown', error: 'transport lost' }) })
+    await expect(useMklinkApi().eraseDevice()).rejects.toThrow('unknown')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    sharedRuntime.value = false
   })
 
   it('passes an optional explicit source path to RTT detection', async () => {

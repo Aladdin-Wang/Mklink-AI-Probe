@@ -3,81 +3,11 @@ from __future__ import annotations
 import copy
 
 import asyncio
-import io
-import sys
 from types import SimpleNamespace
 
 import pytest
 
 from mklink import mcp_server, mcp_stream_bridge, observe_bridge
-
-
-def test_mcp_stdio_keeps_prints_out_of_jsonrpc_stdout(monkeypatch):
-    protocol_bytes = io.BytesIO()
-    protocol_stdout = io.TextIOWrapper(protocol_bytes, encoding="utf-8")
-    diagnostics = io.StringIO()
-
-    class FakeMcp:
-        def run(self, *, transport):
-            assert transport == "stdio"
-            print("[TX] cmd.get_idcode()")
-            print("[SERIAL] idcode = 0x2BA01477")
-            sys.stdout.buffer.write(b'{"jsonrpc":"2.0","id":1,"result":{}}\n')
-            sys.stdout.buffer.flush()
-
-    monkeypatch.setattr(sys, "stdout", protocol_stdout)
-    monkeypatch.setattr(sys, "stderr", diagnostics)
-    monkeypatch.setattr(mcp_server, "mcp", FakeMcp())
-
-    mcp_server.run()
-    protocol_stdout.flush()
-
-    assert protocol_bytes.getvalue() == b'{"jsonrpc":"2.0","id":1,"result":{}}\n'
-    assert diagnostics.getvalue().splitlines() == [
-        "[TX] cmd.get_idcode()",
-        "[SERIAL] idcode = 0x2BA01477",
-    ]
-    assert sys.stdout is protocol_stdout
-
-
-def test_mcp_stdio_resets_device_when_transport_exits(monkeypatch):
-    calls = []
-
-    class FakeMcp:
-        def run(self, *, transport):
-            assert transport == "stdio"
-
-    monkeypatch.setattr(mcp_server, "mcp", FakeMcp())
-    monkeypatch.setattr(mcp_server, "_reset_device", lambda: calls.append("reset"))
-
-    mcp_server.run()
-
-    assert calls == ["reset"]
-
-
-def test_mcp_stdio_continues_when_optional_sidecar_start_fails(monkeypatch):
-    calls = []
-
-    class FakeMcp:
-        def run(self, *, transport):
-            calls.append(("run", transport))
-
-    def fail_start(*, wait_timeout):
-        assert wait_timeout == 0.75
-        raise RuntimeError("synthetic sidecar failure")
-
-    monkeypatch.setattr(mcp_server, "mcp", FakeMcp())
-    monkeypatch.setattr(mcp_server, "_reset_device", lambda: calls.append("reset"))
-    monkeypatch.setattr(mcp_stream_bridge, "start_mcp_stream_sidecar", fail_start)
-    monkeypatch.setattr(
-        mcp_stream_bridge,
-        "stop_mcp_stream_sidecar",
-        lambda timeout: calls.append(("stop", timeout)),
-    )
-
-    mcp_server.run()
-
-    assert calls == [("run", "stdio"), "reset", ("stop", 0.5)]
 
 
 def test_real_fastmcp_dump_memory_jsonrpc_result_snapshot(monkeypatch):
@@ -90,7 +20,7 @@ def test_real_fastmcp_dump_memory_jsonrpc_result_snapshot(monkeypatch):
     )
     monkeypatch.setattr(
         "mklink.dump_memory.read_dump_memory_regions_once",
-        lambda actual_bridge, _pairs, *, timeout: (
+        lambda actual_bridge, _pairs, *, timeout, cancelled=None: (
             b"AB" if actual_bridge is bridge and timeout == 0.1 else b"",
         ),
     )

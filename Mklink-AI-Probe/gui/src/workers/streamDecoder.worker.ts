@@ -29,7 +29,10 @@ export type WorkerInput =
     }
   | { type: 'visible-range'; requestId: number; start: number; end: number; pixelWidth: number }
   | { type: 'waveform-detail'; enabled: boolean }
+  | { type: 'waveform-capacity'; capacity: number; requestId?: number }
   | { type: 'history-snapshot'; requestId: number }
+  | { type: 'waveform-freeze'; frozen: boolean }
+  | { type: 'serial-port'; port: string }
   | { type: 'reset' }
 
 export interface StreamTelemetry {
@@ -46,6 +49,7 @@ export interface StreamTelemetry {
 }
 
 export type WorkerOutput =
+  | { type: 'waveform-capacity-result'; requestId: number; capacity: number; error?: string }
   | { type: 'channels'; channelCount: number }
   | StreamTelemetry
   | {
@@ -99,6 +103,8 @@ export type WorkerOutput =
       channelCount: number
       pointCount: number
       candidateSampleCount: number
+      frozenStartMs?: number
+      frozenEndMs?: number
       channelOffsets: ArrayBuffer
       times: ArrayBuffer
       timeIndices: ArrayBuffer
@@ -131,6 +137,8 @@ export type WorkerOutput =
   | { type: 'rtt-terminal'; sequence: bigint; text: string }
   | {
       type: 'serial-lines'
+      port: string
+      session: string
       sequence: bigint
       lines: Array<{
         timestampNs: bigint
@@ -139,7 +147,7 @@ export type WorkerOutput =
         ascii: string
       }>
     }
-  | { type: 'serial-terminal'; sequence: bigint; text: string }
+  | { type: 'serial-terminal'; sequence: bigint; text: string; port: string; session: string }
 
 export interface SystemViewContextSummary {
   id: number
@@ -241,6 +249,7 @@ function systemViewQuantile(sortedValues: number[], q: number): number {
 export class StreamDecoder {
   private readonly post: PostOutput
   private ring: TypedRingBuffer | null = null
+  private frozenRing: TypedRingBuffer | null = null
   private lastDataSequence: bigint | null = null
   private transportDroppedBatches = 0
   private backendDroppedBatches = 0
@@ -264,6 +273,8 @@ export class StreamDecoder {
   private decoderMode: DecoderMode = 'default'
   private configuredCapacity = 0
   private waveformSummaryOnly = false
+  private serialPort = ''
+  private serialSource = ''
   private serialDecoder = new TextDecoder('utf-8')
   private serialLineBytes: number[] = []
   private serialLineTimestampNs = 0n
@@ -296,8 +307,43 @@ export class StreamDecoder {
       case 'waveform-detail':
         this.waveformSummaryOnly = !message.enabled
         break
+      case 'waveform-freeze':
+        if (!message.frozen) this.frozenRing = null
+        else if (!this.frozenRing && this.ring && !this.systemViewMode) this.frozenRing = this.ring.frozenCopy()
+        break
+      case 'waveform-capacity':
+        try {
+          if (!this.ring || this.systemViewMode || this.decoderMode !== 'default') {
+            throw new RangeError('waveform capacity requires a numeric decoder')
+          }
+          if (!Number.isInteger(message.capacity) || message.capacity < 2 || message.capacity > 1_000_000) {
+            throw new RangeError('waveform capacity must be an integer between 2 and 1000000')
+          }
+          if (message.capacity !== this.ring.capacity) {
+            const nextRing = this.ring.resized(message.capacity)
+            const nextScratch = new Int32Array(message.capacity)
+            this.ring = nextRing
+            this.timeIndexScratch = nextScratch
+            this.configuredCapacity = message.capacity
+          }
+          this.post(this.telemetry())
+          if (message.requestId !== undefined) this.post({ type: 'waveform-capacity-result', requestId: message.requestId, capacity: this.ring.capacity })
+        } catch (error) {
+          if (message.requestId !== undefined) this.post({ type: 'waveform-capacity-result', requestId: message.requestId, capacity: this.ring?.capacity ?? 0, error: error instanceof Error ? error.message : String(error) })
+          else this.error('INVALID_CONFIG', error)
+        }
+        break
       case 'history-snapshot':
         this.historySnapshot(message.requestId)
+        break
+      case 'serial-port':
+        if (this.serialPort !== message.port) {
+          this.serialPort = message.port
+          this.serialSource = ''
+          this.serialDecoder = new TextDecoder('utf-8')
+          this.serialLineBytes = []
+          this.serialBufferedItems = 0
+        }
         break
       case 'reset':
         this.reset()
@@ -315,13 +361,16 @@ export class StreamDecoder {
       if (!['default', 'serial-log', 'serial-terminal'].includes(decoderMode)) {
         throw new RangeError('unsupported decoder mode')
       }
-      this.ring = new TypedRingBuffer(capacity, channelCount)
+      const ring = new TypedRingBuffer(capacity, channelCount)
+      const scratch = new Int32Array(capacity)
+      this.ring = ring
+      this.frozenRing = null
       this.configuredCapacity = capacity
       this.decoderMode = decoderMode
       this.waveformSummaryOnly = waveformSummaryOnly
-      this.timeIndexScratch = new Int32Array(capacity)
-      this.systemViewEvents = new SystemViewEventRing<SystemViewEvent>(capacity)
-      this.systemViewIntervals = new SystemViewIntervalRing(capacity)
+      this.timeIndexScratch = scratch
+      this.systemViewEvents = null
+      this.systemViewIntervals = null
       this.systemViewMode = false
       this.currentContext = null
       this.suspendedContexts = []
@@ -454,12 +503,24 @@ export class StreamDecoder {
     if (decoded.flags !== SERIAL_RX_BYTES && decoded.flags !== SERIAL_TX_BYTES) {
       throw new RangeError('Serial payload has unsupported flags')
     }
-    if (decoded.itemCount !== decoded.payload.byteLength || decoded.itemCount <= 0) {
-      throw new RangeError('Serial item count must match its non-empty byte payload')
+    const payload = new Uint8Array(decoded.payload)
+    const end = 17 + (payload[16] ?? 0)
+    if (payload.length < 18 || !payload[16] || decoded.itemCount !== payload.length - end
+        || decoded.itemCount <= 0 || decoded.itemCount > 4096) {
+      throw new RangeError('Serial source and byte count are invalid')
     }
+    const port = new TextDecoder('utf-8', { fatal: true }).decode(payload.subarray(17, end))
+    const session = Array.from(payload.subarray(0, 16), value => value.toString(16).padStart(2, '0')).join('')
     const direction = decoded.flags === SERIAL_RX_BYTES ? 'RX' : 'TX'
-    const bytes = new Uint8Array(decoded.payload)
+    const bytes = payload.subarray(end)
     this.commitSequence(decoded.sequence)
+    if (port !== this.serialPort) return
+    if (session !== this.serialSource) {
+      this.serialSource = session
+      this.serialDecoder = new TextDecoder('utf-8')
+      this.serialLineBytes = []
+      this.serialBufferedItems = 0
+    }
 
     if (this.decoderMode === 'serial-terminal') {
       this.serialBufferedItems = Math.min(
@@ -468,7 +529,7 @@ export class StreamDecoder {
       )
       if (direction === 'RX') {
         const text = this.serialDecoder.decode(bytes, { stream: true })
-        if (text) this.post({ type: 'serial-terminal', sequence: decoded.sequence, text })
+        if (text) this.post({ type: 'serial-terminal', sequence: decoded.sequence, text, port, session })
       }
       return
     }
@@ -504,7 +565,7 @@ export class StreamDecoder {
         this.configuredCapacity,
         this.serialBufferedItems + lines.length,
       )
-      this.post({ type: 'serial-lines', sequence: decoded.sequence, lines })
+      this.post({ type: 'serial-lines', sequence: decoded.sequence, lines, port, session })
     }
   }
 
@@ -563,6 +624,7 @@ export class StreamDecoder {
       const nextCount = Math.max(1, channels.length)
       const nextRing = new TypedRingBuffer(currentRing.capacity, nextCount)
       this.ring = nextRing
+      this.frozenRing = null
       this.superwatchMetadataVersion = version
       this.superwatchMetadataSignature = signature
       this.lastNumericTimestampMs = null
@@ -655,7 +717,8 @@ export class StreamDecoder {
   }
 
   private historySnapshot(requestId: number): void {
-    if (!this.ring) {
+    const ring = this.frozenRing ?? this.ring
+    if (!ring) {
       this.post({ type: 'error', code: 'NOT_CONFIGURED', message: 'configure the worker before export' })
       return
     }
@@ -663,12 +726,12 @@ export class StreamDecoder {
       this.post({ type: 'error', code: 'INVALID_RANGE', message: 'history request id is invalid' })
       return
     }
-    const snapshot = this.ring.copyAll()
+    const snapshot = ring.copyAll()
     const output: Extract<WorkerOutput, { type: 'history-snapshot' }> = {
       type: 'history-snapshot',
       requestId,
       itemCount: snapshot.times.length,
-      channelCount: this.ring.channelCount,
+      channelCount: ring.channelCount,
       times: snapshot.times.buffer as ArrayBuffer,
       values: snapshot.values.buffer as ArrayBuffer,
     }
@@ -728,6 +791,7 @@ export class StreamDecoder {
     const channelChanged = nextRing !== currentRing
     if (channelChanged) {
       this.ring = nextRing
+      this.frozenRing = null
       this.post({ type: 'channels', channelCount })
     }
     if (this.lastDataSequence !== null && decoded.sequence > this.lastDataSequence + 1n) {
@@ -843,6 +907,14 @@ export class StreamDecoder {
         event.event_id = contextId
       }
       decodedEvents.push({ event, ticks })
+    }
+    if (!this.systemViewEvents || !this.systemViewIntervals) {
+      // Numeric/UART streams do not need trace storage. Allocate both rings
+      // only after validating a trace frame, before publishing either one.
+      const events = new SystemViewEventRing<SystemViewEvent>(this.configuredCapacity)
+      const intervals = new SystemViewIntervalRing(this.configuredCapacity)
+      this.systemViewEvents = events
+      this.systemViewIntervals = intervals
     }
     const previousSequence = this.lastDataSequence
     this.noteDataSequence(sequence)
@@ -981,7 +1053,8 @@ export class StreamDecoder {
   }
 
   private visibleRange(message: Extract<WorkerInput, { type: 'visible-range' }>): void {
-    if (!this.ring) {
+    const ring = this.frozenRing ?? this.ring
+    if (!ring) {
       this.post({ type: 'error', code: 'NOT_CONFIGURED', message: 'configure the worker before ranges' })
       return
     }
@@ -999,12 +1072,13 @@ export class StreamDecoder {
       this.systemViewVisibleRange(message)
       return
     }
-    const selection = this.ring.selectMinMaxEnvelope(
+    const selection = ring.selectMinMaxEnvelope(
       message.start, message.end, message.pixelWidth,
     )
     const selectedLogical = selection.logicalIndices.subarray(0, selection.pointCount)
-    const timeIndexByLogical = this.timeIndexScratch as Int32Array
-    let firstLogical = this.ring.length
+    if (!this.timeIndexScratch || this.timeIndexScratch.length < ring.length) this.timeIndexScratch = new Int32Array(ring.length)
+    const timeIndexByLogical = this.timeIndexScratch
+    let firstLogical = ring.length
     let lastLogical = -1
     for (let point = 0; point < selectedLogical.length; point += 1) {
       const logical = selectedLogical[point]
@@ -1022,18 +1096,18 @@ export class StreamDecoder {
     for (let logical = firstLogical; logical <= lastLogical; logical += 1) {
       const oneBasedTimeIndex = timeIndexByLogical[logical]
       if (oneBasedTimeIndex > 0) {
-        times[oneBasedTimeIndex - 1] = this.ring.timeAt(logical)
+        times[oneBasedTimeIndex - 1] = ring.timeAt(logical)
       }
     }
     const timeIndices = new Uint32Array(selection.pointCount)
     const values = new Float32Array(selection.pointCount)
-    for (let channel = 0; channel < this.ring.channelCount; channel += 1) {
+    for (let channel = 0; channel < ring.channelCount; channel += 1) {
       const first = selection.channelOffsets[channel]
       const afterLast = selection.channelOffsets[channel + 1]
       for (let point = first; point < afterLast; point += 1) {
         const logical = selectedLogical[point]
         timeIndices[point] = timeIndexByLogical[logical] - 1
-        values[point] = this.ring.valueAt(logical, channel)
+        values[point] = ring.valueAt(logical, channel)
       }
     }
     for (let point = 0; point < selectedLogical.length; point += 1) {
@@ -1045,9 +1119,12 @@ export class StreamDecoder {
       timestampKind: 'sample-milliseconds',
       requestId: message.requestId,
       pixelWidth: message.pixelWidth,
-      channelCount: this.ring.channelCount,
+      channelCount: ring.channelCount,
       pointCount: selection.pointCount,
       candidateSampleCount: selection.candidateSampleCount,
+      ...(this.frozenRing && ring.length ? {
+        frozenStartMs: ring.timeAt(0), frozenEndMs: ring.timeAt(ring.length - 1),
+      } : {}),
       channelOffsets: selection.channelOffsets.buffer as ArrayBuffer,
       times: times.buffer,
       timeIndices: timeIndices.buffer,
@@ -1191,10 +1268,11 @@ export class StreamDecoder {
   }
 
   private resetSession(): void {
+    this.frozenRing = null
     this.ring?.reset()
     this.systemViewMode = false
-    this.systemViewEvents?.clear()
-    this.systemViewIntervals?.clear()
+    this.systemViewEvents = null
+    this.systemViewIntervals = null
     this.currentContext = null
     this.suspendedContexts = []
     this.systemViewContextCatalog.clear()

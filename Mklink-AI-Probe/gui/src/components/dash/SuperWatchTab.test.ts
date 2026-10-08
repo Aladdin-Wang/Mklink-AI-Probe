@@ -10,6 +10,30 @@ describe('SuperWatchTab', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ profile: 'medium' }) })))
   })
   afterEach(() => vi.unstubAllGlobals())
+  it.each([
+    [{ busy: ['superwatch'] }, '请先停止采集，再应用调试速率'],
+    [{ message: 'Target is busy debugging' }, 'Target is busy debugging'],
+  ])('explains a rejected speed change without stopping shared capture', async (detail, message) => {
+    const fetchMock = vi.fn(async (_url: any, init?: RequestInit) => ({
+      ok: !init, statusText: 'Conflict',
+      json: async () => init ? { detail } : { profile: 'medium' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(SuperWatchTab, {
+      props: { deviceConnected: true },
+      global: { stubs: { SymbolVariablePanel: true, PeripheralWatchPanel: true, WaveformViewer: true } },
+    })
+    try {
+      await flushPromises()
+      await wrapper.get('[data-testid="superwatch-speed"]').setValue('ultra')
+      await wrapper.get('[data-testid="apply-superwatch-speed"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="status"]').text()).toContain(message)
+      expect(wrapper.get<HTMLSelectElement>('#superwatch-speed').element.value).toBe('ultra')
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/stop'))).toBe(false)
+    } finally { wrapper.unmount() }
+  })
   it('follows external clock changes but preserves an unapplied user choice', async () => {
     vi.useFakeTimers()
     let profile = 'medium'

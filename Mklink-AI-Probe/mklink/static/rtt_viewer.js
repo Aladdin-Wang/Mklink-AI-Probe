@@ -1001,19 +1001,16 @@ function _buildWatchRowHtml(name, m) {
   if (treeNode) {
     hasChildren = treeNode.children && treeNode.children.length > 0
       && treeNode.kind !== 'bitfield' && !treeNode.enumValues;
-    console.log('[watch-row] name=' + name + ' treeNode found, hasChildren=' + hasChildren + ' children=' + (treeNode.children ? treeNode.children.length : 0) + ' kind=' + treeNode.kind);
   } else {
     // No cached tree: show expand button for struct-sourced items or top-level names
     var baseName = name.split('.')[0];
     var treeCached = !!_inspectCache[baseName];
     if (treeCached) {
       hasChildren = false; // tree exists but this path not found -> leaf
-      console.log('[watch-row] name=' + name + ' treeCached but path not found -> hasChildren=false');
     } else {
       // No tree cached yet: guess based on metadata / name pattern
       hasChildren = (CHANNEL_METADATA[name] && CHANNEL_METADATA[name].source === 'struct')
         || (name.indexOf('.') < 0);
-      console.log('[watch-row] name=' + name + ' no tree cached, guess hasChildren=' + hasChildren + ' source=' + (CHANNEL_METADATA[name] ? CHANNEL_METADATA[name].source : 'null'));
     }
   }
   var isExpanded = !!_expandedRows[name];
@@ -1145,7 +1142,6 @@ function _rebuildWatchTable() {
   // Skip rebuild if any row is being edited (dblclick editing in progress)
   if (tbody.querySelector('tr.watch-editing')) return;
   var names = Object.keys(FIELDS).sort();
-  console.log('[rebuildWatch] names=' + names.join(', ') + ' expanded=' + Object.keys(_expandedRows).join(','));
   var html = '';
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
@@ -1154,7 +1150,6 @@ function _rebuildWatchTable() {
     if (name.indexOf('.') >= 0) {
       var baseName = name.split('.')[0];
       if (FIELDS[baseName]) {
-        console.log('[rebuildWatch] skipping child ' + name + ' because parent ' + baseName + ' exists');
         continue;
       }
     }
@@ -1186,7 +1181,6 @@ function _bindWatchDelegates(tbody) {
       setChannelVisible(el.dataset.name, el.checked);
     } else if (el.classList.contains('watch-child-add-toggle')) {
       var childPath = el.dataset.childPath;
-      console.log('[watch-child-toggle] path=' + childPath + ' checked=' + el.checked);
       if (el.checked) {
         superwatchAddName(childPath);
       } else {
@@ -1440,7 +1434,6 @@ function applyChannelMetadata(channels, purge) {
   for (var name in channels) {
     if (!channels.hasOwnProperty(name)) continue;
     var meta = channels[name] || {};
-    console.log('[applyMeta] name=' + name + ' source=' + meta.source + ' isNew=' + !FIELDS[name] + ' purge=' + purge);
     CHANNEL_METADATA[name] = Object.assign({}, CHANNEL_METADATA[name] || {}, meta);
     if (!FIELDS[name]) {
       FIELDS[name] = {
@@ -2854,7 +2847,6 @@ function showInspectorTree(tree) {
 function superwatchAddName(name) {
   name = String(name || '').trim();
   if (!name) return;
-  console.log('[superwatchAdd] name=' + name + ' alreadyInFields=' + !!FIELDS[name]);
   fetch('/api/superwatch/add', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -2862,7 +2854,6 @@ function superwatchAddName(name) {
   })
     .then(function(r){ return r.json(); })
     .then(function(d){
-      console.log('[superwatchAdd] response for ' + name + ':', JSON.stringify(d.item));
       if (d.item && d.item.name) {
         delete _removedChannels[d.item.name];
         var meta = {};

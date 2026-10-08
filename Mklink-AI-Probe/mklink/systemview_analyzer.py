@@ -29,6 +29,64 @@ def _t(e: dict) -> float:
     return float(e.get("t_ticks") or 0)
 
 
+def _execution_intervals(events: list[dict]) -> list[dict]:
+    """Completed task execution slices, including implicit FreeRTOS switches.
+
+    Match the live timeline: ISR entry suspends a task, ISR exit resumes it,
+    scheduler/idle discard that context, and overflow abandons an open slice.
+    Do not extrapolate the final unfinished slice beyond the recorded events.
+    """
+    current = None
+    suspended = []
+    names = {}
+    intervals = []
+
+    def close(t):
+        nonlocal current
+        if current is not None:
+            tid, start = current
+            if t >= start:
+                intervals.append({'tid': tid, 'start': start, 'end': t})
+        current = None
+
+    for event in events:
+        kind, tid, t = event.get('kind'), event.get('task_id'), _t(event)
+        if isinstance(tid, int):
+            name = event.get('task_name') or (event.get('name') if kind == 'task_info' else None)
+            if name:
+                names[tid] = name
+        if kind == 'task_start_exec' and isinstance(tid, int):
+            close(t)
+            suspended.clear()
+            current = (tid, t)
+        elif kind in ('task_stop_exec', 'task_stop_ready'):
+            if current is not None and tid == current[0]:
+                close(t)
+        elif kind == 'isr_enter':
+            suspended.append(current)
+            close(t)
+        elif kind == 'isr_exit':
+            resume = suspended.pop() if suspended else None
+            if resume is not None:
+                current = (resume[0], t)
+        elif kind in ('isr_to_scheduler', 'idle', 'trace_stop'):
+            close(t)
+            suspended.clear()
+            if kind == 'idle':
+                current = (None, t)
+        elif kind == 'overflow':
+            current = None
+            suspended.clear()
+    for interval in intervals:
+        tid = interval['tid']
+        interval['name'] = 'Idle' if tid is None else names.get(tid, f"0x{tid:X}")
+    return intervals
+
+
+def task_intervals(events: list[dict]) -> list[dict]:
+    return [interval for interval in _execution_intervals(events) if interval['tid'] is not None]
+
+
 def analyze_events(events: list[dict]) -> dict:
     """分析 SystemView 事件列表，返回 RTOS 运行态报告 dict。
 
@@ -67,13 +125,20 @@ def analyze_events(events: list[dict]) -> dict:
     unit_source = events[-1] if events else all_events[-1]
     unit = "us" if isinstance(unit_source.get("t_us"), (int, float)) else "ticks"
 
-    # ---- 任务执行区间（task_start_exec / task_stop_exec）----
-    pending: dict[int, float] = {}
+    # ---- Completed task execution intervals (explicit and implicit switches) ----
     task_run: dict[int, float] = {}
     task_switches: dict[int, int] = {}
     task_names: dict[int, str] = {}
     task_slices: dict[int, list[float]] = {}
     switch_count = 0
+    intervals = _execution_intervals(events)
+    for interval in intervals:
+        tid = interval['tid']
+        if tid is None:
+            continue
+        duration = interval['end'] - interval['start']
+        task_run[tid] = task_run.get(tid, 0.0) + duration
+        task_slices.setdefault(tid, []).append(duration)
 
     # ---- ISR ----
     isr_enter_t: dict[int, float] = {}   # isr_id -> enter time（嵌套按 nest 计）
@@ -89,18 +154,10 @@ def analyze_events(events: list[dict]) -> dict:
         if k == "task_start_exec":
             tid = e.get("task_id")
             if isinstance(tid, int):
-                pending[tid] = t
                 task_switches[tid] = task_switches.get(tid, 0) + 1
                 switch_count += 1
                 if e.get("task_name"):
                     task_names[tid] = e["task_name"]
-        elif k == "task_stop_exec":
-            tid = e.get("task_id")
-            if isinstance(tid, int) and tid in pending:
-                dur = max(t - pending[tid], 0.0)
-                task_run[tid] = task_run.get(tid, 0.0) + dur
-                task_slices.setdefault(tid, []).append(dur)
-                del pending[tid]
         elif k == "task_info":
             tid = e.get("task_id")
             if isinstance(tid, int) and e.get("name"):
@@ -111,16 +168,16 @@ def analyze_events(events: list[dict]) -> dict:
             if isr_stack:
                 enter_t = isr_stack.pop()
                 dur = max(t - enter_t, 0.0)
-                isr_total += dur
+                if not isr_stack:
+                    isr_total += dur  # Nested ISR time is already in the outer interval.
                 isr_count += 1
                 isr_max = max(isr_max, dur)
         # 注：空闲率由空闲线程（tidle0）的 CPU% 推导，不累计 OnIdle 事件 delta
 
     # ---- 任务报告 ----
-    # CPU% 归一化到「总任务运行时间」（含空闲线程）→ 各任务加总 100%，与空闲率
-    # 自洽。observed=last-first 会被缓冲回压/翻卷的不连续 inflate，直接相除会让
-    # 所有 CPU% 偏低且对不上空闲率，故改用 total_run 做分母。
-    total_run = sum(task_run.values()) or 1.0
+    # Use the observed continuous segment, not only named task slices: FreeRTOS
+    # idle records need not carry a task ID. Normalizing named tasks to 100%
+    # would report a lightly loaded system as CPU-starved.
     tasks = []
     for tid, run in sorted(task_run.items(), key=lambda kv: kv[1], reverse=True):
         slices = task_slices.get(tid, [])
@@ -129,16 +186,16 @@ def analyze_events(events: list[dict]) -> dict:
             "id_hex": f"0x{tid:X}",
             "name": task_names.get(tid, ""),
             "run_us": round(run, 1),
-            "cpu_pct": round(run / total_run * 100, 2),
+            "cpu_pct": round(run / observed * 100, 2),
             "switches": task_switches.get(tid, 0),
             "avg_slice_us": round(sum(slices) / len(slices), 1) if slices else 0,
             "max_slice_us": round(max(slices), 1) if slices else 0,
         })
 
-    # 空闲率 = 空闲线程的 CPU%（与任务表一致）。识别：名字 tidle*/idle*
-    idle_tid = next((tid for tid, nm in task_names.items()
-                     if nm and nm.lower().startswith(("tidle", "idle"))), None)
-    idle_pct = round(task_run.get(idle_tid, 0.0) / total_run * 100, 2) if idle_tid is not None else 0.0
+    idle_intervals = [interval for interval in intervals if interval['tid'] is None
+                      or interval['name'].lower().startswith(('tidle', 'idle'))]
+    idle_run = sum(interval['end'] - interval['start'] for interval in idle_intervals)
+    idle_pct = round(idle_run / observed * 100, 2) if idle_intervals else None
 
     # ---- 异常检测 ----
     anomalies: list[dict] = []
@@ -185,8 +242,8 @@ def analyze_events(events: list[dict]) -> dict:
                 "detail": f"最长 ISR 达 {isr_max:.0f}µs——可能导致中断延迟/丢中断",
             })
         # 接近满载
-        non_idle = 100.0 - idle_pct
-        if non_idle > 95:
+        non_idle = 100.0 - idle_pct if idle_pct is not None else None
+        if non_idle is not None and non_idle > 95:
             anomalies.append({
                 "kind": "near_capacity", "severity": "warn",
                 "detail": f"非空闲 {non_idle:.1f}%——系统接近满载，余量不足",
@@ -208,7 +265,7 @@ def analyze_events(events: list[dict]) -> dict:
         "switch_count": switch_count,
         "switches_per_sec": round(switches_per_sec, 1) if unit == "us" else None,
         "task_count": len(tasks),
-        # 空闲率/ISR 占用是 total_run 的比率，与单位无关，始终给出
+        # No completed idle interval means unknown, not zero idle time.
         "idle_pct": idle_pct,
         "isr_cpu_pct": isr_cpu,
     }
@@ -232,7 +289,8 @@ def format_report(report: dict) -> str:
     lines.append(f"观测时长 : {obs:,.1f} {unit}  | 事件 {s.get('event_count')} | 任务 {s.get('task_count')}")
     sps = s.get("switches_per_sec")
     lines.append(f"切换次数 : {s.get('switch_count')}" + (f"  ({sps} 次/秒)" if sps else "（无 CPUFreq，未换算秒率）"))
-    lines.append(f"空闲率   : {s.get('idle_pct')}%    | ISR 占用: {s.get('isr_cpu_pct')}%  (相对执行时间；ISR 与任务有重叠)")
+    idle_text = '未知' if s.get('idle_pct') is None else f"{s['idle_pct']}%"
+    lines.append(f"空闲率   : {idle_text}    | ISR 占用: {s.get('isr_cpu_pct')}%  (已完成执行片相对观测时间)")
 
     lines.append("\n--- 任务 CPU 占用 ---")
     if report["tasks"]:

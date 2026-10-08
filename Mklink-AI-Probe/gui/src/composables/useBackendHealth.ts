@@ -9,6 +9,8 @@ import {
 
 /** 'starting' = backend not yet checked / currently booting */
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
+export const sharedRuntime = ref(false)
+const authenticationRequired = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let refCount = 0
 let firstCheckDone = false
@@ -16,13 +18,16 @@ let firstCheckDone = false
 async function checkBackendHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(3000) })
+    authenticationRequired.value = res.status === 401
     if (!res.ok) return false
     const payload = await res.json().catch(() => null)
     if (payload && typeof payload === 'object') {
       applyReportedBackendPort((payload as { backend_port?: unknown }).backend_port)
+      sharedRuntime.value = (payload as { shared_runtime?: unknown }).shared_runtime === true
     }
     return true
   } catch {
+    authenticationRequired.value = false
     return false
   }
 }
@@ -35,9 +40,8 @@ async function refreshHealth() {
   if (alive) {
     backendState.value = 'alive'
     firstCheckDone = true
-  } else if (firstCheckDone) {
-    // Only show 'dead' after at least one successful check
-    // This prevents flashing red during initial startup
+  } else if (firstCheckDone || authenticationRequired.value) {
+    // Network startup failures get a grace period; a 401 needs action immediately.
     backendState.value = 'dead'
   }
   // If !firstCheckDone && !alive, keep 'starting'
@@ -46,7 +50,7 @@ async function refreshHealth() {
 async function checkViaTauri(): Promise<boolean> {
   try {
     const alive = await (window as any).__TAURI__.invoke('backend_alive')
-    return !!alive
+    return !!alive && await checkBackendHealth()
   } catch {
     return await checkBackendHealth()
   }
@@ -118,6 +122,8 @@ export function useBackendHealth() {
 
   return {
     backendState,
+    sharedRuntime,
+    authenticationRequired,
     backendPort: runtimeBackendPort,
     isTauri: IS_TAURI,
     startHealthPolling,

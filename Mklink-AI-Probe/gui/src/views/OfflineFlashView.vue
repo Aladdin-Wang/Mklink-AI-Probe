@@ -98,6 +98,8 @@ const error = ref('')
 const errorTitle = ref('')
 const errorDetail = ref('')
 const notice = ref('')
+const deploymentRequestId = ref('')
+const deploymentUncertain = ref(false)
 const preview = ref<OfflinePreview | null>(null)
 const triggerLines = ref<string[]>([])
 const deployedScriptName = ref('')
@@ -157,13 +159,14 @@ const canBuild = computed(() => (
   && ((firmwares.value.length === 0 && Object.keys(optionByteChanges.value).length > 0
     && !securityRequested.value && !eraseAllBeforeDownload.value)
   || (firmwares.value.length > 0 && (hpmMode.value
-    ? !!hpmBoard.value && firmwares.value.every(item => (item.file || item.source_path) && item.format === 'bin' && !!item.base_address)
+    ? !!hpmBoard.value && firmwares.value.every(item => (item.file || item.source_path) && (item.format === 'hex' || !!item.base_address))
     : selectedAlgorithms.value.length > 0
       && unavailableSelectedAlgorithms.value.length === 0
       && firmwares.value.every(item => (item.file || item.source_path) && item.algorithm_id && algorithms.value.some(algorithm => algorithm.id === item.algorithm_id)))))
 ))
 const canTrigger = computed(() => (
   !!disk.value?.available
+  && !deploymentUncertain.value
   && !!deployedScriptName.value
   && !!deployedModel.value
   && !operationBusy.value
@@ -560,10 +563,6 @@ function addFirmwareSources(sources: Array<string | File>): void {
       setError(new Error(tr('固件只支持 BIN 或 HEX', 'Only BIN or HEX firmware is supported')))
       continue
     }
-    if (hpmMode.value && suffix !== 'bin') {
-      setError(new Error(tr('HPM ROM API 只支持 BIN 固件', 'HPM ROM API supports BIN firmware only')))
-      continue
-    }
     firmwares.value.push({
       id: nextId('firmware'),
       file,
@@ -725,6 +724,7 @@ async function generatePreview(): Promise<void> {
 }
 
 async function deploy(): Promise<void> {
+  if (deploymentUncertain.value) return
   operationBusy.value = true
   clearError()
   notice.value = ''
@@ -733,11 +733,39 @@ async function deploy(): Promise<void> {
     if (!preview.value) {
       preview.value = await offline.preview(request.payload)
     }
-    const result = await offline.deploy(request.payload, request.firmwareFiles, request.flmFiles)
+    deploymentRequestId.value = crypto.randomUUID()
+    deploymentUncertain.value = true
+    deployedScriptName.value = ''
+    deployedModel.value = ''
+    const result = await offline.deploy(request.payload, request.firmwareFiles, request.flmFiles, deploymentRequestId.value)
+    deploymentUncertain.value = false
     deployedScriptName.value = result.script_name
     deployedModel.value = result.model
-    notice.value = tr(`已部署 ${result.files.length} 个文件，脚本 ${result.script_name}`, `Deployed ${result.files.length} files with script ${result.script_name}`)
+    notice.value = tr(`已部署 ${result.file_count ?? result.files.length} 个文件，脚本 ${result.script_name}`, `Deployed ${result.file_count ?? result.files.length} files with script ${result.script_name}`)
     await refreshDisk()
+  } catch (value) { setError(value) }
+  finally { operationBusy.value = false }
+}
+
+async function queryDeployment(): Promise<void> {
+  operationBusy.value = true
+  deploymentUncertain.value = true
+  notice.value = ''
+  deployedScriptName.value = ''
+  deployedModel.value = ''
+  clearError()
+  try {
+    const job = await offline.deploymentStatus(deploymentRequestId.value)
+    if (job.state === 'succeeded' && job.result?.status === 'deployed') {
+      deploymentUncertain.value = false
+      deployedScriptName.value = job.result.script_name
+      deployedModel.value = job.result.model
+      notice.value = tr('已查询到部署成功记录，未重新写入。', 'Deployment succeeded; queried without writing again.')
+    } else {
+      deploymentUncertain.value = true
+      notice.value = ''
+      setError(`${job.state}: ${job.error ?? tr('仍在执行，请稍后查询。', 'Still running; query again later.')} ${job.recovery_directory ?? ''}`)
+    }
   } catch (value) { setError(value) }
   finally { operationBusy.value = false }
 }
@@ -835,6 +863,7 @@ onBeforeUnmount(() => {
 
       <section class="work-panel firmware-panel" :class="{ dragging: firmwareDropActive }" data-testid="offline-firmware-drop-zone" @dragenter.prevent="firmwareDropActive = true" @dragover.prevent="firmwareDropActive = true" @dragleave.prevent="firmwareDropActive = false" @drop.prevent="dropFirmware">
         <div class="panel-heading step-heading"><div class="step-title"><span>02</span><div><h2>{{ tr('烧录顺序', 'Flash Sequence') }}</h2><small>{{ tr('固件按从上到下顺序依次写入', 'Firmware is programmed from top to bottom') }}</small></div></div><button class="btn btn-sm" type="button" @click="browseFirmware">{{ tr('添加固件', 'Add Firmware') }}</button><input class="visually-hidden" data-testid="offline-firmware-input" type="file" multiple accept=".bin,.hex" @change="addFirmware"></div>
+        <p v-if="hpmMode" class="empty-state">{{ tr('HPM HEX 使用文件内的绝对地址，需要新版 V4 固件；BIN 需填写基地址。HEX 未覆盖的完整扇区保留，覆盖扇区内的空隙会擦除。', 'HPM HEX uses absolute file addresses and requires updated V4 firmware; BIN requires a base address. Untouched sectors are preserved; gaps within touched sectors are erased.') }}</p>
         <div class="firmware-list">
           <div v-for="(item, index) in firmwares" :key="item.id" class="firmware-row" data-testid="offline-firmware-row">
             <div class="sequence-number">{{ index + 1 }}</div>
@@ -897,8 +926,14 @@ onBeforeUnmount(() => {
         <HpmOfflineOtpPanel v-if="model === 'V4' && ['HPM5301','HPM5301XEGX'].includes(targetPart.toUpperCase())" :key="`${model}:${targetPart}`" @change="hpmOfflineOtp = $event" />
         <div class="deploy-actions">
           <button class="btn" :disabled="operationBusy || !canBuild" @click="generatePreview">{{ tr('生成预览', 'Generate Preview') }}</button>
-          <button class="btn btn-primary" data-testid="offline-deploy" :disabled="operationBusy || !canBuild" @click="deploy">{{ tr('部署到 U 盘', 'Deploy to USB Drive') }}</button>
+          <button class="btn btn-primary" data-testid="offline-deploy" :disabled="operationBusy || !canBuild || deploymentUncertain" @click="deploy">{{ tr('部署到 U 盘', 'Deploy to USB Drive') }}</button>
           <button class="btn" data-testid="offline-trigger" :disabled="!canTrigger" @click="triggerOffline">{{ tr('触发测试', 'Run Test') }}</button>
+        </div>
+        <div class="deployment-query">
+          <label>{{ tr('部署请求标识（在原下载器查询）', 'Deployment request ID (query the original probe)') }} <input v-model="deploymentRequestId" class="compact-input mono" data-testid="deployment-request-id"></label>
+          <button class="btn" data-testid="deployment-query" :disabled="operationBusy || !deploymentRequestId" @click="queryDeployment">{{ tr('查询部署结果', 'Query deployment result') }}</button>
+          <button v-if="deploymentUncertain" class="btn" :disabled="operationBusy" @click="deploymentUncertain = false; deploymentRequestId = ''">{{ tr('已核查磁盘，允许新部署', 'Disk inspected; allow a new deployment') }}</button>
+          <p>{{ tr('断线或响应丢失时请先查询，不要重复部署。记录最多保留 64 项；找不到记录不代表没有执行。', 'Query after disconnect or a lost response; do not replay. Up to 64 jobs are retained. A missing record does not prove no execution.') }}</p>
         </div>
         <p class="action-guide">{{ tr('建议流程：先生成预览检查脚本 → 部署到 U 盘 → 点击“触发测试”验证目标板。', 'Recommended: inspect the generated script → deploy to USB → run a hardware test.') }}</p>
         <div class="script-preview">
@@ -915,7 +950,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .firmware-panel{outline:2px solid transparent;outline-offset:-2px}.firmware-panel.dragging{outline-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.offline-page{min-height:0;display:flex;flex-direction:column;gap:10px}.status-strip{display:flex;align-items:center;gap:28px;min-height:46px;padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface)}.status-strip>div{display:flex;align-items:baseline;gap:8px;min-width:0}.status-strip b{font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-label{font-size:11px;color:var(--muted)}.status-actions{margin-left:auto}.ok{color:var(--success)}.bad{color:var(--danger)}.error-detail{display:block;margin-top:4px}.technical-error{margin-top:6px;color:var(--muted);font-size:11px}.technical-error code{display:block;margin-top:4px;white-space:pre-wrap;word-break:break-word;font:11px/1.45 var(--font-mono)}.offline-workspace{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(360px,1.25fr) minmax(300px,1fr);gap:10px;min-height:620px}.work-panel{min-width:0;min-height:0;padding:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);overflow:auto}.panel-heading{height:34px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border-subtle);margin-bottom:10px}.panel-heading h2{font-size:14px}.file-button{position:relative;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;cursor:pointer}.target-search{display:grid;grid-template-columns:1fr auto;gap:6px}.target-results{display:grid;gap:5px;max-height:150px;overflow:auto;margin:8px 0 12px}.target-result{display:flex;align-items:center;justify-content:space-between;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:5px;background: var(--input-bg, #fff);color:var(--fg);cursor:pointer}.target-result span{display:grid}.target-result small{font-size:10px;color:var(--muted)}.target-result em{font-style:normal;font-size:10px;color:var(--accent)}.hpm-mode{padding:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--success);font-size:12px}.algorithm-list,.firmware-list{display:grid;gap:7px}.algorithm-row,.firmware-row{border:1px solid var(--border);border-radius:5px;background:var(--input-bg)}.algorithm-row{padding:8px}.algorithm-row.unavailable{border-color:var(--warn)}.algorithm-warning{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;margin-bottom:5px;border-radius:4px;background:var(--warn-bg);color:var(--warn);font-size:11px}.row-title{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:7px;margin-bottom:7px}.row-title span{font-size:10px;color:var(--muted)}.algorithm-row>label{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:6px;margin-top:5px;font-size:10px;color:var(--muted)}.compact-input{width:100%;height:27px;padding:0 7px;border:1px solid var(--border);border-radius:4px;background: var(--input-bg, #fff);color:var(--fg);min-width:0}.mono{font-family:var(--font-mono)}.icon-command{width:27px;height:27px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer}.icon-command:hover{color:var(--accent);border-color:var(--accent)}.icon-command:disabled{opacity:.35;cursor:not-allowed}.firmware-row{display:grid;grid-template-columns:34px 1fr 28px;padding:8px;gap:7px}.sequence-number{display:grid;place-items:center;width:28px;height:28px;border-radius:4px;background:var(--bg);font-family:var(--font-mono);font-weight:600}.firmware-fields{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(110px,1fr);gap:6px}.firmware-fields .file-name{grid-column:1/-1}.embedded-address{align-self:center;font-size:11px;color:var(--muted)}.row-actions{display:grid;gap:4px}.setting-row{display:grid;grid-template-columns:108px 1fr auto;align-items:center;gap:8px;margin-bottom:9px}.setting-row>span{font-size:12px;color:var(--muted);text-align:right}.setting-row em{font-size:10px;color:var(--muted);font-style:normal}.security-settings{margin:12px 0;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg)}.security-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:12px;font-weight:600}.security-title em{font-size:10px;font-style:normal}.security-option{display:flex;align-items:flex-start;gap:7px;margin:7px 0;font-size:11px;line-height:1.45}.security-option input{margin-top:2px}.security-voltage{margin:9px 0 4px}.security-reason{margin:7px 0 0;color:var(--muted);font-size:10px;line-height:1.5}.deploy-actions{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}.script-preview{border:1px solid var(--border);border-radius:5px;overflow:hidden}.preview-title{display:flex;justify-content:space-between;padding:6px 9px;background:var(--bg);font-size:10px;color:var(--muted)}.script-preview pre,.trigger-log{margin:0;padding:10px;max-height:310px;overflow:auto;background:#16191d;color:#d9dee5;font:11px/1.55 var(--font-mono);white-space:pre}.trigger-log{margin-top:8px;border-radius:5px}.empty-state{padding:20px 8px;text-align:center;color:var(--dim);font-size:12px}@media(max-width:1100px){.offline-workspace{grid-template-columns:1fr 1.25fr}.settings-panel{grid-column:1/-1}}@media(max-width:760px){.status-strip{align-items:flex-start;flex-wrap:wrap}.status-actions{margin-left:0}.offline-workspace{grid-template-columns:1fr}.settings-panel{grid-column:auto}.firmware-fields{grid-template-columns:1fr}.firmware-fields .file-name{grid-column:auto}}
+.deployment-query{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0;padding:10px;border:1px solid var(--border);border-radius:5px}.deployment-query label{width:100%;font-size:11px;color:var(--muted)}.deployment-query input{margin-top:5px}.deployment-query p{margin:0;font-size:11px;line-height:1.5;color:var(--muted)}.offline-page{min-height:0;display:flex;flex-direction:column;gap:10px}.status-strip{display:flex;align-items:center;gap:28px;min-height:46px;padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface)}.status-strip>div{display:flex;align-items:baseline;gap:8px;min-width:0}.status-strip b{font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-label{font-size:11px;color:var(--muted)}.status-actions{margin-left:auto}.ok{color:var(--success)}.bad{color:var(--danger)}.error-detail{display:block;margin-top:4px}.technical-error{margin-top:6px;color:var(--muted);font-size:11px}.technical-error code{display:block;margin-top:4px;white-space:pre-wrap;word-break:break-word;font:11px/1.45 var(--font-mono)}.offline-workspace{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(360px,1.25fr) minmax(300px,1fr);gap:10px;min-height:620px}.work-panel{min-width:0;min-height:0;padding:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);overflow:auto}.panel-heading{height:34px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border-subtle);margin-bottom:10px}.panel-heading h2{font-size:14px}.file-button{position:relative;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;cursor:pointer}.target-search{display:grid;grid-template-columns:1fr auto;gap:6px}.target-results{display:grid;gap:5px;max-height:150px;overflow:auto;margin:8px 0 12px}.target-result{display:flex;align-items:center;justify-content:space-between;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:5px;background: var(--input-bg, #fff);color:var(--fg);cursor:pointer}.target-result span{display:grid}.target-result small{font-size:10px;color:var(--muted)}.target-result em{font-style:normal;font-size:10px;color:var(--accent)}.hpm-mode{padding:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--success);font-size:12px}.algorithm-list,.firmware-list{display:grid;gap:7px}.algorithm-row,.firmware-row{border:1px solid var(--border);border-radius:5px;background:var(--input-bg)}.algorithm-row{padding:8px}.algorithm-row.unavailable{border-color:var(--warn)}.algorithm-warning{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;margin-bottom:5px;border-radius:4px;background:var(--warn-bg);color:var(--warn);font-size:11px}.row-title{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:7px;margin-bottom:7px}.row-title span{font-size:10px;color:var(--muted)}.algorithm-row>label{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:6px;margin-top:5px;font-size:10px;color:var(--muted)}.compact-input{width:100%;height:27px;padding:0 7px;border:1px solid var(--border);border-radius:4px;background: var(--input-bg, #fff);color:var(--fg);min-width:0}.mono{font-family:var(--font-mono)}.icon-command{width:27px;height:27px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer}.icon-command:hover{color:var(--accent);border-color:var(--accent)}.icon-command:disabled{opacity:.35;cursor:not-allowed}.firmware-row{display:grid;grid-template-columns:34px 1fr 28px;padding:8px;gap:7px}.sequence-number{display:grid;place-items:center;width:28px;height:28px;border-radius:4px;background:var(--bg);font-family:var(--font-mono);font-weight:600}.firmware-fields{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(110px,1fr);gap:6px}.firmware-fields .file-name{grid-column:1/-1}.embedded-address{align-self:center;font-size:11px;color:var(--muted)}.row-actions{display:grid;gap:4px}.setting-row{display:grid;grid-template-columns:108px 1fr auto;align-items:center;gap:8px;margin-bottom:9px}.setting-row>span{font-size:12px;color:var(--muted);text-align:right}.setting-row em{font-size:10px;color:var(--muted);font-style:normal}.security-settings{margin:12px 0;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg)}.security-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:12px;font-weight:600}.security-title em{font-size:10px;font-style:normal}.security-option{display:flex;align-items:flex-start;gap:7px;margin:7px 0;font-size:11px;line-height:1.45}.security-option input{margin-top:2px}.security-voltage{margin:9px 0 4px}.security-reason{margin:7px 0 0;color:var(--muted);font-size:10px;line-height:1.5}.deploy-actions{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}.script-preview{border:1px solid var(--border);border-radius:5px;overflow:hidden}.preview-title{display:flex;justify-content:space-between;padding:6px 9px;background:var(--bg);font-size:10px;color:var(--muted)}.script-preview pre,.trigger-log{margin:0;padding:10px;max-height:310px;overflow:auto;background:#16191d;color:#d9dee5;font:11px/1.55 var(--font-mono);white-space:pre}.trigger-log{margin-top:8px;border-radius:5px}.empty-state{padding:20px 8px;text-align:center;color:var(--dim);font-size:12px}@media(max-width:1100px){.offline-workspace{grid-template-columns:1fr 1.25fr}.settings-panel{grid-column:1/-1}}@media(max-width:760px){.status-strip{align-items:flex-start;flex-wrap:wrap}.status-actions{margin-left:0}.offline-workspace{grid-template-columns:1fr}.settings-panel{grid-column:auto}.firmware-fields{grid-template-columns:1fr}.firmware-fields .file-name{grid-column:auto}}
 .step-heading{height:auto;min-height:44px;align-items:flex-start}.step-title{display:flex;gap:8px;min-width:0}.step-title>span{display:grid;place-items:center;flex:0 0 27px;height:27px;border-radius:5px;background:color-mix(in srgb,var(--accent) 13%,var(--bg));color:var(--accent);font:600 11px var(--font-mono)}.step-title h2{margin:0}.step-title small{display:block;margin-top:2px;color:var(--muted);font-size:9px;font-weight:400}.target-combobox{position:relative}.target-results{position:absolute;z-index:30;top:34px;left:0;right:0;max-height:260px;margin:4px 0;padding:4px;border:1px solid var(--accent);border-radius:5px;background:var(--surface);box-shadow:0 10px 24px rgba(0,0,0,.18)}.target-result.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}.selected-target{display:flex;align-items:center;justify-content:space-between;margin:8px 0 10px;padding:7px 9px;border-radius:5px;background:var(--bg);font-size:10px;color:var(--muted)}.selected-target b{color:var(--success);font-family:var(--font-mono)}.action-guide{margin:-7px 0 12px;color:var(--muted);font-size:10px;line-height:1.5}
 .security-reason.erase-all-warning{padding:8px;border-left:3px solid var(--warn);background:color-mix(in srgb,var(--warn) 10%,var(--bg));color:var(--warn);font-size:11px}
 </style>

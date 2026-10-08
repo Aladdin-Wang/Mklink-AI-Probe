@@ -21,9 +21,11 @@ import type {
 } from '../types/mklink'
 import { toHexPayload } from '../lib/rttTransmit'
 import type { RttEncoding } from '../lib/desktopSettings'
-import { API_BASE } from '../lib/runtimeEndpoint'
+import { API_BASE, IS_REMOTE } from '../lib/runtimeEndpoint'
+import { sharedRuntime } from './useBackendHealth'
 import { trackSymbolSource } from '../lib/trackedSymbolSource'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
+import { navigateToRuntime } from '../lib/runtimeNavigation'
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers)
@@ -61,8 +63,30 @@ const deviceStatus = ref<DeviceStatus>({
 let statusInterval: ReturnType<typeof setInterval> | null = null
 
 export function useMklinkApi() {
+  async function exclusiveJob(action: string, args: object = {}) {
+    interface Job { job_id: string; state: string; result: unknown; error?: string }
+    const requestId = crypto.randomUUID()
+    let job: Job
+    try {
+      job = await api<Job>('/api/runtime/jobs/', { method: 'POST', body: JSON.stringify({
+        action, arguments: args, request_id: requestId, confirm: true,
+      }) })
+      while (job.state === 'running') {
+        await new Promise(resolve => setTimeout(resolve, 300))
+        job = await api<Job>(`/api/runtime/jobs/${job.job_id}`)
+      }
+    } catch (error) {
+      throw new Error(`${String(error)} · Request ${requestId}. Check backend jobs before starting again.`)
+    }
+    if (job.state !== 'succeeded') throw new Error(`${job.state}: ${job.error || JSON.stringify(job.result)} · ${job.job_id}`)
+    return job.result
+  }
   async function listPorts(): Promise<PortInfo[]> {
     return api('/api/ports')
+  }
+
+  async function listUartPorts(): Promise<PortInfo[]> {
+    return api('/api/ports/uart')
   }
 
   async function discoverPort(): Promise<{ port: string | null }> {
@@ -161,6 +185,19 @@ export function useMklinkApi() {
   }
 
   async function connectDevice(req: ConnectRequest): Promise<DeviceStatus> {
+    if (sharedRuntime.value) {
+      const selection = await api<{ same_runtime: boolean; runtime_url?: string; reload?: boolean }>('/api/runtime/select', {
+        method: 'POST', body: JSON.stringify({ port: req.port, connect: req }),
+      })
+      if (selection.runtime_url) {
+        navigateToRuntime(selection.runtime_url)
+        return deviceStatus.value
+      }
+      if (selection.reload) {
+        navigateToRuntime()
+        return deviceStatus.value
+      }
+    }
     const result = await api<DeviceStatus>('/api/device/connect', {
       method: 'POST',
       body: JSON.stringify(req),
@@ -184,6 +221,8 @@ export function useMklinkApi() {
       deviceStatus.value = s
       return s
     } catch {
+      // The remote window is made inert by backend health; keep the last snapshot visible.
+      if (IS_REMOTE) return deviceStatus.value
       deviceStatus.value = {
         connected: false,
         state: 'disconnected',
@@ -209,6 +248,7 @@ export function useMklinkApi() {
   }
 
   async function flashDevice(req: FlashRequest) {
+    if (sharedRuntime.value) return exclusiveJob('flash', req)
     return api('/api/device/flash', {
       method: 'POST',
       body: JSON.stringify(req),
@@ -216,6 +256,7 @@ export function useMklinkApi() {
   }
 
   async function resetDevice() {
+    if (sharedRuntime.value) return exclusiveJob('reset')
     return api('/api/device/reset', { method: 'POST' })
   }
 
@@ -236,6 +277,7 @@ export function useMklinkApi() {
   }
 
   async function eraseDevice() {
+    if (sharedRuntime.value) return exclusiveJob('erase')
     return api('/api/device/erase', { method: 'POST' })
   }
 
@@ -264,13 +306,6 @@ export function useMklinkApi() {
     }
   }
 
-  async function setProjectRoot(path: string): Promise<{ project_root: string }> {
-    return api('/api/project-root', {
-      method: 'PUT',
-      body: JSON.stringify({ path }),
-    })
-  }
-
   async function getProjectRoot(): Promise<{ project_root: string }> {
     return api('/api/project-root')
   }
@@ -291,10 +326,10 @@ export function useMklinkApi() {
     })
   }
 
-  async function writeRtt(data: Uint8Array): Promise<RttWriteResponse> {
+  async function writeRtt(data: Uint8Array, channel?: number): Promise<RttWriteResponse> {
     return api('/api/dash/rtt/write', {
       method: 'POST',
-      body: JSON.stringify({ data_hex: toHexPayload(data) }),
+      body: JSON.stringify({ data_hex: toHexPayload(data), ...(channel === undefined ? {} : { channel }) }),
     })
   }
 
@@ -325,6 +360,7 @@ export function useMklinkApi() {
   return {
     deviceStatus: readonly(deviceStatus),
     listPorts,
+    listUartPorts,
     discoverPort,
     getProfiles,
     getConfig,
@@ -353,7 +389,6 @@ export function useMklinkApi() {
     parseAxf,
     startStatusPolling,
     stopStatusPolling,
-    setProjectRoot,
     getProjectRoot,
     browseProjectRoot,
     findRtt,

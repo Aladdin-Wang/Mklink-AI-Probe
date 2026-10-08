@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import os
-import re
-import threading
 from collections.abc import Callable
 
 from pymodbus.client import ModbusSerialClient
 from pymodbus import FramerType, ModbusException
+
+from mklink.local_resources import _PortLock
+from mklink.usb_interfaces import canonical_serial_port, require_uart_port
 
 
 class ModbusError(Exception):
@@ -25,72 +25,17 @@ class ModbusSlaveError(ModbusError):
         super().__init__(f"从站 {slave} 返回异常 (FC={fc:#04x}): {response}")
 
 
-class _PortLock:
-    """Cross-process advisory lock for one Modbus serial port."""
+class _ExplicitSerialClient(ModbusSerialClient):
+    """pymodbus requests may check connectivity, but must never reopen a COM port."""
 
-    _guard = threading.Lock()
+    def open_port(self) -> bool:
+        if not super().connect():
+            return False
+        self.socket.write_timeout = self.comm_params.timeout_connect
+        return True
 
-    def __init__(self, port: str):
-        safe_port = re.sub(r"[^A-Za-z0-9_.-]+", "_", port.upper())
-        lock_dir = os.path.join(os.environ.get("TEMP", "/tmp"), "mklink_modbus_locks")
-        # A basename such as ``COM6.lock`` still resolves to the reserved
-        # Windows device ``COM6``.  Prefix the filename so it is always a real
-        # filesystem entry before applying the byte-range lock.
-        self._path = os.path.join(lock_dir, f"port_{safe_port}.lock")
-        self._fd = None
-        self._locked = False
-
-    def acquire(self) -> bool:
-        if self._locked:
-            return True
-        with self._guard:
-            os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            # Use a binary descriptor for msvcrt.locking().  Text/append mode
-            # produces EINVAL on real Windows hosts even with a materialized
-            # byte, which made every port look permanently busy.
-            self._fd = open(self._path, "a+b")
-            try:
-                if os.name == "nt":
-                    import msvcrt
-                    # Windows byte-range locks cannot reliably lock beyond EOF.
-                    # A freshly created lock file is empty, which caused every
-                    # first acquisition to be misclassified as "port busy" on
-                    # real field hosts.  Materialize the byte before locking it.
-                    self._fd.seek(0, os.SEEK_END)
-                    if self._fd.tell() == 0:
-                        self._fd.write(b"\0")
-                        self._fd.flush()
-                    self._fd.seek(0)
-                    msvcrt.locking(self._fd.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                self._fd.close()
-                self._fd = None
-                return False
-            self._fd.seek(0)
-            self._fd.truncate()
-            self._fd.write(str(os.getpid()).encode("ascii"))
-            self._fd.flush()
-            self._locked = True
-            return True
-
-    def release(self) -> None:
-        if not self._locked or self._fd is None:
-            return
-        try:
-            if os.name == "nt":
-                import msvcrt
-                self._fd.seek(0)
-                msvcrt.locking(self._fd.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self._fd, fcntl.LOCK_UN)
-        finally:
-            self._fd.close()
-            self._fd = None
-            self._locked = False
+    def connect(self) -> bool:
+        return bool(self.socket and self.socket.is_open)
 
 
 class ModbusClient:
@@ -109,7 +54,8 @@ class ModbusClient:
         trace_packet: Callable[[bool, bytes], bytes] | None = None,
         trace_connect: Callable[[bool], None] | None = None,
     ):
-        self._client = ModbusSerialClient(
+        port = canonical_serial_port(port)
+        self._client = _ExplicitSerialClient(
             port=port,
             framer=FramerType.RTU,
             baudrate=baudrate,
@@ -129,19 +75,31 @@ class ModbusClient:
     def open(self) -> bool:
         """打开串口连接。"""
         if self._is_open:
-            return True
+            if self._client.connect():
+                return True
+            self.close()
+        require_uart_port(self._port)
         if not self._lock.acquire():
             print(f"[FAIL] Modbus 串口 {self._port} 已被 mklink 其他进程占用；不要并发访问同一串口")
             return False
         try:
-            ok = self._client.connect()
+            ok = self._client.open_port()
             if not ok:
-                self._lock.release()
+                try:
+                    self._client.close()
+                finally:
+                    self._lock.release()
                 return False
+            require_uart_port(self._port)
             self._is_open = True
             return True
         except Exception as e:
-            self._lock.release()
+            try:
+                self._client.close()
+            finally:
+                self._lock.release()
+            if isinstance(e, ValueError):
+                raise
             print(f"[FAIL] 无法打开端口 {self._port}: {e}")
             return False
 
@@ -238,7 +196,7 @@ class ModbusClient:
     ) -> None:
         self._check(
             self._client.mask_write_register(
-                address, and_mask=and_mask, or_mask=or_mask, device_id=slave
+                address=address, and_mask=and_mask, or_mask=or_mask, device_id=slave
             ),
             slave, 0x16,
         )
@@ -282,3 +240,48 @@ class ModbusClient:
     def raw_client(self) -> ModbusSerialClient:
         """直接访问底层 pymodbus 客户端（用于诊断等高级操作）。"""
         return self._client
+
+    def probe_slave(self, slave: int, register: int = 0) -> dict:
+        """One read-only probe; the caller must serialize access to this client."""
+        from pymodbus.exceptions import ModbusIOException
+        from mklink.modbus._session import validate_slave, validate_transaction
+        validate_slave(slave)
+        validate_transaction(3, register, quantity=1)
+        raw = self._client
+        if not raw.connect():
+            raise ModbusError('Modbus port is closed; reconnect explicitly before scanning')
+        # pymodbus copies retries into its transaction object at construction.
+        # Its serial receive loop and socket also have separate timeout values.
+        settings = [(raw.comm_params, 'timeout_connect', .15), (raw, 'retries', 0),
+                    (raw.transaction, 'retries', 0), (raw.socket, 'timeout', .15),
+                    (raw.socket, 'write_timeout', .15)]
+        previous = [(obj, key, getattr(obj, key)) for obj, key, _ in settings]
+        # Absent addresses during discovery must not consume the connected
+        # slave's failure budget used by subsequent GUI transactions.
+        previous.append((raw.transaction, 'count_until_disconnect', raw.transaction.count_until_disconnect))
+        try:
+            for obj, key, value in settings:
+                setattr(obj, key, value)
+            try:
+                self.read_holding_registers(register, 1, slave)
+            except ModbusSlaveError as exc:
+                return {'slave': slave, 'responded': True,
+                        'exception_code': exc.response.exception_code}
+            except ModbusIOException as exc:
+                return {'slave': slave, 'responded': False, 'error': str(exc)}
+            return {'slave': slave, 'responded': True}
+        finally:
+            restore_error = None
+            for obj, key, value in reversed(previous):
+                try:
+                    setattr(obj, key, value)
+                except Exception as exc:
+                    if restore_error is None:
+                        restore_error = exc
+            if restore_error is not None:
+                # Stop using a port whose timing could not be restored. Keep
+                # the outer client's ownership lock until explicit close/stop.
+                try:
+                    raw.close()
+                finally:
+                    raise restore_error

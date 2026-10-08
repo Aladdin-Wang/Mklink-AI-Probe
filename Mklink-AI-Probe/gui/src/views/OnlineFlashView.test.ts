@@ -127,7 +127,7 @@ describe('online flash navigation and workspace', () => {
     })
 
     const labels = wrapper.findAll('.nav-tab').map(tab => tab.text())
-    expect(labels).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录', '现场 Agent'])
+    expect(labels).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录', '远程服务'])
 
     await wrapper.findAll('.nav-tab')[2].trigger('click')
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('offline-flash'))
@@ -328,6 +328,16 @@ describe('useOnlineFlashApi', () => {
       body: JSON.stringify(request),
     }))
     expectTypeOf<JobRequest['actions'][number]>().toEqualTypeOf<JobAction>()
+  })
+
+  it('submits online jobs once with a retained ID after response loss', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('response lost'))
+    const api = await onlineFlashApi()
+    await expect(api.createJob({ actions: ['connect', 'disconnect'], probe_id: 'selected' }, 'retained-id'))
+      .rejects.toThrow('request_id=retained-id')
+    expect(fetch).toHaveBeenCalledTimes(1)
+    const headers = new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers)
+    expect(headers.get('X-MKLink-Request-Id')).toBe('retained-id')
   })
 
   it('preserves structured API conflict details', async () => {
@@ -693,12 +703,16 @@ async function choosePack(wrapper: ReturnType<typeof mount>) {
   await input.trigger('change')
 }
 
-async function readyAndStart(wrapper: ReturnType<typeof mount>) {
+async function readyToStart(wrapper: ReturnType<typeof mount>) {
   await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
   await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
   await chooseFirmware(wrapper)
   await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
   await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+}
+
+async function readyAndStart(wrapper: ReturnType<typeof mount>) {
+  await readyToStart(wrapper)
   await wrapper.get('[data-testid="start-job"]').trigger('click')
   if (wrapper.find('[data-testid="confirmation-accept"]').exists()) {
     await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
@@ -976,6 +990,8 @@ describe('online flash task workspace behavior', () => {
       ['mklink.onlineFlash.settings', JSON.stringify({ targetPart: savedPart })],
     ])
     vi.stubGlobal('localStorage', {
+      get length() { return storage.size },
+      key: (index: number) => [...storage.keys()][index] ?? null,
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
       removeItem: (key: string) => storage.delete(key),
@@ -1023,6 +1039,8 @@ describe('online flash task workspace behavior', () => {
     FakeEventSource.instances = []
     const storage = new Map<string, string>()
     vi.stubGlobal('localStorage', {
+      get length() { return storage.size },
+      key: (index: number) => [...storage.keys()][index] ?? null,
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
       removeItem: (key: string) => storage.delete(key),
@@ -1038,6 +1056,231 @@ describe('online flash task workspace behavior', () => {
     vi.doUnmock('@tauri-apps/plugin-dialog')
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it.each([true, false])('persists and restores the original job (terminal snapshot: %s)', async withSnapshot => {
+    const fallback = viewFetch()
+    let requestId = ''
+    let finished = false
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/jobs') && options?.method === 'POST') {
+        requestId = new Headers(options.headers).get('X-MKLink-Request-Id')!
+        expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBe(requestId)
+      }
+      if (url.endsWith('/api/runtime/jobs/')) return new Response(JSON.stringify({ jobs: [{
+        request_id: requestId, action: 'online_flash', state: finished ? 'succeeded' : 'running',
+        online_job_id: 'job-1', result: finished && withSnapshot ? { job: { job_id: 'job-1', state: 'succeeded', total_progress: 1 } } : null,
+      }] }))
+      if (url.endsWith('/jobs/job-1')) return new Response(JSON.stringify({ job_id: 'job-1', state: 'programming', total_progress: .5 }))
+      return fallback(input, options)
+    }))
+    const first = mount(await onlineFlashView())
+    await readyAndStart(first)
+    first.unmount()
+    const restored = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(2))
+    expect(restored.text()).toContain(requestId)
+    expect(restored.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    expect(vi.mocked(fetch).mock.calls.filter(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toHaveLength(1)
+    finished = true
+    await restored.get('[data-testid="query-online-request"]').trigger('click')
+    await vi.waitFor(() => expect(restored.find('[data-testid="online-recovery"]').exists()).toBe(false))
+    expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBeNull()
+    expect(restored.get('[data-testid="job-state"]').text()).toContain('烧录完成')
+    restored.unmount()
+  })
+
+  it.each(['missing', 'unknown', 'unreachable'])('keeps %s outcomes blocked without replay', async mode => {
+    localStorage.setItem('mklink.onlineFlash.pending.mklink-1.saved-request', 'saved-request')
+    const fallback = viewFetch()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/api/runtime/jobs/')) {
+        if (mode === 'unreachable') throw new Error('backend unavailable')
+        return new Response(JSON.stringify({ jobs: mode === 'missing' ? [] : [{request_id: 'saved-request', action: 'online_flash', state: 'unknown'}] }))
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(true))
+    await flushPromises()
+    expect(wrapper.text()).toContain('saved-request')
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    expect(localStorage.getItem('mklink.onlineFlash.pending.mklink-1.saved-request')).toBe('saved-request')
+    expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['unknown', 'missing', 'running', 'unreachable'])('rechecks %s before ending tracking', async finalState => {
+    const key = 'mklink.onlineFlash.pending.mklink-1.acknowledge'
+    localStorage.setItem(key, 'acknowledge')
+    const fallback = viewFetch()
+    let reads = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/api/runtime/jobs/')) {
+        reads++
+        const state = reads === 1 ? 'unknown' : finalState
+        if (state === 'unreachable') throw new Error('unreachable')
+        return new Response(JSON.stringify({ jobs: state === 'missing' ? [] : [{request_id: 'acknowledge', action: 'online_flash', state}] }))
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="end-online-tracking"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="end-online-tracking"]').trigger('click')
+    expect(localStorage.getItem(key)).toBe('acknowledge')
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
+    await flushPromises()
+    expect(reads).toBe(2)
+    expect(localStorage.getItem(key)).toBe(finalState === 'unknown' || finalState === 'missing' ? null : 'acknowledge')
+    expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('observes another window receipt without treating its removal as completion', async () => {
+    const fallback = viewFetch()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/api/runtime/jobs/')) return new Response(JSON.stringify({jobs: []}))
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await flushPromises()
+    const key = 'mklink.onlineFlash.pending.mklink-1.other-window'
+    localStorage.setItem(key, 'other-window')
+    window.dispatchEvent(new StorageEvent('storage', {key, newValue: 'other-window'}))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('other-window'))
+    localStorage.removeItem(key)
+    window.dispatchEvent(new StorageEvent('storage', {key, oldValue: 'other-window'}))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('ignores a stale failed query after the selected probe changes', async () => {
+    localStorage.setItem('mklink.onlineFlash.pending.mklink-1.old-query', 'old-query')
+    localStorage.setItem('mklink.onlineFlash.pending.other-probe.new-query', 'new-query')
+    const fallback = viewFetch()
+    let rejectOld!: (reason: Error) => void
+    const old = new Promise<Response>((_, reject) => { rejectOld = reject })
+    let reads = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/api/runtime/jobs/')) {
+        if (++reads === 1) return old
+        return new Response(JSON.stringify({jobs: [{request_id:'new-query', action:'online_flash',state:'unknown'}]}))
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(reads).toBe(1))
+    wrapper.findComponent({name: 'ProbeSettingsPanel'}).vm.$emit('update:selectedId', 'other-probe')
+    await vi.waitFor(() => expect(reads).toBe(2))
+    rejectOld(new Error('old probe failure'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('new-query')
+    expect(wrapper.text()).not.toContain('old probe failure')
+    expect(wrapper.get('[data-testid="query-online-request"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('refuses a job when its recovery receipt cannot be stored', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    const save = localStorage.setItem.bind(localStorage)
+    vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key.startsWith('mklink.onlineFlash.pending.')) throw new Error('receipt storage unavailable')
+      save(key, value)
+    })
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await flushPromises()
+    expect(vi.mocked(fetch).mock.calls.some(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toBe(false)
+    expect(wrapper.text()).toContain('receipt storage unavailable')
+    wrapper.unmount()
+  })
+
+  it('queries a lost submit response without sending another job', async () => {
+    const fallback = viewFetch()
+    let requestId = ''
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs') && options?.method === 'POST') {
+        requestId = new Headers(options.headers).get('X-MKLink-Request-Id')!
+        throw new Error('response lost after acceptance')
+      }
+      if (String(input).endsWith('/api/runtime/jobs/')) return new Response(JSON.stringify({jobs: [{
+        request_id: requestId, action:'online_flash',state:'succeeded',result:null,
+      }]}))
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain(requestId)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBe(requestId)
+    await wrapper.get('[data-testid="query-online-request"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(false)
+    expect(vi.mocked(fetch).mock.calls.filter(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it.each(['probe-change', 'already-completed'])('ignores stale submit responses: %s', async mode => {
+    const fallback = viewFetch()
+    let requestId = ''
+    let resolve!: (response: Response) => void
+    const delayed = new Promise<Response>(done => { resolve = done })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs') && options?.method === 'POST') {
+        requestId = new Headers(options.headers).get('X-MKLink-Request-Id')!
+        return delayed
+      }
+      if (String(input).endsWith('/api/runtime/jobs/')) return new Response(JSON.stringify({jobs:[{request_id:requestId,action:'online_flash',state:'succeeded',result:null}]}))
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    if (mode === 'probe-change') wrapper.findComponent({name:'ProbeSettingsPanel'}).vm.$emit('update:selectedId', 'other-probe')
+    else window.dispatchEvent(new StorageEvent('storage', {key:`mklink.onlineFlash.pending.mklink-1.${requestId}`}))
+    await flushPromises()
+    resolve(new Response(JSON.stringify({job_id:'old-probe-job',job:{state:'queued'}})))
+    await flushPromises()
+    expect(FakeEventSource.instances).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('old-probe-job')
+    expect(Array.from({length:localStorage.length}, (_, index) => localStorage.key(index)).some(key => key?.startsWith('mklink.onlineFlash.pending.mklink-1.'))).toBe(mode === 'probe-change')
+    wrapper.unmount()
+  })
+
+  it('ignores a delayed stop failure after its probe context changes', async () => {
+    const fallback = viewFetch()
+    let reject!: (error: Error) => void
+    const delayed = new Promise<Response>((_, fail) => { reject = fail })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs/job-1/stop')) return delayed
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyAndStart(wrapper)
+    await wrapper.get('[data-testid="stop-job"]').trigger('click')
+    wrapper.findComponent({name:'ProbeSettingsPanel'}).vm.$emit('update:selectedId', 'other-probe')
+    await flushPromises()
+    reject(new Error('previous probe stop failure'))
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('previous probe stop failure')
+    expect(wrapper.get('[data-testid="stop-job"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('does not recover receipts belonging to another probe', async () => {
+    localStorage.setItem('mklink.onlineFlash.pending.other-probe.other-request', 'other-request')
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="probe-select"]').exists()).toBe(true))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(false)
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/api/runtime/jobs/'))).toBe(false)
+    expect(localStorage.getItem('mklink.onlineFlash.pending.other-probe.other-request')).toBe('other-request')
+    wrapper.unmount()
   })
 
   it('adds and displays a target-scoped custom FLM', async () => {
@@ -1290,12 +1533,12 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
-  it('uses an HPM board and starts ROM programming without sector geometry', async () => {
+  it.each(['bin', 'hex'])('starts HPM %s ROM programming without sector geometry', async (format) => {
     const fallback = viewFetch([hpmTarget])
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
       if (String(input).endsWith('/images/inspect')) {
         return new Response(JSON.stringify({
-          image_id: 'hpm-image', file_name: 'firmware.bin', format: 'bin', size: 32,
+          image_id: 'hpm-image', file_name: `firmware.${format}`, format, size: 32,
           sha256: 'abc123', start: 0x80000400, end: 0x80000420,
           segments: [{ start: 0x80000400, end: 0x80000420 }], base_address: 0x80000400,
           sector_operations_available: false, sectors: [],
@@ -1309,9 +1552,13 @@ describe('online flash task workspace behavior', () => {
 
     expect(wrapper.get('[data-testid="hpm-board"]').element).toHaveProperty('value', 'hpm5300evk')
     expect(wrapper.text()).toContain('内置 ROM API')
-    await chooseFirmware(wrapper)
-    expect(wrapper.get<HTMLInputElement>('[data-testid="bin-address-dialog-input"]').element.value).toBe('0x80000400')
-    await wrapper.get('[data-testid="confirm-bin-address"]').trigger('click')
+    await chooseFirmware(wrapper, `firmware.${format}`)
+    if (format === 'bin') {
+      expect(wrapper.get<HTMLInputElement>('[data-testid="bin-address-dialog-input"]').element.value).toBe('0x80000400')
+      await wrapper.get('[data-testid="confirm-bin-address"]').trigger('click')
+    } else {
+      expect(wrapper.find('[data-testid="bin-address-dialog-input"]').exists()).toBe(false)
+    }
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="start-job"]').trigger('click')
     await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
@@ -1319,6 +1566,7 @@ describe('online flash task workspace behavior', () => {
     const body = JSON.parse(String(call?.[1]?.body))
     expect(body.board).toBe('hpm5300evk')
     expect(body.sector_addresses).toEqual([])
+    expect(body.base_address).toBe(format === 'bin' ? 0x80000400 : null)
     wrapper.unmount()
   })
 
@@ -2074,6 +2322,8 @@ describe('online flash task workspace behavior', () => {
     resolveJob(new Response(JSON.stringify({ job_id: 'job-1', job: { state: 'queued' } }), { status: 200 }))
     wrapper.unmount()
 
+    // Separate latch scenario; remount recovery is exercised above.
+    localStorage.clear()
     let resolveErase!: (response: Response) => void
     const pendingErase = new Promise<Response>(resolve => { resolveErase = resolve })
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => (

@@ -43,6 +43,7 @@ class CapabilityUnavailableError(ProtocolError):
 
 
 _CAPABILITIES = {
+    "runtime.jobs": Capability("runtime.jobs", 1, ("jobs.status",)),
     "probe.diagnostics": Capability(
         "probe.diagnostics",
         1,
@@ -55,7 +56,7 @@ _CAPABILITIES = {
     ),
     "flash.offline": Capability(
         "flash.offline",
-        1,
+        2,
         ("offline.preview", "offline.deploy"),
     ),
     "target.debug": Capability(
@@ -96,12 +97,12 @@ _CAPABILITIES = {
     ),
     "stream.rtt": Capability(
         "stream.rtt",
-        1,
-        ("rtt.start", "rtt.read", "rtt.write", "rtt.stop"),
+        2,
+        ("rtt.start", "rtt.read", "rtt.read_channel", "rtt.write", "rtt.stop"),
     ),
     "stream.systemview": Capability(
         "stream.systemview",
-        1,
+        2,
         (
             "systemview.start",
             "systemview.read",
@@ -136,29 +137,31 @@ _CAPABILITIES = {
 CAPABILITIES: Mapping[str, Capability] = MappingProxyType(_CAPABILITIES)
 
 _SCHEMAS = {
+    "jobs.status": OperationSchema("runtime.jobs", ("job_id", "request_id")),
     "probe.info": OperationSchema("probe.diagnostics"),
     "flash.program": OperationSchema(
         "flash.online",
-        ("firmware", "verify", "reset_after", "confirm"),
+        ("firmware", "target_part", "base_address", "board", "hpm_flash_cfg", "swd_clock",
+         "verify", "reset_after", "request_id", "confirm"),
         high_risk=True,
     ),
     "flash.erase_chip": OperationSchema(
         "flash.online",
-        ("confirm",),
+        ("target_part", "algorithm_id", "request_id", "confirm"),
         high_risk=True,
     ),
     "flash.erase_sector": OperationSchema(
         "flash.online",
-        ("address", "confirm"),
+        ("address", "target_part", "algorithm_id", "request_id", "confirm"),
         high_risk=True,
     ),
     "offline.preview": OperationSchema("flash.offline", ("config",)),
     "offline.deploy": OperationSchema(
         "flash.offline",
-        ("config", "firmware_files", "algorithm_files", "confirm"),
+        ("config", "firmware_files", "algorithm_files", "request_id", "confirm"),
         high_risk=True,
     ),
-    "target.reset": OperationSchema("target.debug", ("confirm",), high_risk=True),
+    "target.reset": OperationSchema("target.debug", ("request_id", "confirm"), high_risk=True),
     "target.halt": OperationSchema("target.debug"),
     "target.resume": OperationSchema("target.debug"),
     "target.step": OperationSchema("target.debug"),
@@ -198,7 +201,8 @@ _SCHEMAS = {
     "symbols.memory_map": OperationSchema("target.symbols"),
     "rtt.start": OperationSchema("stream.rtt"),
     "rtt.read": OperationSchema("stream.rtt"),
-    "rtt.write": OperationSchema("stream.rtt", ("data",)),
+    "rtt.read_channel": OperationSchema("stream.rtt"),
+    "rtt.write": OperationSchema("stream.rtt"),
     "rtt.stop": OperationSchema("stream.rtt"),
     "systemview.start": OperationSchema("stream.systemview"),
     "systemview.read": OperationSchema("stream.systemview"),
@@ -291,7 +295,10 @@ def protocol_capabilities() -> dict[str, ProtocolCapability]:
         name: ProtocolCapability(
             capability_available(name),
             version=str(spec.version),
-            detail=", ".join(spec.operations),
+            detail=", ".join(spec.operations) + (
+                "; offline.deploy requires an identity-bound runtime"
+                if name == "flash.offline" else ""
+            ),
         )
         for name, spec in CAPABILITIES.items()
     }

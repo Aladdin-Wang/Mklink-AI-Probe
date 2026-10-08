@@ -90,7 +90,7 @@ from mklink.remote.client import connect_remote
 from mklink.remote.cli import build_agent_parser, build_parser
 import mklink.remote.mcp
 
-agent = SiteAgent(AgentConfig(port=0), device_factory=lambda: None)
+agent = SiteAgent(AgentConfig(port=0), device_factory=lambda **_kwargs: None)
 errors = []
 def serve():
     try:
@@ -111,6 +111,14 @@ assert not thread.is_alive()
 assert not errors, errors
 assert build_parser().prog == "mklink-remote"
 assert build_agent_parser().prog == "mklink-remote-agent"
+# The shared offline API resolves target geometry before any disk write.
+# Listener-only readiness must not hide missing dynamic pyOCD dependencies.
+from mklink.cmsis_dap.pack_catalog import _production_builtin_provider
+from mklink.remote.online_flash_api import default_target_memory_provider
+records = _production_builtin_provider()
+assert any(record.part_number.casefold() == "stm32f103rc" for record in records)
+regions = default_target_memory_provider("stm32f103rc")
+assert any(region.is_flash and region.start == 0x08000000 and region.length > 0 for region in regions)
 assert blocked.isdisjoint(sys.modules)
 print("ordinary-remote-isolated")
 '''

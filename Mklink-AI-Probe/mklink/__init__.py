@@ -50,6 +50,9 @@ from mklink.utils import (
 # SDK API (lazy — depends on pyserial via Device internals)
 def __getattr__(name: str):
     """延迟加载 pyserial 依赖模块。"""
+    if name in {'SharedDevice', 'connect_shared'}:
+        from mklink import shared_device
+        return getattr(shared_device, name)
     if name == "Device":
         from mklink.device import Device
         return Device
@@ -82,12 +85,9 @@ def __getattr__(name: str):
         return burn_hex_file
     if name in ("find_mklink_cdc_port", "list_available_ports",
                 "find_microkeen_disk", "get_microkeen_flm_path", "check_flm_on_microkeen",
-                "resolve_keil_flm_path", "copy_flm_to_microkeen"):
+                "resolve_keil_flm_path"):
         from mklink import discovery
         return getattr(discovery, name)
-    if name == "serve":
-        from mklink.remote.server import serve
-        return serve
     if name == "connect_remote":
         from mklink.remote.client import connect_remote
         return connect_remote
@@ -96,10 +96,10 @@ def __getattr__(name: str):
 
 __all__ = [
     # SDK API (lazy)
-    "Device", "connect", "discover_all",
+    "Device", "connect", "discover_all", "SharedDevice", "connect_shared",
     "DeviceError", "DeviceNotConnectedError", "HardFaultReport",
     # Remote (lazy)
-    "serve", "connect_remote",
+    "connect_remote",
     # 依赖检查
     "check_dependencies", "require_dependencies",
     # 类型和常量
@@ -117,7 +117,7 @@ __all__ = [
     "find_mklink_cdc_port", "list_available_ports",
     # MICROKEEN 磁盘（lazy）
     "find_microkeen_disk", "get_microkeen_flm_path", "check_flm_on_microkeen",
-    "resolve_keil_flm_path", "copy_flm_to_microkeen",
+    "resolve_keil_flm_path",
     # RTT 工具
     "find_rtt_addr_from_map", "generate_autostart_config",
     # RTT 集成

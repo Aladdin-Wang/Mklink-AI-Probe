@@ -111,6 +111,123 @@ const logs = ref<string[]>([])
 const lastSequence = ref(0)
 const streamDisconnected = ref(false)
 const creatingJob = ref(false)
+const pendingRequest = ref('')
+const recoveryBusy = ref(false)
+const recoveryMessage = ref('')
+const canEndTracking = ref(false)
+let recoveryGeneration = 0
+const recoveryBlocked = computed(() => !!pendingRequest.value || recoveryBusy.value || !!recoveryMessage.value)
+function pendingPrefix(probe = probeId.value): string {
+  return `mklink.onlineFlash.pending.${encodeURIComponent(probe)}.`
+}
+function loadPending(): void {
+  try {
+    pendingRequest.value = ''
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index)
+      if (key?.startsWith(pendingPrefix())) {
+        pendingRequest.value = key.slice(pendingPrefix().length)
+        break
+      }
+    }
+  } catch {
+    recoveryMessage.value = tr('无法读取任务凭据，已禁止新提交。请恢复浏览器存储后刷新。', 'Cannot read task receipts. Restore browser storage and reload before submitting.')
+  }
+}
+async function recoverJob(): Promise<void> {
+  if (!pendingRequest.value || recoveryBusy.value) return
+  const requestId = pendingRequest.value
+  const probe = probeId.value
+  recoveryBusy.value = true
+  canEndTracking.value = false
+  const generation = recoveryGeneration
+  const current = () => !disposed && generation === recoveryGeneration && probe === probeId.value && requestId === pendingRequest.value
+  try {
+    const retained = await api.retainedJob(requestId)
+    if (!current()) return
+    if (!retained) {
+      canEndTracking.value = true
+      recoveryMessage.value = tr('未找到保留记录；这不代表未执行。请先检查目标状态。', 'No retained record; this does not prove it did not run. Inspect the target first.')
+      return
+    }
+    const snapshot = retained.result?.job
+    if (retained.state === 'succeeded' || retained.state === 'failed') {
+      if (snapshot) {
+        jobId.value = snapshot.job_id
+        jobState.value = snapshot.state
+        totalProgress.value = snapshot.total_progress
+      } else {
+        jobState.value = retained.state
+        if (retained.state === 'succeeded') totalProgress.value = 1
+      }
+      subscription?.close(); subscription = null
+      appendLog(`[JOB] ${requestId}: ${retained.state}${retained.error ? ` · ${retained.error}` : ''}`)
+      localStorage.removeItem(pendingPrefix(probe) + requestId)
+      recoveryMessage.value = ''
+      loadPending()
+    } else if (retained.state === 'running' && retained.online_job_id) {
+      const snapshot = await api.getJob(retained.online_job_id)
+      if (!current()) return
+      const changed = jobId.value !== snapshot.job_id
+      jobId.value = snapshot.job_id; jobState.value = snapshot.state
+      totalProgress.value = snapshot.total_progress
+      if (changed) lastSequence.value = 0
+      if (!TERMINAL.has(snapshot.state)) subscribe(lastSequence.value)
+      recoveryMessage.value = tr('已关联原任务；完成后查询持久结果。', 'Original job attached; query its retained result after completion.')
+    } else {
+      canEndTracking.value = retained.state === 'unknown'
+      recoveryMessage.value = tr('任务结果尚未确认，请查询原任务并检查目标；不会自动重新提交。', 'Outcome is unconfirmed. Query the original job and inspect the target; no automatic resubmission.')
+    }
+  } catch (error) {
+    if (current()) recoveryMessage.value = message(error)
+  } finally { if (generation === recoveryGeneration) recoveryBusy.value = false }
+}
+async function endTracking(): Promise<void> {
+  if (!canEndTracking.value || recoveryBusy.value || creatingJob.value) return
+  const requestId = pendingRequest.value
+  const probe = probeId.value
+  const generation = recoveryGeneration
+  const current = () => !disposed && generation === recoveryGeneration && probe === probeId.value && requestId === pendingRequest.value
+  if (!await confirmRisk(tr(
+    '请先人工检查目标板和后台任务，确认没有仍在执行的操作。结束跟踪只移除本地请求凭据，不会停止、撤销或重试原操作。已完成检查并结束跟踪？',
+    'Inspect the target and backend jobs first and confirm no operation is still running. Ending tracking only removes this local receipt; it does not stop, undo or retry the operation. Confirm inspection and end tracking?',
+  )) || !current()) return
+  recoveryBusy.value = true
+  try {
+    // Recheck after confirmation; an unreachable backend is not a missing record.
+    const retained = await api.retainedJob(requestId)
+    if (!current()) return
+    if (retained && retained.state !== 'unknown') {
+      recoveryMessage.value = tr('后台记录已变化，请重新查询原任务。', 'The backend record changed. Query the original job again.')
+      canEndTracking.value = false
+      return
+    }
+    localStorage.removeItem(pendingPrefix(probe) + requestId)
+    subscription?.close(); subscription = null
+    jobId.value = ''; jobState.value = null
+    canEndTracking.value = false
+    recoveryMessage.value = ''
+    appendLog(tr(`[JOB] 已人工核查并结束跟踪 ${requestId}`, `[JOB] Inspection acknowledged; tracking ended for ${requestId}`))
+    loadPending()
+  } catch (error) { if (current()) recoveryMessage.value = message(error) }
+  finally { if (generation === recoveryGeneration) recoveryBusy.value = false }
+}
+function receiptChanged(event: StorageEvent): void {
+  if (event.key !== null && !event.key.startsWith(pendingPrefix())) return
+  // A removed receipt does not itself prove a running operation has finished.
+  if (!pendingRequest.value) loadPending()
+  void recoverJob()
+}
+watch(probeId, () => {
+  recoveryGeneration += 1
+  recoveryBusy.value = false
+  canEndTracking.value = false
+  subscription?.close(); subscription = null
+  jobId.value = ''; jobState.value = null; lastSequence.value = 0
+  recoveryMessage.value = ''
+  loadPending()
+  void recoverJob()
+})
 let subscription: JobSubscription | null = null
 let inspectionController: AbortController | null = null
 let inspectionGeneration = 0
@@ -206,8 +323,8 @@ function setActions(values: JobAction[]): void {
   }
   actions.value = next
 }
-const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !inspection.value.preview_only && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value) && (!actions.value.includes('erase') || !algorithmChoices.value.length || !!selectedAlgorithmId.value))
-const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value && (!algorithmChoices.value.length || !!selectedAlgorithmId.value))
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !inspection.value.preview_only && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !recoveryBlocked.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || !!hpmBoard.value) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value) && (!actions.value.includes('erase') || !algorithmChoices.value.length || !!selectedAlgorithmId.value))
+const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value && !recoveryBlocked.value && (!algorithmChoices.value.length || !!selectedAlgorithmId.value))
 const hpmAlgorithmNotRequired = computed(() => (
   selectedTarget.value?.part_number.toLowerCase().startsWith('hpm') ?? false
 ))
@@ -857,7 +974,7 @@ function receiveEvent(event: JobStreamEvent): void {
     totalProgress.value = Math.max(totalProgress.value, jobEvent.progress)
   }
   if (jobEvent.message) appendLog(`[${jobEvent.sequence}] ${jobEvent.message}`)
-  if (jobEvent.state && TERMINAL.has(jobEvent.state)) { totalProgress.value = jobEvent.state === 'succeeded' ? 1 : totalProgress.value; subscription = null }
+  if (jobEvent.state && TERMINAL.has(jobEvent.state)) { totalProgress.value = jobEvent.state === 'succeeded' ? 1 : totalProgress.value; subscription = null; void recoverJob() }
 }
 
 watch([probeId, () => selectedTarget.value?.part_number, () => inspection.value?.image_id, resetMode, resetVoltageMv, active], () => answerConfirmation(false))
@@ -865,7 +982,7 @@ watch([probeId, () => selectedTarget.value?.part_number, () => inspection.value?
 async function startJob(customActions = actions.value, sectorAddresses?: number[]): Promise<void> {
   if (confirmationMessage.value !== null) return
   const orderedActions = canonicalActions(customActions)
-  if (creatingJob.value || active.value || !probeId.value || !selectedTarget.value?.installed || !actionsAreValid(orderedActions) || (orderedActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
+  if (creatingJob.value || recoveryBlocked.value || active.value || !probeId.value || !selectedTarget.value?.installed || !actionsAreValid(orderedActions) || (orderedActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
   const resolvedSectors = sectorAddresses ?? (
     orderedActions.includes('erase') && inspection.value?.sector_operations_available
       ? inspection.value.sectors.map(sector => sector.address)
@@ -876,33 +993,47 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
   const usesReset = orderedActions.includes('reset')
   const selectedResetMode = usesReset ? resetMode.value : 'default'
   const selectedResetVoltage = selectedResetMode === 'power-cycle' ? resetVoltageMv.value : null
+  const generation = recoveryGeneration
+  const selectedProbe = probeId.value
+  const current = () => !disposed && generation === recoveryGeneration && selectedProbe === probeId.value
   creatingJob.value = true
   try {
     if (selectedResetVoltage !== null && !await confirmRisk(tr(
       `即将关闭下载器 VCC 输出，等待 3 秒后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
       `The probe will disable VCC, wait 3 seconds, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
     ))) return
-    if (disposed) return
+    if (!current()) return
+    loadPending()
+    if (recoveryBlocked.value) return
+    const requestId = crypto.randomUUID()
+    // Each request owns a separate receipt; concurrent windows cannot overwrite it.
+    localStorage.setItem(pendingPrefix() + requestId, requestId)
+    pendingRequest.value = requestId
     progressOwner.value = 'flash'
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0
-    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, algorithm_id: selectedAlgorithmId.value || null, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null })
-    if (disposed) return
+    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, algorithm_id: selectedAlgorithmId.value || null, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null }, requestId)
+    if (!current() || pendingRequest.value !== requestId) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(tr(`[JOB] 已创建 ${result.job_id}`, `[JOB] Created ${result.job_id}`)); subscribe(0)
-  } catch (error) { appendLog(`[ERROR] ${message(error)}`) }
+  } catch (error) { if (current()) appendLog(`[ERROR] ${message(error)}`) }
   finally { creatingJob.value = false }
 }
 async function stopJob(): Promise<void> {
   if (!jobId.value || stopping.value) return
   const previousState = jobState.value
+  const stoppedJob = jobId.value
+  const generation = recoveryGeneration
+  const current = () => !disposed && generation === recoveryGeneration && stoppedJob === jobId.value
   jobState.value = 'stopping'; appendLog(tr('[JOB] STOPPING：等待探针安全停止', '[JOB] STOPPING: waiting for the probe to stop safely'))
   try {
-    const snapshot = await api.stopJob(jobId.value)
+    const snapshot = await api.stopJob(stoppedJob)
+    if (!current()) return
     if ((!jobState.value || !TERMINAL.has(jobState.value)) && TERMINAL.has(snapshot.state)) {
       jobState.value = snapshot.state
     }
   }
   catch (error) {
+    if (!current()) return
     if (jobState.value === 'stopping') jobState.value = previousState
     appendLog(tr(`[ERROR] 停止请求失败：${message(error)}`, `[ERROR] Stop request failed: ${message(error)}`))
   }
@@ -917,6 +1048,7 @@ function toggleSector(address: number): void {
 }
 
 onMounted(() => {
+  window.addEventListener('storage', receiptChanged)
   startSourcePolling()
   void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(targetQuery.value), refreshDesiredTarget(), loadCustomFlms()])
     .catch(error => { if (!disposed) packError.value = message(error) })
@@ -932,6 +1064,8 @@ onDeactivated(() => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  recoveryGeneration += 1
+  window.removeEventListener('storage', receiptChanged)
   stopSourcePolling()
   stopNativeDrops()
   if (autoInspectTimer !== null) clearTimeout(autoInspectTimer)
@@ -948,16 +1082,23 @@ onBeforeUnmount(() => {
 <template>
   <div class="online-flash-grid" :inert="confirmationMessage !== null">
     <aside class="workspace-zone settings-zone" data-zone="settings">
-      <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :reset-voltage-mv="resetVoltageMv" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" @update:reset-voltage-mv="resetVoltageMv = $event" />
+      <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :reset-voltage-mv="resetVoltageMv" :busy="probeBusy || active || creatingJob || recoveryBusy" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" @update:reset-voltage-mv="resetVoltageMv = $event" />
       <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :selected-algorithm-id="selectedAlgorithmId" :algorithm-choices="algorithmChoices" :selection-locked="active" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="updateTargetQuery" @select="selectTarget" @select-algorithm="selectAlgorithm" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
       <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <MemoryReadPanel ref="memoryReadRef" embedded :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :board="hpmBoard || undefined" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :memory-regions="targetMemoryRegions" :memory-map-busy="targetMemoryMapBusy" :disabled="memoryReadDisabled" @progress="onMemoryReadProgress" @log="onMemoryReadLog" @data="onMemoryReadData" />
       <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" :memory-data="memoryReadData" :memory-address="memoryReadAddress" :read-disabled="memoryReadDisabled" :read-busy="memoryReadBusy" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" @read="openMemoryReadDialog" @save="saveMemoryFile" @clear-data="clearDataWindow" />
+      <section v-if="recoveryBlocked" role="status" data-testid="online-recovery">
+        <p>{{ tr('已有待确认的在线请求，暂不允许新任务。', 'An online request awaits confirmation; new jobs are disabled.') }}</p>
+        <code>{{ pendingRequest }}</code>
+        <p>{{ recoveryMessage }}</p>
+        <button data-testid="query-online-request" :disabled="recoveryBusy || creatingJob || !pendingRequest" @click="recoverJob">{{ tr('查询原任务', 'Query original job') }}</button>
+        <button v-if="canEndTracking" data-testid="end-online-tracking" :disabled="recoveryBusy || creatingJob" @click="endTracking">{{ tr('人工核查后结束跟踪', 'End tracking after inspection') }}</button>
+      </section>
       <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" :unlock-enabled="security.unlock_supported" :lock-enabled="security.lock_supported" :security-reason="security.reason" :security-family="security.family" :unlock-erases-eeprom="security.unlock_erases_eeprom" :unlock-erases-backup-registers="security.unlock_erases_backup_registers" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
-    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :geometry-message="algorithmChoices.length && !selectedAlgorithmId ? tr('该器件有多套扇区布局，请先在左侧选择与目标 Bank 模式一致的 FLM。', 'This target has multiple sector layouts. Select the FLM matching its bank mode on the left.') : inspection?.validation_message" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
+    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :geometry-message="hpmMode ? tr('HPM 由设备端 ROM 查询容量并擦写，支持 BIN / HEX；此处不提供独立扇区擦除。', 'HPM ROM queries capacity and programs BIN / HEX. Separate sector erase is unavailable.') : algorithmChoices.length && !selectedAlgorithmId ? tr('该器件有多套扇区布局，请先在左侧选择与目标 Bank 模式一致的 FLM。', 'This target has multiple sector layouts. Select the FLM matching its bank mode on the left.') : inspection?.validation_message" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
     <div v-if="binAddressOpen" class="bin-address-backdrop" data-testid="bin-address-dialog" @click.self="cancelBinAddress">
       <section class="bin-address-dialog" role="dialog" aria-modal="true" aria-labelledby="bin-address-title">

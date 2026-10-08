@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Executable,
+    [switch]$CrashFirst,
     [switch]$KeepRunning
 )
 
@@ -10,6 +11,19 @@ $resolvedExecutable = (Resolve-Path -LiteralPath $Executable).Path
 $started = @()
 $runtimeFiles = @()
 $completed = $false
+
+function Close-DesktopWindow($Process) {
+    $Process.Refresh()
+    if (-not $Process.CloseMainWindow()) {
+        throw "Unable to request normal close for desktop PID $($Process.Id)"
+    }
+    if (-not $Process.WaitForExit(12000)) {
+        throw "Desktop PID $($Process.Id) remained after normal window close"
+    }
+    if ($Process.ExitCode -ne 0) {
+        throw "Desktop PID $($Process.Id) exited with $($Process.ExitCode)"
+    }
+}
 
 try {
     foreach ($index in 0..1) {
@@ -81,8 +95,13 @@ try {
         return
     }
 
-    Stop-Process -Id $started[0].Id -Force
-    $started[0].WaitForExit(10000) | Out-Null
+    if ($CrashFirst) {
+        Stop-Process -Id $started[0].Id -Force
+        if (-not $started[0].WaitForExit(10000)) { throw 'First desktop did not exit' }
+    }
+    else {
+        Close-DesktopWindow $started[0]
+    }
     Start-Sleep -Milliseconds 500
     $secondHealth = Invoke-RestMethod `
         -Uri "http://127.0.0.1:$($infos[1].port)/api/health" `
@@ -91,12 +110,20 @@ try {
         throw 'Second desktop backend changed ownership'
     }
 
+    Close-DesktopWindow $started[1]
+    foreach ($info in $infos) {
+        $listener = Get-NetTCPConnection -State Listen -LocalPort $info.port -ErrorAction SilentlyContinue
+        if ($listener) { throw "Desktop proxy port $($info.port) still listens after window close" }
+    }
+
     [pscustomobject]@{
         FirstPid = $started[0].Id
         FirstPort = $infos[0].port
         SecondPid = $started[1].Id
         SecondPort = $infos[1].port
         SecondSurvivedFirstExit = $true
+        FirstExitMode = $(if ($CrashFirst) { 'crash' } else { 'normal' })
+        SecondNormalExit = $true
         PreferredPortOwner = (
             Get-NetTCPConnection -State Listen -LocalPort 8765
         ).OwningProcess
