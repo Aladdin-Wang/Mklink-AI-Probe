@@ -54,6 +54,15 @@
       <button v-else type="button" class="btn btn-danger" :disabled="stopping || ymodemActive || ymodemStarting" @click="doStop">
         {{ stopping ? tr('停止中', 'Stopping') : tr('关闭串口', 'Close Port') }}
       </button>
+      <button
+        type="button" class="serial-extensions-toggle" :class="{ active: extensionsOpen }"
+        :aria-expanded="extensionsOpen" aria-controls="serial-extensions"
+        @click="extensionsOpen = !extensionsOpen"
+      >
+        <SlidersHorizontal :size="14" />{{ tr('扩展功能', 'Extensions') }}
+        <span v-if="extensionsStatus" class="extensions-status">{{ extensionsStatus }}</span>
+        <ChevronDown :size="14" :class="{ rotated: extensionsOpen }" />
+      </button>
     </div>
     <SetupHint
       v-if="portsLoaded && !ports.length && !running"
@@ -64,6 +73,7 @@
       @primary="refreshPorts"
     />
 
+    <div v-show="extensionsOpen" id="serial-extensions" class="serial-extensions">
     <SerialAutomationPanel
       :model-value="automation" :locked="running || starting || stopping"
       :port="portName" :frame="latestFrames[portName]" @update:model-value="editAutomation"
@@ -78,6 +88,7 @@
     <SerialSendExtras :port="portName" :ports="activeConfigs.map(item => String(item.port))"
       :running="running && !stopping" :file-active="sequences[portName]?.active === true" :busy="extrasBusy"
       :error="extrasError" :notice="extrasNotice" :results="broadcastResults" @broadcast="broadcast" @file="sendRawFile" />
+    </div>
 
     <div class="serial-toolbar">
       <div class="view-mode-switch" role="group" :aria-label="tr('显示模式', 'Display mode')">
@@ -165,7 +176,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Download, RefreshCw, ScrollText, SquareTerminal, Trash2 } from '@lucide/vue'
+import { ChevronDown, Download, RefreshCw, ScrollText, SlidersHorizontal, SquareTerminal, Trash2 } from '@lucide/vue'
 import { useBinaryStream } from '../../composables/useBinaryStream'
 import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useToast } from '../../composables/useToast'
@@ -291,6 +302,16 @@ const sequenceBusy = ref(false), sequenceError = ref('')
 const extrasBusy = ref(false), extrasError = ref(''), extrasNotice = ref('')
 const broadcastResults = ref<Record<string, BroadcastResult> | null>(null)
 const automation = ref<SerialAutomation>({ profile: null, rules: [] })
+const extensionsOpen = ref(false)
+const extensionsStatus = computed(() => {
+  if (recordingError.value || recording.value.error || sequenceError.value || extrasError.value
+    || Object.values(sequences.value).some(sequence => sequence.error)) return tr('需查看', 'Check status')
+  const labels = []
+  if (recording.value.active) labels.push(tr('记录中', 'Recording'))
+  if (Object.values(sequences.value).some(sequence => sequence.active)) labels.push(tr('队列执行中', 'Sequence running'))
+  if (running.value && (automation.value.profile || automation.value.rules.length)) labels.push(tr('协议已启用', 'Protocol enabled'))
+  return labels.join(' · ')
+})
 const automationEdited = ref(false)
 const latestFrames = ref<Record<string, SerialParsedFrame>>({})
 function editAutomation(value: SerialAutomation): void {
@@ -879,6 +900,11 @@ onUnmounted(() => {
 .serial-config-row select, .serial-config-row input { height: 30px; min-width: 64px; max-width: 220px; box-sizing: border-box; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; }
 .serial-config-row input { width: 90px; }
 .serial-config-row label:first-child select { width: 180px; }
+.serial-extensions-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; min-height: 30px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
+.serial-extensions-toggle:hover, .serial-extensions-toggle.active { color: var(--accent); border-color: var(--accent); }
+.serial-extensions-toggle .rotated { transform: rotate(180deg); }
+.extensions-status { color: var(--accent); }
+.serial-extensions { flex: 0 0 auto; margin-top: 8px; }
 .serial-toolbar { display: flex; min-width: 0; align-items: center; gap: 10px; margin-top: 8px; }
 .ymodem-bar { display: grid; grid-template-columns:auto auto auto minmax(120px,1fr) auto auto; align-items:center; gap:7px; margin-top:8px; padding:7px 8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font-size:11px; }
 .ymodem-bar strong { color:var(--accent); letter-spacing:.04em; }
