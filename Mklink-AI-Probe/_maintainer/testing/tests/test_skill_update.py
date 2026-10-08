@@ -361,7 +361,7 @@ def test_skill_instructions_require_proactive_check_and_user_approval():
         encoding="utf-8"
     )
     assert "skill_update.py check --force --json" in text
-    assert "安装仍须用户同意" in text
+    assert any(wording in text for wording in ("安装须用户同意", "安装仍须用户同意"))
     assert "(references/install.md)" in text
     assert "install --yes --json" in install
     assert install.index("只有用户明确同意后") < install.index("install --yes --json")
