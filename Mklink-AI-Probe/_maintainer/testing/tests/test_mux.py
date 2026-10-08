@@ -67,6 +67,47 @@ def test_bridge_mux_attach_respects_reported_debug_port(monkeypatch, tmp_path, p
     transport.fail.assert_not_called()
 
 
+@pytest.mark.parametrize('attach_status', [0, 5, 6])
+def test_target_busy_or_error_does_not_poison_claimed_bridge(monkeypatch, tmp_path, attach_status):
+    from types import SimpleNamespace
+    from mklink._types import DeviceState
+    from mklink.bridge import MKLinkSerialBridge
+    from mklink.device import Device
+    from mklink.mux import MuxTargetError
+    bridge = MKLinkSerialBridge('TEST_MUX_BUSY')
+    bridge._mux_supported = True
+    bridge._ctx.state = DeviceState.READY
+    bridge._mux_marker = tmp_path / 'mux'
+    calls = []
+    def write(wire):
+        if wire == b'~MKLINK-MUX1\n':
+            return len(wire)
+        _, _, op, size, epoch, req = struct.unpack_from('<4sBBHII', wire)
+        calls.append(op)
+        payload = wire[16:16+size]
+        status = attach_status if op == 0x13 else 6 if op == 0x12 else 0
+        answer = {1: struct.pack('<IHH', 15, 256, 1), 4: payload,
+                  0x10: bytes(15)+b'\x01', 0x11: b'test'}.get(op, b'')
+        bridge._mux.feed(packet(op | 0x80, 17, req, bytes([status])+answer))
+        return len(wire)
+    bridge._serial = SimpleNamespace(write=write)
+    if attach_status == 5:
+        with pytest.raises(MuxTargetError, match='unknown outcome'):
+            bridge.enable_multiplex()
+    else:
+        assert bridge.enable_multiplex() is bridge._mux
+    device = Device()
+    device._connected, device._bridge = True, bridge
+    assert bridge._mux.ready and bridge._mux._error is None and device.connected
+    assert bridge.enable_multiplex() is bridge._mux
+    assert calls == [1, 4, 0x10, 0x13]  # No repeated initialization or new claim.
+    with pytest.raises(MuxTargetError, match='target busy'):
+        bridge._mux.write_memory(0x20000000, b'one attempt')
+    assert calls.count(0x12) == 1 and device.connected
+    assert bridge._mux.read_memory(0x20000000, 4) == b'test'
+    bridge._mux.close()
+
+
 @pytest.mark.parametrize('status', [b'', bytes(15), bytes(16), bytes(15)+b'\x03'])
 def test_bridge_mux_rejects_unknown_or_malformed_debug_port(monkeypatch, tmp_path, status):
     from unittest.mock import Mock

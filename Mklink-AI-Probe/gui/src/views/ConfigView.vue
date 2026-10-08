@@ -56,6 +56,7 @@ const portsLoading = ref(false)
 const savingLocal = ref(false)
 const connecting = ref(false)
 const disconnecting = ref(false)
+const connectionOwners = ref<string[] | null>(null)
 const browsingFiles = ref(false)
 const parsingSymbols = ref(false)
 let symbolParseGeneration = 0
@@ -145,6 +146,8 @@ async function selectLocalPort() {
 }
 
 async function connectLocal() {
+  if (connecting.value || disconnecting.value) return
+  connectionOwners.value = null
   localPortTouched = true
   connecting.value = true
   try {
@@ -172,9 +175,11 @@ async function connectLocal() {
       await refreshRttForSymbols(symbolPath)
     }
   } catch (error: any) {
-    localPort.value = ''
-    localPortExplicit.value = false
-    config.value = { ...config.value, com_port: '' }
+    // A failed explicit selection must stay selected for the next attempt.
+    if (!localPortExplicit.value) {
+      localPort.value = ''
+      config.value = { ...config.value, com_port: '' }
+    }
     toast.error(tr('连接失败: ', 'Connection failed: ') + error.message)
   } finally {
     connecting.value = false
@@ -182,11 +187,17 @@ async function connectLocal() {
 }
 
 async function disconnectLocal() {
+  if (disconnecting.value || connecting.value) return
+  connectionOwners.value = null
   disconnecting.value = true
   try {
     await disconnectDevice()
   } catch (error: any) {
-    toast.error(tr('断开失败: ', 'Disconnect failed: ') + error.message)
+    if (error.detail?.reason === 'shared_clients_attached') {
+      connectionOwners.value = (error.detail.clients || []).map((client: { name: string; kind: string }) => `${client.name} (${client.kind})`)
+    } else {
+      toast.error(tr('断开失败: ', 'Disconnect failed: ') + error.message)
+    }
   } finally {
     disconnecting.value = false
   }
@@ -488,7 +499,7 @@ onUnmounted(() => {
             class="btn btn-primary icon-command"
             type="button"
             data-testid="connect-local"
-            :disabled="connecting || (deviceStatus.connected && !switchingProbe)"
+            :disabled="connecting || disconnecting || (deviceStatus.connected && !switchingProbe)"
             @click="connectLocal"
           >
             <Usb :size="15" aria-hidden="true" />
@@ -498,12 +509,17 @@ onUnmounted(() => {
             class="btn icon-command"
             type="button"
             data-testid="disconnect-local"
-            :disabled="disconnecting || !deviceStatus.connected"
+            :disabled="disconnecting || connecting || !deviceStatus.connected"
             @click="disconnectLocal"
           >
             <Unplug :size="15" aria-hidden="true" />
             {{ disconnecting ? tr('断开中...', 'Disconnecting...') : tr('断开', 'Disconnect') }}
           </button>
+        </div>
+
+        <div v-if="connectionOwners !== null" role="alert" data-testid="connection-owners">
+          <p>{{ tr('设备仍被以下客户端共享，断开前请在后台管理中结束相应会话：', 'The device is shared by these clients. End their sessions in Backend Management before disconnecting:') }} {{ connectionOwners.join('、') }}</p>
+          <button class="btn btn-sm" type="button" data-testid="manage-connection-owners" @click="activeSection = 'runtime'">{{ tr('打开后台管理', 'Open Backend Management') }}</button>
         </div>
 
         <div v-if="IS_TAURI" class="port-naming-actions" data-testid="usb-port-naming">

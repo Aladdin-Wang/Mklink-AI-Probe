@@ -98,6 +98,7 @@ class MKLinkSerialBridge:
         self._echo_pending = ""
         self._echo_callback: Callable[[str], None] | None = None
         self._transport_error: Exception | None = None
+        self.last_connect_error: str | None = None
 
     # ------------------------------------------------------------------
     # 连接管理
@@ -126,9 +127,11 @@ class MKLinkSerialBridge:
         """打开串口并同步设备状态（等待 >>> 提示符）。"""
         from mklink.probes import require_runtime_port
         self._transport_error = None
+        self.last_connect_error = 'Command port did not return a prompt; check the probe firmware/USB connection and retry'
         self._mux_supported = None  # Re-negotiate after reconnect/firmware changes.
         # 进程级互斥：获取文件锁
         if not self._port_lock.acquire():
+            self.last_connect_error = 'Command port is owned by another process; close its connection before retrying'
             print(f"[FAIL] 串口 {self._port} 正被其他进程使用")
             print("       请等待其他操作完成，或关闭占用串口的进程后重试。")
             return False
@@ -147,6 +150,7 @@ class MKLinkSerialBridge:
             # before clearing buffers, starting a reader or sending sync/stop.
             require_runtime_port(self._port)
         except (serial.SerialException, ConnectionError) as e:
+            self.last_connect_error = f'Could not open command port: {e}'
             self.close()
             msg = str(e).lower()
             if "access" in msg or "denied" in msg or "already open" in msg or "in use" in msg:
@@ -181,12 +185,15 @@ class MKLinkSerialBridge:
 
             if self._prompt_event.wait(timeout=sync_timeout):
                 if self._transport_error is not None:
+                    self.last_connect_error = f'Command port disconnected during handshake: {self._transport_error}'
                     self.close()
                     return False
                 self._ctx.state = DeviceState.READY
                 self._mux_marker.unlink(missing_ok=True)
                 if self._is_known_command_port() or self._verify_identity():
+                    self.last_connect_error = None
                     return True
+                self.last_connect_error = 'Port responded but did not identify as an MKLink command interface'
                 self.close()
                 return False
 
@@ -207,7 +214,8 @@ class MKLinkSerialBridge:
                 self._mux = None
                 self._mux_marker.unlink(missing_ok=True)
                 self._ctx.state = DeviceState.READY
-                if self._verify_identity():
+                if self._is_known_command_port() or self._verify_identity():
+                    self.last_connect_error = None
                     return True
             except Exception as exc:
                 transport.fail(exc)
@@ -255,7 +263,8 @@ class MKLinkSerialBridge:
             self._serial.write(b"\n")
             if self._prompt_event.wait(timeout=_RECOVERY_PROMPT_TIMEOUT):
                 self._ctx.state = DeviceState.READY
-                if self._verify_identity():
+                if self._is_known_command_port() or self._verify_identity():
+                    self.last_connect_error = None
                     print("[OK] 流模式恢复成功")
                     return True
 
@@ -272,7 +281,8 @@ class MKLinkSerialBridge:
             self._serial.write(b"\n")
             if self._prompt_event.wait(timeout=_RECOVERY_PROMPT_TIMEOUT):
                 self._ctx.state = DeviceState.READY
-                if self._verify_identity():
+                if self._is_known_command_port() or self._verify_identity():
+                    self.last_connect_error = None
                     print("[OK] 流模式恢复成功")
                     return True
         except Exception:
@@ -349,7 +359,7 @@ class MKLinkSerialBridge:
         return self._mux_supported
 
     def enable_multiplex(self):
-        from mklink.mux import MuxTransport
+        from mklink.mux import MuxTargetError, MuxTransport
         with self._cmd_lock:
             if self._mux is not None:
                 self._mux._check()
@@ -363,14 +373,28 @@ class MKLinkSerialBridge:
                 self._mux_marker.write_text('MLX1', encoding='ascii')
                 self._serial.write(b'~MKLINK-MUX1\n')
                 transport.handshake()
+            except Exception as exc:
+                transport.fail(exc)
+                raise  # No text-mode fallback after a failed protocol transition.
+            try:
                 status = transport.request(0x10)
                 if len(status) != 16 or status[15] not in (1, 2):
                     raise RuntimeError('Multiplex target has no supported debug interface')
                 if status[15] == 1:  # DAP_PORT_SWD; JTAG uses the established sysbus.
-                    transport.request(0x13)  # Non-resetting SWD attach.
+                    try:
+                        transport.request(0x13)  # Non-resetting SWD attach.
+                    except MuxTargetError as exc:
+                        if exc.status != 6:
+                            raise
+                        # A debugger can own SWD initialization while lending
+                        # target access to MUX. Busy does not invalidate the
+                        # completed HELLO/CLAIM. Subsequent target requests
+                        # still need firmware admission; never replay attach.
+            except MuxTargetError:
+                raise  # Valid target rejection, not a broken CDC session.
             except Exception as exc:
                 transport.fail(exc)
-                raise  # No text-mode fallback after a failed protocol transition.
+                raise
             return transport
 
     def _leave_multiplex(self):

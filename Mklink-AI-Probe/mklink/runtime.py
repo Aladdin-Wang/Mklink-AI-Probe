@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 49  # DAP capture invalidation and persistent acquisition errors.
+PROTOCOL = 50  # Explicit same-probe reconnect invalidates stale target sessions.
 VERSION = "0.3.0"
 STARTUP_TIMEOUT_SECONDS = 60
 
@@ -297,17 +297,33 @@ class RuntimeClient:
                 from mklink.probes import select_probe
                 if select_probe(probe or port, allow_lobby=scope == 'uart')["probe_id"] != self.info.get("probe_id"):
                     raise RuntimeErrorResponse("This client is bound to another probe; disconnect and create a new client")
+            # Only explicit connect may rediscover a dead backend. Keep the
+            # physical identity: an unplugged probe must never select a neighbor.
+            if self.info.get('probe_id'):
+                try:
+                    health = request(self.info, 'GET', '/_runtime/status', timeout=2)
+                except RuntimeErrorResponse:
+                    health = None
+                if health is None or health.get('instance_id') != self.info.get('instance_id'):
+                    self._stop_heartbeat()
+                    self.session_id = None
+                    self.info = ensure_runtime(project_root=project_root or self.project_root,
+                                               probe=self.info['probe_id'], allow_lobby=scope == 'uart')
+                elif health.get('protocol') != PROTOCOL or health.get('version') != VERSION:
+                    raise RuntimeErrorResponse('Runtime version differs; stop the old runtime explicitly before upgrading')
             result = request(self.info, "POST", "/_runtime/attach", {
                 "project_root": project_root, "port": port, "axf": axf,
                 "mcu": mcu, "elf_backend": elf_backend, "session_id": self.session_id,
                 'kind': self.kind, 'name': self.name, 'scope': scope,
             })
             self.session_id = result["session_id"]
+            if project_root is not None:
+                self.project_root = project_root
             self._stop_heartbeat()
             # Never reuse a stop signal or session snapshot from an older
             # attachment, even if its timed-out renewal is still returning.
             self._stop = threading.Event()
-            self._heartbeat = threading.Thread(target=self._renew, args=(self._stop, self.session_id),
+            self._heartbeat = threading.Thread(target=self._renew, args=(self._stop, self.session_id, dict(self.info)),
                                                daemon=True, name="runtime-session")
             self._heartbeat.start()
             return result
@@ -317,10 +333,10 @@ class RuntimeClient:
         if self._heartbeat and self._heartbeat is not threading.current_thread():
             self._heartbeat.join(timeout=6)
 
-    def _renew(self, stop, session_id):
+    def _renew(self, stop, session_id, info):
         while not stop.wait(1):
             try:
-                request(self.info, "POST", "/_runtime/heartbeat", {"session_id": session_id}, timeout=5)
+                request(info, "POST", "/_runtime/heartbeat", {"session_id": session_id}, timeout=5)
             except RuntimeErrorResponse:
                 # Do not silently reconnect/replay a command after loss of ownership.
                 return

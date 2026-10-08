@@ -1761,6 +1761,7 @@ def create_app(
         restore_last: bool = Body(default=False),
     ):
         runtime = getattr(app.state, "shared_runtime", None)
+        port_changed = False
         if runtime is not None:
             from mklink.probes import select_probe
             from mklink.runtime import RuntimeErrorResponse
@@ -1774,13 +1775,10 @@ def create_app(
                 raise HTTPException(409, str(exc)) from exc
             runtime.prune()
             current = _state.get("device")
-            if current and current.connected:
+            port_changed = bool(current and current.port and current.port.casefold() != port.casefold())
+            if current and current.connected and not port_changed:
                 restore_last = False  # Reuse live symbols; never reparse on an implicit reconnect.
-            if current and runtime.target_sessions and not current.connected:
-                raise HTTPException(409, 'Detach stale clients before explicitly reconnecting the probe')
-            if current and current.connected and current.port.casefold() != port.casefold():
-                raise HTTPException(409, 'Probe port changed; release the old connection first')
-            if runtime.target_sessions and current and current.connected and any(value is not None for value in (axf, mcu, elf_backend)):
+            if runtime.target_sessions and current and current.connected and not port_changed and any(value is not None for value in (axf, mcu, elf_backend)):
                 raise HTTPException(status_code=409, detail="Detach shared clients before changing device configuration or symbols")
         preferred_port = None
         if restore_last:
@@ -1795,7 +1793,7 @@ def create_app(
                 else previous.get("elf_backend")
             )
         stale_device = _state.get("device")
-        if stale_device is not None and not stale_device.connected:
+        if stale_device is not None and (not stale_device.connected or port_changed):
             # A USB removal makes ``Device.connected`` false immediately, but
             # the old bridge still owns its serial handle and advisory port
             # lock until ``close()`` runs.  Reconnecting in the same desktop
@@ -1803,6 +1801,11 @@ def create_app(
             # restart could release it.  Tear down dashboards and the stale
             # session before opening the newly enumerated probe.
             await _disconnect_shared_device()
+            if runtime is not None:
+                # A repaired serial connection is a new target attachment.
+                # Old clients must explicitly attach again; preserve UART leases.
+                for key in list(runtime.target_sessions):
+                    runtime.sessions.pop(key, None)
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
             manager = get_managers()["superwatch"]

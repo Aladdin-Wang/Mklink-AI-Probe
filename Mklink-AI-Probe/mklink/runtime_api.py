@@ -145,11 +145,11 @@ class RuntimeControl:
             status = 'port_changed'
         return {'status': status, 'probe': selected, 'probes': probes}
 
-    def require_identity(self):
+    def require_identity(self, *, reconnect=False):
         if not self.info.get('probe_id'):  # isolated API fixtures
             return
         presence = self.presence()
-        if presence['status'] != 'present':
+        if presence['status'] != 'present' and not (reconnect and presence['status'] == 'port_changed'):
             raise HTTPException(409, {'reason': presence['status'], 'message': 'Bound probe unavailable or port changed; release the old connection and reconnect this same identity explicitly'})
 
     async def snapshot(self):
@@ -362,7 +362,7 @@ class RuntimeGate:
         from mklink.runtime import RuntimeErrorResponse
         if (path.startswith(('/api/device/', '/api/dash/', '/api/probe/')) or path == '/api/mcu-detect') and not path.endswith(('/stop', '/disconnect')):
             try:
-                c.require_identity()
+                c.require_identity(reconnect=path == '/api/device/connect')
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail)
         if path == '/api/probe/firmware-upgrade':
@@ -421,7 +421,11 @@ class RuntimeGate:
             return await reject(409, 'Detach other shared clients before changing the peripheral catalog')
         if path in {"/api/device/disconnect", "/api/symbols/reparse", "/api/symbols/c-layout",
                     "/api/device/reboot", "/api/probe/firmware-upgrade"} and (c.target_sessions or c.attach_lock.locked()):
-            return await reject(409, "Other runtime clients are attached; detach them before changing the shared device/project")
+            return await reject(409, {
+                'reason': 'shared_clients_attached',
+                'message': 'Other runtime clients are attached; open Backend Management to end their sessions before releasing the shared device',
+                'clients': [{'id': s.public_id, 'name': s.name, 'kind': s.kind} for s in c.target_sessions.values()],
+            })
         if path in RESOURCE_RELEASE_PATHS and (c.sessions or c.attach_lock.locked() or c.uart_operations):
             return await reject(409, 'Detach clients and finish independent UART operations before releasing resources')
         for stream in STREAMS:
@@ -549,9 +553,10 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
         async with control.attach_lock:
             if control.operation_lock.locked() or control.job_busy():
                 raise HTTPException(409, 'Wait for the active operation before attaching a client')
-            control.require_identity()
+            control.require_identity(reconnect=True)
             dev = state.get("device")
-            if dev and dev.connected:
+            port_changed = info.get('probe_id') and control.presence()['status'] == 'port_changed'
+            if dev and dev.connected and not port_changed:
                 if body.get("port") and body["port"].casefold() != dev.port.casefold():
                     raise HTTPException(409, "Runtime already owns a different probe")
                 axf = (getattr(dev, "axf_status", {}) or {}).get("axf_path")
@@ -580,7 +585,20 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
 
     @api.post("/heartbeat")
     async def heartbeat(body: dict):
-        control.session(body.get("session_id"))
+        session = control.session(body.get("session_id"))
+        # Exclusive target jobs can temporarily release CDC themselves. Preserve
+        # their clients until the admitted operation has finished restoring it.
+        def transitioning():
+            return control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy()
+        if session.scope != 'target' or transitioning():
+            return {"ok": True}
+        presence = await asyncio.to_thread(control.presence) if info.get('probe_id') else None
+        device = state.get('device')
+        if not transitioning() and (
+                (device is not None and not device.connected)
+                or (presence and presence['status'] != 'present')):
+            control.sessions.pop(body['session_id'], None)
+            raise HTTPException(409, 'Probe connection lost; call connect explicitly to recover the same probe')
         return {"ok": True}
 
     @api.post("/detach")

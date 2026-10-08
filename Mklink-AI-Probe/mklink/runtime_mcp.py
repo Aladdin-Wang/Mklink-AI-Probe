@@ -253,6 +253,9 @@ def build_server():
         Use gui_call for uart_ports, serial/modbus start/status/stop, serial_send, modbus_transaction
         and modbus_probe (one read-only address probe through the existing worker).
         Use probe to choose a backend; target port/AXF/MCU options require scope='target'.
+        After a backend restart or USB reconnect, call connect again to rediscover
+        the same probe and replace the expired attachment. Failed operations are
+        never replayed. Switching to a different probe still requires disconnect.
         """
         with lock:
             if "client" not in holder:

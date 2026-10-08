@@ -84,6 +84,7 @@ async function mountView() {
     global: {
       stubs: {
         FirmwareUpdateModal: true,
+        RuntimePanel: true,
       },
     },
   })
@@ -340,7 +341,25 @@ describe('ConfigView', () => {
     })
   })
 
-  it('switches a failed strict connection to Auto Search for the next attempt', async () => {
+  it('shows shared owners and opens management without evicting them', async () => {
+    sharedRuntime.value = true
+    mocks.deviceStatus.connected = true
+    mocks.api.disconnectDevice.mockRejectedValueOnce(Object.assign(new Error('shared'), {
+      detail: { reason: 'shared_clients_attached', clients: [{ name: 'VS Code', kind: 'mcp' }] },
+    }))
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="disconnect-local"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="connection-owners"]').text()).toContain('VS Code (mcp)')
+    expect(mocks.toastError).not.toHaveBeenCalled()
+    expect(mocks.api.disconnectDevice).toHaveBeenCalledOnce()
+    await wrapper.get('[data-testid="manage-connection-owners"]').trigger('click')
+    expect(wrapper.get('[data-testid="config-section-runtime"]').attributes('aria-current')).toBe('page')
+    expect(mocks.api.disconnectDevice).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('preserves a failed strict selection for the next attempt', async () => {
     mocks.api.connectDevice
       .mockRejectedValueOnce(new Error('selected port unavailable'))
       .mockResolvedValueOnce({ port: 'TEST_PORT_A' })
@@ -355,13 +374,13 @@ describe('ConfigView', () => {
       port: 'TEST_PORT_B',
       axf: 'C:\\saved\\app.axf',
     })
-    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('TEST_PORT_B')
 
     await wrapper.get('[data-testid="connect-local"]').trigger('click')
     await flushPromises()
 
     expect(mocks.api.connectDevice).toHaveBeenNthCalledWith(2, {
-      restore_last: true,
+      port: 'TEST_PORT_B',
       axf: 'C:\\saved\\app.axf',
     })
   })

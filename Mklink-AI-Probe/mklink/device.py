@@ -332,7 +332,8 @@ class Device:
         bridge = MKLinkSerialBridge(candidate)
         try:
             if not bridge.connect():
-                raise DeviceNotConnectedError(f'Failed to connect to selected MKLink port {candidate}; no fallback attempted')
+                reason = getattr(bridge, 'last_connect_error', None) or 'Command-port handshake failed'
+                raise DeviceNotConnectedError(f'Failed to connect to selected MKLink port {candidate}: {reason}; no fallback attempted')
         except BaseException:
             bridge.close()
             raise
