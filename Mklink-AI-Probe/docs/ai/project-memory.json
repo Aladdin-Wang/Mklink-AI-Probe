@@ -5,8 +5,8 @@
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/0.3.1-fixes",
-    "head": "Based on microkeen/main bc1e8327; use Git for the current repair commit.",
-    "remote_head": "Task branch to be pushed to microkeen; immutable v0.3.0 tag remains at ec1d2834.",
+    "head": "Source fix 102bbc12; compiled Web assets 56c251de; later commits only update handoff.",
+    "remote_head": "Verified microkeen/codex/0.3.1-fixes at 56c251de; PR #33 draft (use Git for later handoff commits).",
     "working_tree": "Isolated 0.3.1 repair worktree; original firmware edits preserved in main checkout. Local candidate built; installed official 0.3.0 unchanged."
   },
   "mission": {
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "awaiting_review",
-    "current_task": "0.3.1修复分支首轮代码梳理及客户后端启动故障修复完成，等待PR审核与客户回归；未合并/发布，长期目标继续暂停。"
+    "current_task": "0.3.1首轮梳理及客户后端启动故障修复已推送，PR #33草稿等待审核与客户回归；未合并/发布，长期目标继续暂停。"
   },
   "milestones": [
     {
@@ -92,7 +92,7 @@
     "Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。"
   ],
   "next_actions": [
-    "审核codex/0.3.1-fixes首批修复PR；客户电脑回归慢启动与旧固件RTT。实际管理员覆盖安装仍待补验，不将提取包测试当成安装成功。",
+    "审核PR #33（codex/0.3.1-fixes）；客户电脑回归慢启动与旧固件RTT。实际管理员覆盖安装仍待补验，不将提取包测试当成安装成功。",
     "按v031-startup-audit.md继续处理启动超时子进程协调、启动日志和解压目录残留；扩展旧架构兼容审查。",
     "HPM/SES DAP占用及最终固件完整原生调试矩阵仍待后续；禁止超时强抢调试所有权。",
     "长期验证继续暂停；正式版本标签与发布资产不可变；网站状态仍按v030-release-handoff.md。"
