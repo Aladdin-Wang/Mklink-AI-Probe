@@ -1847,6 +1847,10 @@ def _cli_runtime(args):
             result = request(info, "GET", "/_runtime/status")
         elif args.runtime_command == "status":
             result = [request(info, "GET", "/_runtime/status") for info in running_runtimes()]
+        elif args.runtime_command == 'control':
+            from mklink.runtime import control_runtime
+            result = control_runtime(args.action, probe=args.probe, confirm=args.confirm,
+                                     client_id=args.client_id, stream=args.stream)
         elif args.runtime_command == 'jobs':
             info = selected_runtime(args.probe)
             if info is None:
@@ -2654,6 +2658,12 @@ def main():
         entry.add_argument("--device-port", default=None)
         entry.add_argument("--probe-id", default="lobby", help=argparse.SUPPRESS)
     runtime_sub.add_parser("status")
+    runtime_control = runtime_sub.add_parser('control', help='查询或恢复指定后台，不连接硬件')
+    runtime_control.add_argument('action', choices=['status', 'detach-client', 'stop-acquisition', 'release-device', 'stop-backend'])
+    runtime_control.add_argument('--probe')
+    runtime_control.add_argument('--client-id')
+    runtime_control.add_argument('--stream')
+    runtime_control.add_argument('--confirm', action='store_true')
     runtime_jobs = runtime_sub.add_parser('jobs', help='只查询已保留的独占任务，不连接硬件')
     runtime_jobs.add_argument('--probe')
     runtime_jobs.add_argument('--job')

@@ -4,6 +4,41 @@ from mklink import runtime_cli
 from mklink.runtime import RuntimeErrorResponse
 
 
+@pytest.mark.parametrize('action,kwargs', [
+    ('kill', {'confirm': True}), ('detach-client', {'confirm': True}),
+    ('stop-acquisition', {'confirm': True}), ('status', {'client_id': 'x'}),
+    ('release-device', {'confirm': 'yes'}), ('stop-backend', {'confirm': True, 'stream': 'rtt'}),
+])
+def test_invalid_runtime_controls_do_not_discover_or_touch_backends(monkeypatch, action, kwargs):
+    from mklink.runtime import control_runtime
+    monkeypatch.setattr('mklink.runtime.selected_runtime', lambda probe: pytest.fail('Invalid control discovered a backend'))
+    with pytest.raises(ValueError):
+        control_runtime(action, **kwargs)
+
+
+def test_cli_runtime_control_uses_existing_backend_without_connect(monkeypatch, capsys):
+    import json, sys
+    from mklink import cli
+    calls = []
+    monkeypatch.setattr('mklink.runtime.selected_runtime', lambda probe: {'probe_id': probe})
+    def request(info, method, path, payload=None):
+        calls.append((info, method, path, payload))
+        return {'clients': []}
+    monkeypatch.setattr('mklink.runtime.request', request)
+    monkeypatch.setattr('mklink.runtime.RuntimeClient', lambda **kw: pytest.fail('Recovery attached'))
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'runtime', 'control', 'status', '--probe', 'chosen'])
+    cli.main()
+    assert json.loads(capsys.readouterr().out) == {'clients': []}
+    assert calls == [({'probe_id': 'chosen'}, 'GET', '/api/runtime/control/status', None)]
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'runtime', 'control', 'detach-client', '--probe', 'chosen', '--client-id', 'public-id'])
+    with pytest.raises(SystemExit, match='confirm=true'):
+        cli.main()
+    assert len(calls) == 1
+    monkeypatch.setattr(sys, 'argv', sys.argv + ['--confirm'])
+    cli.main()
+    assert calls[-1][1:] == ('POST', '/api/runtime/control/detach-client', {'confirm': True, 'client_id': 'public-id'})
+
+
 @pytest.fixture
 def adapter(monkeypatch):
     calls=[]

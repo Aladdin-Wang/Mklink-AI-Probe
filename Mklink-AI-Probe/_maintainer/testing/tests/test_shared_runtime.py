@@ -146,6 +146,7 @@ def test_internal_operation_retains_http_and_attach_exclusion_after_cancel(runti
 
 def test_shared_capture_does_not_restart_or_steal(runtime):
     client, _, calls, managers, _ = runtime
+    client.post('/api/runtime/control/view', json={'client_id': 'gui'})
     managers["rtt"].running = True  # started in GUI
     session = attach(client)
     assert call(client, session, "rtt_start").json()["reused"]
@@ -168,6 +169,50 @@ def test_stream_owner_cannot_stop_other_subscriber(runtime):
     client.post("/_runtime/detach", json={"session_id": second})
     assert call(client, first, "rtt_stop").status_code == 200
     assert calls == ["start", "stop"]
+
+
+@pytest.mark.parametrize('window_exit', ['release', 'expired', 'websocket'])
+def test_closed_gui_capture_can_be_recovered_by_sole_ai(runtime, window_exit):
+    import time
+    client, control, calls, managers, _ = runtime
+    managers['rtt'].running = True
+    borrower, other = attach(client), attach(client)
+    if window_exit == 'websocket':
+        with client.websocket_connect('ws://127.0.0.1:8765/api/runtime/control/view/gui') as socket:
+            socket.receive_json()
+            assert call(client, borrower, 'rtt_start').json()['reused']
+            assert call(client, borrower, 'rtt_stop').status_code == 409
+    else:
+        client.post('/api/runtime/control/view', json={'client_id': 'gui'})
+        assert call(client, borrower, 'rtt_start').json()['reused']
+        assert call(client, borrower, 'rtt_stop').status_code == 409
+        if window_exit == 'expired':
+            control.views['gui']['expires'] = time.monotonic() - 1
+        else:
+            client.post('/api/runtime/control/view', json={'client_id': 'gui', 'release': True})
+    assert call(client, other, 'rtt_stop').status_code == 409  # must subscribe
+    assert call(client, other, 'rtt_start').json()['reused']
+    assert call(client, borrower, 'rtt_stop').status_code == 409  # cannot evict a reader
+    status = client.get('/api/runtime/control/status').json()
+    capture = next(s for s in status['streams'] if s['name'] == 'rtt')
+    assert capture['owner'] == {'kind': 'gui', 'active': False} and capture['subscribers'] == 2
+    client.post('/_runtime/detach', json={'session_id': other})
+    assert call(client, borrower, 'rtt_stop').status_code == 200
+    assert calls == ['stop'] and not managers['rtt'].running
+
+
+@pytest.mark.parametrize('remote_kind', ['agent', 'window'])
+def test_remote_gui_owner_is_not_abandoned(runtime, remote_kind):
+    client, _, calls, managers, app = runtime
+    managers['rtt'].running = True
+    if remote_kind == 'agent':
+        app.state.site_agent = SimpleNamespace(active_connections=1)
+    else:
+        app.state.remote_window_activity = lambda: True
+    borrower = attach(client)
+    assert call(client, borrower, 'rtt_start').json()['reused']
+    assert call(client, borrower, 'rtt_stop').status_code == 409
+    assert not calls
 
 
 def test_subscribe_cannot_join_a_capture_while_it_is_stopping(runtime):

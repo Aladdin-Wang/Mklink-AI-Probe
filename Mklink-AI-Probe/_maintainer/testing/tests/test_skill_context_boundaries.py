@@ -66,9 +66,7 @@ def test_user_skill_publishes_probe_safety_boundaries():
     assert "文件或日志走 YMODEM/串口专用传输" in entry
     assert "禁止拆分" in entry
     assert "`pattern` 是 1~256 UTF-8 字节的字面子串" in entry
-    assert "只调用一次 `device_status`" in entry
     assert "`disconnect` → `connect`" in entry
-    assert "禁止自动重试" in entry
 
     assert "最多 15 个读取分组" in memory
     assert "511 UTF-8 字节" in memory

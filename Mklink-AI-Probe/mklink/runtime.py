@@ -268,6 +268,30 @@ def job_status(info, job_id=None):
     return request(info, 'GET', '/api/runtime/jobs/' + (job_id or ''))
 
 
+def control_runtime(action='status', *, probe=None, confirm=False, client_id=None, stream=None):
+    """Inspect/manage an existing backend without attaching or opening hardware."""
+    actions = {'status', 'detach-client', 'stop-acquisition', 'release-device', 'stop-backend'}
+    if action not in actions:
+        raise ValueError('Unsupported runtime control action')
+    if action != 'status' and confirm is not True:
+        raise ValueError('Runtime control requires confirm=true')
+    if (action == 'detach-client') != (client_id is not None):
+        raise ValueError('client_id is required only for detach-client')
+    if (action == 'stop-acquisition') != (stream is not None):
+        raise ValueError('stream is required only for stop-acquisition')
+    info = selected_runtime(probe)
+    if info is None:
+        return {'status': 'not_running'}
+    if action == 'status':
+        return request(info, 'GET', '/api/runtime/control/status')
+    body = {'confirm': True}
+    if client_id is not None:
+        body['client_id'] = client_id
+    if stream is not None:
+        body['stream'] = stream
+    return request(info, 'POST', '/api/runtime/control/' + action, body)
+
+
 class RuntimeClient:
     """One explicit session; serialize its requests against attach and detach.
 

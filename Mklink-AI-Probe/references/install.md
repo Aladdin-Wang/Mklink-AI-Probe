@@ -33,6 +33,10 @@ python -m mklink web-entry install --quick-launch
 
 MCP 使用 `python -m mklink mcp`（stdio），客户端按其插件/MCP 配置加载包内
 `.mcp.json`。安装 Skill 文本本身不保证客户端已启用 MCP；以实际可调用工具为准。
+DeepSeek 等客户端也应运行同一完整包的 `python -m mklink mcp` 共享入口，
+不要只安装说明文本后自行编写独占串口脚本。更新后重新加载 MCP 进程，核对
+`ping.mode`、版本以及 `runtime_status` 的后台协议；已运行的旧后台不会因为
+Skill 文件更新自动替换。占用与版本冲突按[控制权与恢复](runtime-recovery.md)处理。
 没有 MCP 时使用 CLI。工具参数以当前 schema 为准，不依赖固定工具数量。
 
 ## 更新

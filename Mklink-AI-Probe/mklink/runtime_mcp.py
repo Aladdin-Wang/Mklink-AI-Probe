@@ -5,6 +5,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import logging
 import threading
+from typing import Literal
 
 from pydantic import StrictBool, StrictInt
 
@@ -312,14 +313,40 @@ def build_server():
         """Search the backend's loaded symbols without reading hardware."""
         return client().call('symbol_search', {'q': query})
 
+    def runtime_selector(probe):
+        # Rediscover by stable identity, never reuse a cached HTTP endpoint.
+        if probe is not None:
+            return probe
+        with lock:
+            current = holder.get('client')
+            info = getattr(current, 'info', None) or holder.get('last_info') or {}
+            return info.get('probe_id')
+
     @server.tool()
-    def runtime_status() -> dict:
-        """Inspect bound probe presence, GUI/AI/CLI clients, captures and current operation."""
-        from mklink.runtime import request
-        current = client()
-        if current.info is None:
-            raise RuntimeErrorResponse('Connect to a selected probe first')
-        return request(current.info, 'GET', '/api/runtime/control/status')
+    def runtime_status(probe: str | None = None) -> dict:
+        """Inspect existing backend clients, captures and jobs without connect or CDC I/O.
+
+        Select probe explicitly when multiple backends exist. Does not start a backend
+        or renew an AI attachment. Includes clients' public IDs for runtime_control.
+        """
+        from mklink.runtime import control_runtime
+        return control_runtime(probe=runtime_selector(probe))
+
+    @server.tool()
+    def runtime_control(action: Literal['detach-client', 'stop-acquisition', 'release-device', 'stop-backend'],
+                        probe: str | None = None, confirm: StrictBool = False,
+                        client_id: str | None = None, stream: str | None = None) -> dict:
+        """Explicit recovery on one existing backend; inspect runtime_status first.
+
+        confirm=true requires user intent to end the selected session/capture/backend.
+        detach-client uses a public client_id from status (never a PID). Stop acquisition
+        uses stream, e.g. rtt. The backend rejects active jobs, other subscribers and
+        unsafe shutdowns. No forced kill, implicit connect, command replay or retries.
+        Use disconnect to leave only your own attachment at normal task completion.
+        """
+        from mklink.runtime import control_runtime
+        return control_runtime(action, probe=runtime_selector(probe), confirm=confirm,
+                               client_id=client_id, stream=stream)
 
     @server.tool()
     def rtt_start(addr: str | None = None, channel: int | None = None, mode: int | None = None,
@@ -385,7 +412,7 @@ def build_server():
         ping lists names. rtt_history/status and superwatch_snapshot/status reuse GUI acquisition.
         Acquisition start with {} subscribes if already running; new settings require an idle manager.
         Stop requires ownership and no other subscriber. A sole subscriber may recover
-        control after the original owner detaches/expires; GUI ownership is preserved.
+        control after the original owner detaches/expires or all GUI owners leave.
         UART start accepts serial ports [{port, baudrate}]
         plus optional profile/auto_reply_rules, executed once by the backend. serial_status.automation
         reports the validated profile/rules; borrowers subscribe with {} and compare explicit settings,

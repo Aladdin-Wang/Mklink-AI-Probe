@@ -87,6 +87,19 @@ class RuntimeControl:
     def target_sessions(self):
         return {key: session for key, session in self.sessions.items() if session.scope == 'target'}
 
+    def gui_active(self):
+        agent = getattr(self.app.state, 'site_agent', None)
+        remote = getattr(self.app.state, 'remote_window_activity', lambda: False)
+        return bool(self.views or remote() or (agent and agent.active_connections))
+
+    def acquisition_owner(self, stream):
+        owner = self.created_streams.get(stream)
+        session = self.sessions.get(owner)
+        if owner is None:
+            return {'kind': 'gui', 'active': self.gui_active()}
+        return {'kind': 'client', 'active': session is not None,
+                'client_id': session.public_id if session else None}
+
     def require_acquisition_control(self, stream, session_id):
         self.prune()
         recover = False
@@ -94,8 +107,11 @@ class RuntimeControl:
             session = self.validate_session(session_id, target=stream in STREAMS)
             owner = self.created_streams.get(stream)
             # An explicit control command may recover an abandoned acquisition.
-            # No owner entry denotes GUI ownership, which must not be claimed.
-            recover = owner is not None and owner not in self.sessions and stream in session.streams
+            # GUI ownership lasts while a window/remote operator is present,
+            # not forever after its last window closes. Require subscription
+            # and the existing sole-subscriber check before transferring it.
+            abandoned = owner not in self.sessions if owner is not None else not self.gui_active()
+            recover = abandoned and stream in session.streams
             if owner != session_id and not recover:
                 raise HTTPException(409, 'This acquisition was started by another client; detach instead')
         if any(stream in session.streams for key, session in self.sessions.items() if key != session_id):
@@ -170,7 +186,7 @@ class RuntimeControl:
                 'acquisition_transition': self.app.state.mklink_state.get('acquisition_transition'),
                 'uart_operations': list(self.uart_operations.values()),
                 'connected': bool(device and device.connected),
-                'streams': [{'name': name, 'running': manager.running,
+                'streams': [{'name': name, 'running': manager.running, 'owner': self.acquisition_owner(name),
                              'subscribers': sum(name in s.streams for s in self.sessions.values())}
                             for name, manager in get_managers().items()],
                 **await asyncio.to_thread(self.presence)}

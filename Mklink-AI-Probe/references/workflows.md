@@ -58,6 +58,7 @@ python -m mklink rtt
 
 | 场景 | 处理方式 |
 |------|----------|
+| GUI/AI 争用、退出 GUI 后仍占用、MCP 超时 | 先按[控制权与恢复](runtime-recovery.md)查询后台会话、采集和任务；不先杀进程或重启电脑 |
 | COM 口不存在 | `python -m mklink probes list` 查找端口 |
 | IDCODE 无效 | 检查 SWD 接线和目标板供电 |
 | 新 MCU 未知 / profile 缺失 | 先按内置 Pack、内置 DAPLink FLM、已安装 Pack、自定义 FLM 顺序解析；仍无匹配时运行 `python -m mklink mcu-detect`，多候选按算法 ID 查看，不生成 profile |
