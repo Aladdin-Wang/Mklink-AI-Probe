@@ -595,7 +595,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
         presence = await asyncio.to_thread(control.presence) if info.get('probe_id') else None
         device = state.get('device')
         if not transitioning() and (
-                (device is not None and not device.connected)
+                (device is None or not device.connected)
                 or (presence and presence['status'] != 'present')):
             control.sessions.pop(body['session_id'], None)
             raise HTTPException(409, 'Probe connection lost; call connect explicitly to recover the same probe')

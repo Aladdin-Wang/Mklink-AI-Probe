@@ -1801,11 +1801,12 @@ def create_app(
             # restart could release it.  Tear down dashboards and the stale
             # session before opening the newly enumerated probe.
             await _disconnect_shared_device()
-            if runtime is not None:
-                # A repaired serial connection is a new target attachment.
-                # Old clients must explicitly attach again; preserve UART leases.
-                for key in list(runtime.target_sessions):
-                    runtime.sessions.pop(key, None)
+        if runtime is not None and (stale_device is None or not stale_device.connected or port_changed):
+            # A repaired serial connection is a new target attachment, even if
+            # an earlier cleanup already removed the old Device from state.
+            # Old clients must explicitly attach again; preserve UART leases.
+            for key in list(runtime.target_sessions):
+                runtime.sessions.pop(key, None)
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
             manager = get_managers()["superwatch"]

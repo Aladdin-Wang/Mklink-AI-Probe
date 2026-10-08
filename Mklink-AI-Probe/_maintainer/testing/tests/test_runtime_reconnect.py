@@ -57,10 +57,13 @@ def test_missing_bound_probe_cannot_attach_to_only_remaining_probe(monkeypatch):
 
 
 @pytest.mark.parametrize('scope', ['target', 'uart'])
-def test_disconnected_target_stops_renewing_only_target_sessions(runtime, scope):
+@pytest.mark.parametrize('removed', [False, True])
+def test_disconnected_target_stops_renewing_only_target_sessions(runtime, scope, removed):
     client, control, _, _, app = runtime
     session = client.post('/_runtime/attach', json={'scope': scope}).json()['session_id']
     app.state.mklink_state['device'].connected = False
+    if removed:
+        app.state.mklink_state['device'] = None
     result = client.post('/_runtime/heartbeat', json={'session_id': session})
     assert result.status_code == (409 if scope == 'target' else 200)
     assert (session in control.sessions) == (scope == 'uart')
@@ -91,7 +94,7 @@ def test_temporary_cdc_release_during_admitted_operation_does_not_evict_client(r
 
 
 @pytest.mark.parametrize('entry', ['gui', 'mcp'])
-@pytest.mark.parametrize('port_changed', [False, True])
+@pytest.mark.parametrize('port_changed', [False, True, 'already_closed'])
 def test_hotplug_closes_old_handle_revokes_old_target_sessions_then_connects_same_probe(
         monkeypatch, tmp_path, entry, port_changed):
     replacement, _ = _connected_symbol_device(tmp_path)
@@ -103,13 +106,13 @@ def test_hotplug_closes_old_handle_revokes_old_target_sessions_then_connects_sam
     info = dict(port=8765, token='test-token', instance_id='test-instance', probe_id='usb-' + '1' * 24)
     control = install_runtime(app, info)
     state = app.state.mklink_state
-    state['device'] = stale
+    state['device'] = None if port_changed == 'already_closed' else stale
     state['dispatcher'] = object()
     selected = dict(probe_id=info['probe_id'], port=replacement.port)
     monkeypatch.setattr('mklink.probes.inventory', lambda: [selected])
     monkeypatch.setattr('mklink.probes.select_probe', lambda *a, **k: selected)
     def connect(**kwargs):
-        assert events == ['close-old']
+        assert events == ([] if port_changed == 'already_closed' else ['close-old'])
         assert kwargs['port'] == replacement.port
         assert 'old-target' not in control.sessions
         events.append('open-new')
@@ -122,7 +125,7 @@ def test_hotplug_closes_old_handle_revokes_old_target_sessions_then_connects_sam
         path = '/api/device/connect' if entry == 'gui' else '/_runtime/attach'
         result = client.post(path, json={'port': replacement.port, **({'session_id': 'old-target'} if entry == 'mcp' else {})})
         assert result.status_code == 200, result.text
-        assert events == ['close-old', 'open-new']
+        assert events == (['open-new'] if port_changed == 'already_closed' else ['close-old', 'open-new'])
         assert state['device'] is replacement
         assert 'old-target' not in control.sessions and 'independent-uart' in control.sessions
         assert client.post('/_runtime/call', json={'session_id': 'old-target', 'capability': 'read_memory',
