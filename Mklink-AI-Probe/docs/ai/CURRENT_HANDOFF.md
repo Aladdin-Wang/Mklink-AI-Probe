@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-08T08:49:06.5945343+08:00`
-- 分支：`codex/v0.3.0-shared-runtime`
+- 更新时间：`2026-10-08T09:12:40.1288759+08:00`
+- 分支：`main`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Host PR30 publication preparation; V3 main bdd18d7 and V4 main ed73ae9 merged with CI success. SDK/submodules preserved.
-- 当前任务：用户已明确授权正式发布0.3.0和V3/V4主分支整合。固件两个PR已合并并本地切换main。发布说明精简为四项；主机全量回归、签名构建、安装验收及三端发布进行中。HPM/SES遗留占用按已知限制披露，未声称完全修复。详见docs/verification/v030-release-handoff.md。
+- 当前任务：主机PR30已合并5543b2ee；4471 Python/902 GUI及三个CI通过，正式签名构建进行中。用户最新已提供V3.6.0/V4.6.0/HPMLink V4.6.0固件并授权一起发布，取代此前暂缓指示；须独立验证上传及固件索引。V3 main bdd18d7，V4 main ed73ae9。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -37,7 +37,7 @@
 - V3 main bdd18d7、V4 main ed73ae9已通过CI并合并推送；本地已切main。Arm-2D/MicroBoot等子模块保持原状。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
 - 2026-10-08用户明确授权正式0.3.0发布、版本说明精简及V3/V4推送main；固件已经CI/PR整合，主机仍须精确提交发布门槛。
-- 用户最新指示：升级固件先不要发布。V3/V4只整合源码main，不上传新UF2、不更新firmware索引；应用0.3.0和Skill继续正式发布，说明新固件另行提供。
+- 用户最新已提供最终V3.6.0/V4.6.0/HPMLink V4.6.0 UF2并明确授权一起发布，取代此前暂缓指示。文件由用户编译提供，不得将先前HIL候选的哈希或性能结果称为最终二进制重新实测。
 
 ## 真机环境
 
