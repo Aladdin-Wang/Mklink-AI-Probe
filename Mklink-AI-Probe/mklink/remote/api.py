@@ -2081,7 +2081,7 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(error)) from error
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        async with _exclusive_probe_control("flash") as (device, _stopped):
+        async def program(device):
             try:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
@@ -2091,6 +2091,17 @@ def create_app(
                 return result
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+
+        if _state.get('shared_runtime'):
+            from mklink.remote.acquisition import suspend_acquisition
+            # Suspension owns the dashboard lock for the whole operation.
+            # Do not nest _exclusive_probe_control, which acquires it again.
+            async with suspend_acquisition(_state, app.state.shared_runtime) as report:
+                async with async_target_debug_lease(_state, 'flash'):
+                    result = await program(_state['device'])
+            return {**result, 'acquisition': report}
+        async with _exclusive_probe_control('flash') as (device, _stopped):
+            return await program(device)
 
     @app.post("/api/device/security")
     async def security_operation(body: dict = Body(...)):

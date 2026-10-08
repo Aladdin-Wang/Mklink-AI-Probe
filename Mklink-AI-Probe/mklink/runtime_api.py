@@ -472,7 +472,7 @@ class RuntimeGate:
         if path in {f"/api/dash/{name}/start" for name in BRIDGE_DASHBOARD_TYPES}:
             if active and not (mux_active and path in {'/api/dash/rtt/start', '/api/dash/superwatch/start'}):
                 return await reject(409, "A CDC acquisition is already running; subscribe to its cached data or stop it explicitly")
-        if (path.startswith(("/api/device/", "/api/probe/")) and path != "/api/device/connect") or path in {'/api/dash/superwatch/inspect', '/api/mcu-detect'}:
+        if (path.startswith(("/api/device/", "/api/probe/")) and path not in {"/api/device/connect", "/api/device/flash"}) or path in {'/api/dash/superwatch/inspect', '/api/mcu-detect'}:
             if active and not (mux_active and path in MUX_MEMORY_PATHS):
                 return await reject(409, {"busy": active, "hint": "Read a shared dashboard snapshot or explicitly stop acquisition first"})
         async def observe(message):

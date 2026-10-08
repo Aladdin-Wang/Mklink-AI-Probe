@@ -183,11 +183,6 @@ class RuntimeJobs:
             executing_job.reset(token)
 
     async def _invoke_and_observe(self, job, arguments):
-        if job['action'] == 'flash':
-            from mklink.remote.acquisition import suspend_acquisition
-            async with suspend_acquisition(self.control.app.state.mklink_state, self.control) as report:
-                result = await self.control.invoke('POST', PATHS[job['action']], arguments)
-            return {**result, 'acquisition': report}
         result = await self.control.invoke('POST', PATHS[job['action']], arguments)
         if job['action'] != 'security':
             return result

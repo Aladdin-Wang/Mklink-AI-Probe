@@ -1217,7 +1217,10 @@ def test_device_recovers_and_clears_session_when_start_reply_parsing_fails(
 
 @pytest.mark.parametrize("base", [0x20000000, 0x0001D850])
 def test_implicit_rtt_scan_clips_at_trusted_ram_boundary(base):
-    header, descriptors = _rtt_control_block_memory(max_down=0)
+    header, descriptors = _rtt_control_block_memory(max_up=1, max_down=0)
+    descriptors = bytearray(descriptors)
+    descriptors[4:8] = (base + 64).to_bytes(4, 'little')
+    descriptors[8:12] = (32).to_bytes(4, 'little')
     device, _bridge = _device_with_rtt_memory(header, descriptors)
     device._target_writable_ram_ranges = lambda: [(base, base + 96)]
     reads = []
@@ -1225,15 +1228,52 @@ def test_implicit_rtt_scan_clips_at_trusted_ram_boundary(base):
     def read(address, size):
         assert base <= address and address + size <= base + 96
         reads.append((address, size))
-        return (header + bytes(96))[address - base:address - base + size]
+        return (header + descriptors + bytes(48))[address - base:address - base + size]
 
     device.read_memory = read
     device.validate_rtt_stream_request(base, search_size=0, mode=0)
     span = device._rtt_bounded_search_size(base, 0)
     assert device._find_rtt_control_block(base, span) == base
-    assert reads == [(base, 96)]
+    assert reads == [(base, 96), (base, 24), (base + 24, 24)]
     with pytest.raises(DeviceError, match="scan window"):
         device.validate_rtt_stream_request(base, search_size=1024, mode=0)
+
+
+@pytest.mark.parametrize('false_kind', ['count', 'inactive', 'outside_ram'])
+def test_rtt_scan_skips_false_signature_before_real_block(false_kind):
+    base = 0x20000000
+    header, descriptors = _rtt_control_block_memory(max_up=1, max_down=0)
+    memory = bytearray(2048)
+    memory[:24] = header
+    memory[24:48] = descriptors
+    if false_kind == 'count':
+        memory[16:20] = (0xFFFFFFFF).to_bytes(4, 'little')
+    elif false_kind == 'inactive':
+        memory[24:48] = bytes(24)
+    else:
+        memory[28:32] = (0x40000000).to_bytes(4, 'little')
+    memory[128:152] = header
+    memory[152:176] = descriptors
+    device = Device()
+    device.read_memory = lambda address, size: bytes(memory[address - base:address - base + size])
+    assert device._find_rtt_control_block(base, 256) == base + 128
+
+
+@pytest.mark.parametrize('error', [ConnectionError('disconnected'), DeviceError('target read failed')])
+def test_rtt_scan_does_not_swallow_candidate_memory_read_failure(error):
+    base = 0x20000000
+    header, _ = _rtt_control_block_memory(max_up=1, max_down=0)
+    reads = []
+    def read(address, size):
+        reads.append((address, size))
+        if size == 24:
+            raise error
+        return header + bytes(size - len(header))
+    device = Device()
+    device.read_memory = read
+    with pytest.raises(type(error), match=str(error)):
+        device._find_rtt_control_block(base, 256)
+    assert len(reads) == 2
 
 
 def test_implicit_rtt_scan_still_rejects_short_control_block():
