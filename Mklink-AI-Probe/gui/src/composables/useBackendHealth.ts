@@ -14,6 +14,7 @@ const authenticationRequired = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let refCount = 0
 let firstCheckDone = false
+let restarting = false
 
 async function checkBackendHealth(): Promise<boolean> {
   try {
@@ -33,10 +34,12 @@ async function checkBackendHealth(): Promise<boolean> {
 }
 
 async function refreshHealth() {
+  if (restarting) return
   const alive = IS_TAURI
     ? await checkViaTauri()
     : await checkBackendHealth()
 
+  if (restarting) return
   if (alive) {
     backendState.value = 'alive'
     firstCheckDone = true
@@ -66,7 +69,7 @@ function startHealthPolling(intervalMs = 5000) {
   pollTimer = setInterval(async () => {
     fastPolls++
     await refreshHealth()
-    if (fastPolls >= maxFastPolls && backendState.value === 'starting') {
+    if (!restarting && fastPolls >= maxFastPolls && backendState.value === 'starting') {
       backendState.value = 'dead'
       firstCheckDone = true
     }
@@ -86,27 +89,33 @@ function stopHealthPolling() {
 }
 
 async function restart(): Promise<void> {
-  backendState.value = 'starting'
-  firstCheckDone = false
-  if (IS_TAURI) {
-    try {
-      await restartRuntimeBackend()
-    } catch (e) {
-      console.error('[useBackendHealth] restart failed:', e)
+  if (restarting) return
+  restarting = true
+  try {
+    backendState.value = 'starting'
+    firstCheckDone = false
+    if (IS_TAURI) {
+      try {
+        await restartRuntimeBackend()
+      } catch (e) {
+        console.error('[useBackendHealth] restart failed:', e)
+      }
     }
-  }
-  // Wait for backend to come back up (up to 15s)
-  for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 500))
-    if (await checkBackendHealth()) {
-      backendState.value = 'alive'
+    // Endpoint publication can precede HTTP readiness by a short interval.
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500))
+      if (await checkBackendHealth()) {
+        backendState.value = 'alive'
+        firstCheckDone = true
+        break
+      }
+    }
+    if (backendState.value === 'starting') {
+      backendState.value = 'dead'
       firstCheckDone = true
-      break
     }
-  }
-  if (backendState.value === 'starting') {
-    backendState.value = 'dead'
-    firstCheckDone = true
+  } finally {
+    restarting = false
   }
 }
 

@@ -1,9 +1,27 @@
 """Detached process storage must outlive a frozen desktop launcher."""
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from mklink import probes, runtime
+
+
+def test_cold_runtime_can_publish_after_old_45_second_budget(tmp_path, monkeypatch):
+    monkeypatch.setenv('MKLINK_RUNTIME_DIR', str(tmp_path))
+    monkeypatch.setattr(probes, 'select_probe', lambda *a, **kw: {'probe_id': 'lobby'})
+    clock = [0.0]
+    spawned = []
+    info = {'probe_id': 'lobby', 'port': 8766}
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(runtime.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(runtime, 'discover', lambda _: info if clock[0] >= 50 else None)
+    def spawn(*args, **kwargs):
+        spawned.append(args)
+        return SimpleNamespace(poll=lambda: None)
+    monkeypatch.setattr(runtime.subprocess, 'Popen', spawn)
+    assert runtime.ensure_runtime(allow_lobby=True) == info
+    assert len(spawned) == 1
 
 
 @pytest.mark.parametrize("frozen", [False, True])

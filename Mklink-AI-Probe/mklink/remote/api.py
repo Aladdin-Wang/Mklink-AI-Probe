@@ -2400,6 +2400,9 @@ def create_app(
                 _state["project_root"],
                 source_path=getattr(_state["device"], "_axf", None),
             )
+            validate_channels = getattr(_state["device"], "validate_rtt_channels", None)
+            if callable(validate_channels):
+                await asyncio.to_thread(validate_channels, channel, channels)
             validate_request = getattr(
                 _state["device"], "validate_rtt_stream_request", None,
             )

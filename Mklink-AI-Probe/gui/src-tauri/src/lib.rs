@@ -41,6 +41,8 @@ impl Drop for JobHandle {
 }
 
 struct Sidecar {
+    lifecycle: Mutex<()>,
+    shutdown: std::sync::Arc<AtomicBool>,
     child: Mutex<Option<Child>>,
     port: Mutex<Option<u16>>,
     instance_id: String,
@@ -56,7 +58,9 @@ const HEALTH_CHECK_INTERVAL_SECS: u64 = 5;
 const MAX_CONSECUTIVE_FAILS: u32 = 3;
 const DEFAULT_SIDECAR_PORT: u16 = 8765;
 const LAST_SIDECAR_PORT: u16 = 8799;
-const SIDECAR_START_TIMEOUT_SECS: u64 = 20;
+// Cold onefile startup extracts both the proxy and its detached runtime.
+// Cover the runtime's 60s budget plus the proxy's own extraction/imports.
+const SIDECAR_START_TIMEOUT_SECS: u64 = 120;
 const SIDECAR_SHUTDOWN_TIMEOUT_SECS: u64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -572,6 +576,7 @@ fn request_desktop_exit(app: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBo
     // native event loop available while those operations settle.
     std::thread::spawn(move || {
         let state: State<Sidecar> = app.state();
+        let _lifecycle = state.lifecycle.lock().unwrap();
         if let Err(error) = terminate_sidecar_tree(state.inner()) {
             eprintln!("[tauri] proxy shutdown failed: {error}");
         }
@@ -643,6 +648,9 @@ fn wait_for_runtime_endpoint(state: &Sidecar) -> Result<BackendEndpoint, String>
     let deadline =
         std::time::Instant::now() + std::time::Duration::from_secs(SIDECAR_START_TIMEOUT_SECS);
     while std::time::Instant::now() < deadline {
+        if state.shutdown.load(Ordering::Relaxed) {
+            return Err("Desktop is closing".into());
+        }
         if let Ok(raw) = std::fs::read_to_string(&state.runtime_info_path) {
             if let Ok(endpoint) = serde_json::from_str::<BackendEndpoint>(&raw) {
                 if endpoint.instance_id == state.instance_id
@@ -676,6 +684,18 @@ fn start_owned_sidecar(
     project_root: Option<String>,
     preferred_port: Option<u16>,
 ) -> Result<BackendEndpoint, String> {
+    let _lifecycle = state.lifecycle.lock().map_err(|error| error.to_string())?;
+    start_owned_sidecar_locked(state, project_root, preferred_port)
+}
+
+fn start_owned_sidecar_locked(
+    state: &Sidecar,
+    project_root: Option<String>,
+    preferred_port: Option<u16>,
+) -> Result<BackendEndpoint, String> {
+    if state.shutdown.load(Ordering::Relaxed) {
+        return Err("Desktop is closing".into());
+    }
     let process_alive = {
         let mut guard = state.child.lock().map_err(|error| error.to_string())?;
         match guard.as_mut() {
@@ -736,23 +756,34 @@ fn sidecar_status(state: State<Sidecar>) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn start_sidecar(
-    state: State<Sidecar>,
+async fn start_sidecar(
+    app: tauri::AppHandle,
     project_root: Option<String>,
 ) -> Result<BackendEndpoint, String> {
-    start_owned_sidecar(state.inner(), project_root, None)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state: State<Sidecar> = app.state();
+        start_owned_sidecar(state.inner(), project_root, None)
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn stop_sidecar(state: State<Sidecar>) -> Result<(), String> {
-    terminate_sidecar_tree(state.inner())
+async fn stop_sidecar(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state: State<Sidecar> = app.state();
+        let _lifecycle = state.lifecycle.lock().map_err(|error| error.to_string())?;
+        terminate_sidecar_tree(state.inner())
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn restart_sidecar(state: State<Sidecar>) -> Result<BackendEndpoint, String> {
-    let preferred_port = state.port.lock().map_err(|e| e.to_string())?.to_owned();
-    terminate_sidecar_tree(state.inner())?;
-    start_owned_sidecar(state.inner(), None, preferred_port)
+async fn restart_sidecar(app: tauri::AppHandle) -> Result<BackendEndpoint, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state: State<Sidecar> = app.state();
+        let _lifecycle = state.lifecycle.lock().map_err(|error| error.to_string())?;
+        let preferred_port = state.port.lock().map_err(|e| e.to_string())?.to_owned();
+        terminate_sidecar_tree(state.inner())?;
+        start_owned_sidecar_locked(state.inner(), None, preferred_port)
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -790,6 +821,8 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
         }
 
         let state: State<Sidecar> = handle.state();
+        // A slow cold start/restart is not an unhealthy running backend.
+        let Ok(_lifecycle) = state.lifecycle.try_lock() else { continue };
 
         let process_alive = {
             let mut guard = state.child.lock().unwrap();
@@ -816,7 +849,7 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
             let backoff = 3 + 2 * (restart_count - 1);
             std::thread::sleep(std::time::Duration::from_secs(backoff as u64));
             let preferred_port = state.port.lock().ok().and_then(|port| *port);
-            match start_owned_sidecar(state.inner(), None, preferred_port) {
+            match start_owned_sidecar_locked(state.inner(), None, preferred_port) {
                 Ok(endpoint) => {
                     let _ = handle.emit("backend-endpoint-changed", &endpoint);
                     eprintln!("[tauri] sidecar restarted on port {}", endpoint.port);
@@ -864,6 +897,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(Sidecar {
+            lifecycle: Mutex::new(()),
+            shutdown: shutdown.clone(),
             child: Mutex::new(None),
             port: Mutex::new(None),
             instance_id,
@@ -1089,6 +1124,8 @@ mod tests {
     #[test]
     fn remote_credentials_are_scoped_to_valid_probe_identities() {
         let state = Sidecar {
+            lifecycle: Mutex::new(()),
+            shutdown: std::sync::Arc::new(AtomicBool::new(false)),
             child: Mutex::new(None), port: Mutex::new(None), instance_id: "test".into(),
             runtime_info_path: PathBuf::new(), project_root: Mutex::new(String::new()),
             site_agent_root: Mutex::new(Some(PathBuf::from("storage"))),
@@ -1110,6 +1147,38 @@ mod tests {
             serde_json::from_str(r#"{"port":8766,"instanceId":"instance-b"}"#).unwrap();
         assert_eq!(endpoint.port, 8766);
         assert_eq!(endpoint.instance_id, "instance-b");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn cold_endpoint_after_twenty_seconds_is_not_killed_and_close_cancels_wait() {
+        use std::os::windows::process::CommandExt;
+        let child = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 60"])
+            .creation_flags(0x08000000)
+            .spawn().unwrap();
+        let state = Sidecar {
+            lifecycle: Mutex::new(()),
+            shutdown: std::sync::Arc::new(AtomicBool::new(false)),
+            child: Mutex::new(Some(child)), port: Mutex::new(None),
+            instance_id: "slow-instance".into(),
+            runtime_info_path: std::env::temp_dir().join(format!("mklink-slow-{}.json", rand::random::<u128>())),
+            project_root: Mutex::new(String::new()), site_agent_root: Mutex::new(None),
+            job: Mutex::new(None),
+        };
+        let result = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(21));
+                std::fs::write(&state.runtime_info_path, r#"{"port":8766,"instanceId":"slow-instance"}"#).unwrap();
+            });
+            wait_for_runtime_endpoint(&state)
+        });
+        // Avoid sending a shutdown request to a real local service in this test.
+        *state.port.lock().unwrap() = None;
+        terminate_sidecar_tree(&state).unwrap();
+        assert_eq!(result.unwrap().port, 8766);
+        state.shutdown.store(true, Ordering::Relaxed);
+        assert!(wait_for_runtime_endpoint(&state).unwrap_err().contains("closing"));
     }
 
     #[test]
@@ -1155,6 +1224,8 @@ mod tests {
         assign_to_job(&job, &worker).expect("assign untracked worker");
 
         let state = Sidecar {
+            lifecycle: Mutex::new(()),
+            shutdown: std::sync::Arc::new(AtomicBool::new(false)),
             child: Mutex::new(Some(tracked)),
             port: Mutex::new(Some(DEFAULT_SIDECAR_PORT)),
             instance_id: "test-instance".into(),

@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-08T10:08:32+08:00",
+  "updated_at": "2026-10-08T20:28:05+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "main",
-    "head": "Release source main ec1d2834038b13632d4a88fa3057b5ee5fb65ff2; use Git for later handoff commits.",
-    "remote_head": "Official v0.3.0 immutable release at ec1d2834038b13632d4a88fa3057b5ee5fb65ff2; later main handoff commits do not move the tag.",
-    "working_tree": "V3 main bdd18d7 and V4 main ed73ae9 integrated. Final signed installer and Skill installed and qualified; publication status in release handoff."
+    "branch": "codex/0.3.1-fixes",
+    "head": "Based on microkeen/main bc1e8327; use Git for the current repair commit.",
+    "remote_head": "Task branch to be pushed to microkeen; immutable v0.3.0 tag remains at ec1d2834.",
+    "working_tree": "Isolated 0.3.1 repair worktree; original firmware edits preserved in main checkout. Local candidate built; installed official 0.3.0 unchanged."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
-    "status": "complete",
-    "current_task": "0.3.0正式发布、三端更新索引与固件V3.6.0/V4.6.0/HPMLink V4.6.0完成；NSIS和本地Skill已更新。交接记录保留HPM/SES及未验证矩阵边界。长期目标保持暂停。"
+    "status": "awaiting_review",
+    "current_task": "0.3.1修复分支首轮代码梳理及客户后端启动故障修复完成，等待PR审核与客户回归；未合并/发布，长期目标继续暂停。"
   },
   "milestones": [
     {
@@ -34,6 +34,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "0.3.1首批启动修复",
+      "result": "1013 Python通过/0跳过；905 GUI、21 Rust通过。修复120秒外层/60秒运行时启动预算、代理独立窗口保活、重启串行及异步执行、旧固件RTT预检查。标准本地NSIS构建、提取包Windows-only PATH桌面启动12.159秒、真实浏览器8766刷新、冻结MCP/CLI和退出端点释放通过。覆盖安装受WinError740管理员权限阻挡，原正式安装保持不变；客户V4.5.2实体未复测。详见docs/verification/v031-startup-audit.md。"
+    },
     {
       "area": "0.3.0正式发布回归",
       "result": "4471 Python通过/2跳过；902 GUI通过（干净npm ci后再次通过）；签名NSIS安装退出0，三负载哈希匹配。本地Skill更新，7059目标/2224算法；冻结版和Skill MCP/CLI通过。桌面配置/枚举通过；Web由用户手动确认连接STM32与v0.3.0。关闭后无MKLink进程、8765/8766无监听。详见v030-release-handoff.md，不能等同所有实体矩阵重新通过。"
@@ -61,10 +65,6 @@
     {
       "area": "固件发布与代码同步",
       "result": "docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。"
-    },
-    {
-      "area": "实机与SuperWatch",
-      "result": "docs/verification/v030-release-prep-20261007.md：4471 Python通过/2跳过、902 GUI通过，生产构建通过。V4 3bc7ef7 SES与布局通过、37原生及USB恢复通过；Keil下载校验、RTT8+Watch运行/暂停/单步/恢复/退出通过，初始化后模式校验与传输丢弃为0。无DAP30秒271576.69/s、最大相邻73us、无>1ms。OpenOCD1MHz并行4区域1ms约225~236/s，下载校验与恢复通过，不保证设定频率。安装态和本地Skill待补验；保留其他功能矩阵的实体边界。"
     }
   ],
   "decisions": [
@@ -92,9 +92,10 @@
     "Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。"
   ],
   "next_actions": [
-    "后续修复HPM/SES退出遗留DAP占用，并补齐最终固件的完整原生SES/Keil边界矩阵；当前已知限制随发布说明公开。",
-    "网站任务按v030-release-handoff.md与正式Release更新内容；不宣称本轮完成网站部署。",
-    "长期验证继续暂停，等待用户后续通知；保持正式版本标签与同版本发布资产不可变。"
+    "审核codex/0.3.1-fixes首批修复PR；客户电脑回归慢启动与旧固件RTT。实际管理员覆盖安装仍待补验，不将提取包测试当成安装成功。",
+    "按v031-startup-audit.md继续处理启动超时子进程协调、启动日志和解压目录残留；扩展旧架构兼容审查。",
+    "HPM/SES DAP占用及最终固件完整原生调试矩阵仍待后续；禁止超时强抢调试所有权。",
+    "长期验证继续暂停；正式版本标签与发布资产不可变；网站状态仍按v030-release-handoff.md。"
   ],
   "continuation_protocol": [
     "交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。"

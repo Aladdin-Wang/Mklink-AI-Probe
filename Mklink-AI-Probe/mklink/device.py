@@ -1615,6 +1615,18 @@ class Device:
             )
         return down
 
+    def validate_rtt_channels(self, channel: int, channels: list[int] | None = None) -> None:
+        """Reject unsupported capture requests before replacing a live stream."""
+        selected = list(channels) if channels is not None else [channel]
+        if not selected or len(selected) > 8 or len(set(selected)) != len(selected) or any(type(ch) is not int or not 0 <= ch < 8 for ch in selected) or channel not in selected:
+            raise ValueError('channels must be unique integers 0..7 and include channel')
+        multiplex = self._bridge.supports_multiplex() is True if hasattr(self._bridge, 'supports_multiplex') else False
+        if not multiplex and (selected != [channel] or channel > 2):
+            raise DeviceError(
+                '当前固件仅支持单个 RTT 通道（0、1 或 2），请选择一个通道或更新探针固件。 '
+                'This firmware supports one RTT channel (0, 1 or 2); select one channel or update the probe firmware.'
+            )
+
     def rtt_start(
         self,
         addr: str | int | None = None,
@@ -1641,12 +1653,9 @@ class Device:
             self._project_root,
             source_path=self._axf,
         )
+        self.validate_rtt_channels(channel, channels)
         multiplex = self._bridge.supports_multiplex() is True if hasattr(self._bridge, 'supports_multiplex') else False
         selected = list(channels) if channels is not None else [channel]
-        if not selected or len(selected)>8 or len(set(selected))!=len(selected) or any(type(ch) is not int or not 0<=ch<8 for ch in selected) or channel not in selected:
-            raise ValueError('channels must be unique integers 0..7 and include channel')
-        if not multiplex and (selected != [channel] or channel > 2):
-            raise DeviceError('Multiple RTT channels require updated multiplex firmware')
         if multiplex:
             self._bridge.enable_multiplex()
         if self._rtt_session and self._rtt_session._running:

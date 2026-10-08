@@ -16,6 +16,7 @@ from urllib.request import Request, build_opener, ProxyHandler
 
 PROTOCOL = 49  # DAP capture invalidation and persistent acquisition errors.
 VERSION = "0.3.0"
+STARTUP_TIMEOUT_SECONDS = 60
 
 
 class RuntimeErrorResponse(RuntimeError):
@@ -150,7 +151,7 @@ def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, dev
     info = discover(probe_id)
     if info:
         return info
-    deadline = time.monotonic() + 45
+    deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         try:
             with runtime_lock("startup.lock", probe_id):
