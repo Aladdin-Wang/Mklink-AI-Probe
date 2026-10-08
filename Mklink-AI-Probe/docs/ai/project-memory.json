@@ -1,26 +1,26 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-08T09:12:40.1288759+08:00",
+  "updated_at": "2026-10-08T10:08:32+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "main",
-    "head": "Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.",
-    "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
-    "working_tree": "Host PR30 publication preparation; V3 main bdd18d7 and V4 main ed73ae9 merged with CI success. SDK/submodules preserved."
+    "head": "Release source main ec1d2834038b13632d4a88fa3057b5ee5fb65ff2; use Git for later handoff commits.",
+    "remote_head": "Official v0.3.0 immutable release at ec1d2834038b13632d4a88fa3057b5ee5fb65ff2; later main handoff commits do not move the tag.",
+    "working_tree": "V3 main bdd18d7 and V4 main ed73ae9 integrated. Final signed installer and Skill installed and qualified; publication status in release handoff."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
-    "status": "in_progress",
-    "current_task": "主机PR30已合并5543b2ee；4471 Python/902 GUI及三个CI通过，正式签名构建进行中。用户最新已提供V3.6.0/V4.6.0/HPMLink V4.6.0固件并授权一起发布，取代此前暂缓指示；须独立验证上传及固件索引。V3 main bdd18d7，V4 main ed73ae9。"
+    "status": "complete",
+    "current_task": "0.3.0正式发布、三端更新索引与固件V3.6.0/V4.6.0/HPMLink V4.6.0完成；NSIS和本地Skill已更新。交接记录保留HPM/SES及未验证矩阵边界。长期目标保持暂停。"
   },
   "milestones": [
     {
-      "name": "0.3.0 专用CLI共享迁移",
-      "status": "release_preparation",
-      "notes": "共享后台与多通道RTT已完成多轮源码/安装态短测；完整矩阵的未验证边界见最新交接，发布授权已获得。"
+      "name": "0.3.0正式版",
+      "status": "complete",
+      "notes": "签名NSIS、Skill、远程服务包及三端更新索引发布完成；精确源提交ec1d2834。安装/退出、CLI/MCP通过，Web由用户确认。"
     },
     {
       "name": "0.2.3正式版",
@@ -28,15 +28,15 @@
       "notes": "三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。"
     },
     {
-      "name": "2026-10-03固件",
+      "name": "2026-10-08固件",
       "status": "complete",
-      "notes": "HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。"
+      "notes": "用户提供MicroLink V3.6.0、MicroLink/HPMLink V4.6.0，UF2及三端下载哈希和独立索引验证；V2.8.1不变。未将旧候选HIL当成新二进制实测。"
     }
   ],
   "verification": [
     {
       "area": "0.3.0正式发布回归",
-      "result": "2026-10-08：4471 Python通过、2跳过；902 GUI通过（87文件）；生产构建通过。V3 PR2 / bdd18d7和V4 PR4 / ed73ae9已通过CI并合并main。签名包与最终安装/发布仍待完成，不将源码测试当成发布成功。"
+      "result": "4471 Python通过/2跳过；902 GUI通过（干净npm ci后再次通过）；签名NSIS安装退出0，三负载哈希匹配。本地Skill更新，7059目标/2224算法；冻结版和Skill MCP/CLI通过。桌面配置/枚举通过；Web由用户手动确认连接STM32与v0.3.0。关闭后无MKLink进程、8765/8766无监听。详见v030-release-handoff.md，不能等同所有实体矩阵重新通过。"
     },
     {
       "area": "CDC多路复用主机接入",
@@ -78,7 +78,7 @@
   ],
   "hardware": {
     "state": "V4/HPM5301共存与无DAP性能已短测；V3/STM32完成stage95短测后拔出。V4最终固件136525 samples/s、最大84us、无毫秒间隔；V3 269477 samples/s、最大79us。不能外推所有组合或长期。",
-    "installer": "当前本地安装及Skill为04c9241d开发包；正式0.3.0待合并后重新签名构建并覆盖验证。",
+    "installer": "正式0.3.0：ec1d2834源码签名NSIS覆盖安装成功，本地Skill同步；安装负载哈希、冻结MCP/CLI及退出释放验证通过。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
@@ -92,9 +92,9 @@
     "Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。"
   ],
   "next_actions": [
-    "完成主机完整回归、生产构建和PR30 CI，按明确授权合并main；只从干净且与远程一致的main重新构建正式签名NSIS。",
-    "验收安装态Web/桌面、冻结MCP及本地Skill，准备七项发布文件，三端上传下载哈希验证后最后更新索引。",
-    "保持SES已知限制、跨物理主机及全芯片组合未验证边界；不得将发布授权写成所有验收通过。网站来财交接沿用现有任务，长期目标暂停。"
+    "后续修复HPM/SES退出遗留DAP占用，并补齐最终固件的完整原生SES/Keil边界矩阵；当前已知限制随发布说明公开。",
+    "网站任务按v030-release-handoff.md与正式Release更新内容；不宣称本轮完成网站部署。",
+    "长期验证继续暂停，等待用户后续通知；保持正式版本标签与同版本发布资产不可变。"
   ],
   "continuation_protocol": [
     "交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。"
