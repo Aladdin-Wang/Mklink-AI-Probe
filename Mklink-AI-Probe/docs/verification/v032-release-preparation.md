@@ -64,3 +64,16 @@ PR35 保持修复分支；不修改 0.3.1 标签、正式包和更新渠道。
 
 Mac仅ad-hoc签名、没有Developer ID公证；所有候选更新载荷未签名。
 正式发布需统一源提交重建、签名、校验更新索引和实际升级，不把平台映射单测称为自升级实装。
+
+Windows/Skill/SiteAgent候选位于主工作区`.build/artifacts/v032-86cfdff4`，manifest记录各自
+精确来源。Skill来自`3f6bfea2500b77face69c14b5706aba7823760c1`，仅提交了已测生成资源和报告，
+包含7059目标/2224算法，39个Web文件逐字核对通过；SiteAgent便携清单及内嵌核心哈希核验通过。
+
+| 文件 | SHA256 |
+| --- | --- |
+| Skill ZIP | `856781d1269406dfa66e710b626e18518c63f57d8b9eded0c9412234fa23d754` |
+| SiteAgent portable ZIP | `7f340ba76dcec31aace93384574f1d4dfe065ce857c99e89b48123b9cd69c679` |
+| SiteAgent core ZIP | `d8ec87fa8ad81510c1ef012fd877024b676c3689b04fa2a6bd9ff4efd2b42419` |
+
+Git分支已推送，PR35保持草稿。新增生成资源提交会触发新CI，正式整合前须看当前提交的
+检查结果，不能用旧3e39e1ef构建通过代替新提交状态。没有新增产品源码变更，不重复已完成HIL。
