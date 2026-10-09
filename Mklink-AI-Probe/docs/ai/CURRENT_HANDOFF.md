@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T16:14:45.0981878+08:00`
+- 更新时间：`2026-10-09T16:59:42.5249584+08:00`
 - 分支：`codex/0.3.2-fixes`
 - HEAD：`Based on microkeen/main 078663fe; inspect Git for current 0.3.2 fix head.`
 - 远端 HEAD：`microkeen/main 078663fe; task changes pushed only to codex/0.3.2-fixes.`
 - 工作树：Isolated desktop-platforms worktree; original main checkout and released artifacts preserved.
-- 当前任务：0.3.2候选交付完成，待客户Mac/Linux真机复测。源d8b08304已修USB枚举与同身份挂载盘自动识别；ARM64/Intel DMG及Linux DEB/AppImage均在主工作区.build/artifacts/v032-desktop-candidates，CRC/SHA256校验通过。原生run37895715688三平台构建、各47通过/1跳过、包内CLI/MCP/Web/退出通过；共享后台2754、GUI328及反馈CI通过。无USB真机/安装交互/公证结论。PR35仍草稿，未合并发布；详情v032-cross-platform.md。
+- 当前任务：0.3.2新增SuperWatch瞬态读失败修复098d4929：单个status5不停止，完整有效样本恢复；错误后持续无完整数据max(3s,3周期+0.5s)才停止，保留DAP目标变更/传输故障。383项回归通过，CI已触发。用户要求V3/V4无新增灰色状态，已同步固件会话01a11b6a-0a88-73a0-b6f7-919ab7454c92；其仍持有硬件，本会话未访问硬件。待固件交接联调及新安装包验证，现有d8b08304 Mac/Linux候选不含该补丁。详见v032-superwatch-read-recovery.md，PR35未合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -47,10 +47,11 @@
 
 ## 下一动作
 
-1. 下一版本排查30MHz Flash128B/1kHz连续读status5，证据保留v031-installed-30mhz.md及固件会话交接；不吞错误或自动降档。
-2. 正式发布源1d61159d及7项资产不可修改；新修复从最新microkeen/main另开分支/版本。
-3. 指定e960 V4.6.3是用户提供的新构建；如要引用完整实机结论，须对该二进制重新明确设备交接并验收，不能沿用旧605数据。
-4. mklink自动跟进与长期验证继续暂停；UAC安装豁免及缺夹具限制保留。VCC每次仍确认具体电压，只回烧有备份的已知程序。
+1. 等待固件会话完成V3/V4二态连接图标与成功采样恢复修复并明确释放设备，再验证status5瞬态恢复、持续故障、Keil下载后Watch和RTT共存；不抢占硬件。
+2. 0.3.2主机098d4929尚未重建Windows安装包；旧d8b08304跨平台候选仅包含USB/MSC修复，新补丁不得冒用旧包哈希。
+3. 下一版本排查30MHz Flash128B/1kHz连续读status5，证据保留v031-installed-30mhz.md及固件会话交接；不吞错误或自动降档。
+4. 正式发布源1d61159d及7项资产不可修改；新修复从最新microkeen/main另开分支/版本。 指定e960 V4.6.3是用户提供的新构建；如要引用完整实机结论，须对该二进制重新明确设备交接并验收，不能沿用旧605数据。
+5. mklink自动跟进与长期验证继续暂停；UAC安装豁免及缺夹具限制保留。VCC每次仍确认具体电压，只回烧有备份的已知程序。
 
 ## 已知限制
 
