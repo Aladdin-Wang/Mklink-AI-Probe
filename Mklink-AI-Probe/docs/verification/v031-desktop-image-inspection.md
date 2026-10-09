@@ -70,3 +70,8 @@ sidecar `58f2b338f7f672e616a1d6619c4c79e59d3f33b2d11ab4368ff93fca75793192`。
 暂不能将其归因于已修复的本地文件检查互斥，也不能宣称30MHz大块读取已修复。
 
 本地证据保存在主工作区 `.build/artifacts/v031-inspection-fix/`，不提交设备身份、原程序或令牌。
+
+
+2026-10-09后续：用户已覆盖安装，三负载哈希与acdcc997一致，安装态确认。
+30MHz dumpmem / SuperWatch丢失和批次间隔专项已完成，发现独立待修问题；
+详见[v031-installed-30mhz.md](v031-installed-30mhz.md)，不能将此前通过扩大为这些问题已修复。

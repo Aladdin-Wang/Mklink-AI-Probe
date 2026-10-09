@@ -119,3 +119,8 @@ V3、HPM、多探针、客户 CS32L015、外部串口设备等不存在于最终
 详细根因、NSIS哈希及证据见[v031-desktop-image-inspection.md](v031-desktop-image-inspection.md)。
 旧Skill/SiteAgent候选未包含本次修复，正式发布需从同一最终提交重新构建全部产物，
 并按精确tip重新完成发布门槛；本会话未合并、签名、发布或更新渠道。
+
+
+2026-10-09后续：用户已覆盖安装，三负载哈希与acdcc997一致，安装态确认。
+30MHz dumpmem / SuperWatch丢失和批次间隔专项已完成，发现独立待修问题；
+详见[v031-installed-30mhz.md](v031-installed-30mhz.md)，不能将此前通过扩大为这些问题已修复。

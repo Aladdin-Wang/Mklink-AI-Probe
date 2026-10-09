@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-09T09:33:56.095096+08:00",
+  "updated_at": "2026-10-09T09:47:40.759762+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/0.3.1-fixes",
     "head": "Product acdcc997; production assets d89c0827 (build acdcc997), three CI checks passed. Later documentation only; inspect Git for current tip.",
     "remote_head": "microkeen/codex/0.3.1-fixes / PR #33; verify Git for latest documentation tip.",
-    "working_tree": "Isolated 0.3.1 host repair worktree. Original main firmware edits preserved; user installed old 72962eda candidate, new acdcc997 overwrite blocked by UAC."
+    "working_tree": "Isolated host fix worktree; acdcc997 installed payloads verified. Current turn adds hardware verification documentation only."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "用户安装72962eda后反馈采集时在线选文件409，已修复本地检查错误获取硬件锁及迟到异常覆盖成功结果。acdcc997新NSIS已构建，相关192 Python/118 GUI及三项CI通过；新包提取原生桌面在RTT8+Watch1下选HEX、烧录和自动恢复通过，10MHz整片512KiB读回相同。实际新包覆盖安装WinError740，已给用户安装包，等待人工完成后补安装态；此前UAC豁免仍保留，不冒称覆盖成功。另30MHz大块读status5，固件源码确认target error、细分原因未知，10MHz通过；设备已释放。未合并/签名/发布，mklink跟进保持暂停。"
+    "current_task": "用户覆盖acdcc997后要求30MHz dumpmem/SuperWatch丢失及批次间隔复测，已在实际安装后台完成，详见v031-installed-30mhz.md。SuperWatch原生前台1/3变量各20秒未观察到丢弃，最大约263351点/秒及50343组/秒；1kHz源间隔1ms但WS批次约100ms，与Windows读取总超时吻合。最大速率RAM dump measure三轮均队列丢字节却HTTP200；30MHz Flash连续capture偶发status5，10MHz2000帧相同。新发现仍待修复，不宣称发布门槛完成。测试无供电/目标写入，恢复未连接，保留桌面。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "0.3.1原生桌面选文件并发修复",
-      "result": "v031-desktop-image-inspection.md：安装旧候选复现本地检查并发409；源码acdcc997、资源d89c0827修复两条本地检查独立硬件锁和前端取消请求竞态。192 Python/118 GUI、生产NSIS构建及三项CI通过，冻结MCP/CLI/5.44秒启动通过。新包提取原生桌面：Watch、RTT8、两者并行三种状态12次并发文件检查全200，实际文件对话框选HEX并点击烧录10.73秒成功，RTT8/Watch1自动暂停恢复且数据增长。10MHz读回512KiB与备份一致，30MHz原连接大块读偶发status5尚未归因；低频通过不代表30MHz修复。VCC未变、时钟未保存。正常退出后进程/endpoint消失、命令口可开关。新NSIS SHA5f2858333155e541a40c850fec97e0e05e27c33638d05337880983b13f975780，实际覆盖因740未完成，安装目录仍旧候选。证据.build/artifacts/v031-inspection-fix。"
+      "result": "v031-desktop-image-inspection.md：安装旧候选复现本地检查并发409；源码acdcc997、资源d89c0827修复两条本地检查独立硬件锁和前端取消请求竞态。192 Python/118 GUI、生产NSIS构建及三项CI通过，冻结MCP/CLI/5.44秒启动通过。新包提取原生桌面：Watch、RTT8、两者并行三种状态12次并发文件检查全200，实际文件对话框选HEX并点击烧录10.73秒成功，RTT8/Watch1自动暂停恢复且数据增长。10MHz读回512KiB与备份一致，30MHz原连接大块读偶发status5尚未归因；低频通过不代表30MHz修复。VCC未变、时钟未保存。正常退出后进程/endpoint消失、命令口可开关。新NSIS SHA5f2858333155e541a40c850fec97e0e05e27c33638d05337880983b13f975780，实际覆盖因740未完成，安装目录仍旧候选。证据.build/artifacts/v031-inspection-fix。 用户后续已实际覆盖安装，三负载哈希一致；30MHz专项见v031-installed-30mhz.md，原先等待安装状态已解除。"
     },
     {
       "area": "0.3.1发布准备及最终可用硬件验收",
@@ -77,8 +77,8 @@
     "用户最新已提供最终V3.6.0/V4.6.0/HPMLink V4.6.0 UF2并明确授权一起发布，取代此前暂缓指示。文件由用户编译提供，不得将先前HIL候选的哈希或性能结果称为最终二进制重新实测。"
   ],
   "hardware": {
-    "state": "新反馈补验已释放设备：新包提取原生桌面RTT8+Watch1并发文件检查、在线烧录/校验/自动恢复通过。10MHz整片512KiB与原备份相同SHA40aab8a117e7db22dfeffd13a2a592ab596bdd28a66fcd4a26443d2e72548732。30MHz大块读status5由固件会话仅源码核查，未改固件。VCC未改，临时时钟不保存；桌面/后台正常退出、endpoint删除、命令口可开关。",
-    "installer": "用户已安装旧72962eda候选；新acdcc997 NSIS在.build/artifacts/v031-inspection-fix，原生提取测试完成。自动覆盖安装返回WinError740，已请求人工运行新包，未收到完成回复，不能宣称新安装态通过。此前UAC验证豁免保留。",
+    "state": "实际安装版30MHz专项复测结束，未改供电或写目标程序。停止采集、移除本轮Watch项、恢复初始1ms和30MHz并断开本轮连接，桌面保留。存在dump measure队列丢弃及100ms低速合批，30MHzFlash连续读取间歇性status5仍待查。",
+    "installer": "用户已实际覆盖acdcc997；桌面/sidecar/stcp三负载SHA与修复NSIS一致，实际安装版和原生页脚已验证。30MHz专项在此安装后台完成，不再是提取包测试。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
@@ -92,8 +92,8 @@
     "Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。"
   ],
   "next_actions": [
-    "等待用户完成acdcc997新NSIS覆盖安装后，核对三负载哈希并补实际安装态采集并发选文件流程；提取包证据不能代替安装态。新报告v031-desktop-image-inspection.md。",
-    "30MHz大块读偶发target status5已交固件会话核查：128B MUX突发中任一失败会使外层失败，真实失败地址不等同HTTP起址；10MHz整片通过。不要静默重试未知外设读取、不要归因Flash损坏。",
+    "修复本轮实测的dump measure接收队列丢弃/错误成功判断及Windows低速100ms合批；先按v031-installed-30mhz.md保留安装态基线，再源码测试和新冻结包真机对照，不能用模拟替代。",
+    "固件侧30MHz Flash连续dump capture间歇性status5继续协调原会话；10MHz固定数据2000样本逐值相同。源采样空窗、MUX传输丢弃、WS批次间隔、界面历史覆盖分别解释，CRC固定0不是无误证明。",
     "正式发布仍需审核及合并授权，精确最终tip重跑全套门槛，构建一致NSIS/Skill/SiteAgent、签名和三端哈希；旧Skill/SiteAgent候选未包含本次修复。不得直接发布旧冻结候选。",
     "发布组合需V4.6.3或后续UART饥饿修复固件；公开固件渠道仍V4.6.0，本会话未改渠道。旧型号升级/缺失夹具限制见硬件报告，UAC人工确认豁免。",
     "mklink自动跟进与长期验证保持暂停；设备已释放。任何VCC改动仍逐次确认具体电压，只回烧有备份的已知程序。"
