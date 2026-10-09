@@ -1256,6 +1256,7 @@ class DumpMemoryStreamSession:
                     'parser_dropped_bytes': (self._mux_watch.transport.stats()['watch_dropped_bytes']
                                              - self._mux_dropped_bytes_start),
                     'parser_dropped_frames': self._mux_watch.gaps,
+                    'firmware_read_errors': self._mux_watch.read_errors,
                     'parser_crc_errors': 0, 'firmware_flagged_frames': 0, 'firmware_sample_drop_flags': 0}
         return {
             "protocol_frames": self._protocol_frames,
