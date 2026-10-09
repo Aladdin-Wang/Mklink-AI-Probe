@@ -54,3 +54,16 @@ mountinfo 的设备号关联 lsblk 卷元数据和 sysfs USB 祖先。不使用�
 新增系统元数据 fixture 覆盖多设备同卷标、错身份、过期挂载、空序列号及 UF2；Mac/Linux
 真实脱机写入和重枚举仍待客户候选包复测。Linux DEB 携带限定 VID/PID 的 udev 规则；
 AppImage 同目录提供该规则，权限配置需客户按实际发行版管理。
+
+## 候选交付
+
+四个安装文件已下载到主工作区 `.build/artifacts/v032-desktop-candidates/`，归档 CRC 和
+安装文件 SHA-256 均验证通过。同目录附客户复测说明、Linux 规则和汇总 SHA256SUMS.txt。
+原生构建、包内资格检查成功，不替代客户的实际 USB/脱机写入/安装验收。
+
+| 文件 | SHA-256 |
+| --- | --- |
+| Mklink-AI-Probe-v0.3.2-aarch64-apple-darwin.dmg | `50187b51faf2b968ec8f376c8dae7e8817583bd184335334c766b8157e27d84d` |
+| Mklink-AI-Probe-v0.3.2-x86_64-apple-darwin.dmg | `209f3118535ee607e56be026dfad9c9172111e4e999a48ad4a41c0dfd0a8a130` |
+| Mklink-AI-Probe-v0.3.2-x86_64-unknown-linux-gnu.deb | `c95c16a50b2bed392d3b4d8be7fcbe47c0fc7f83257af80742d85566b63d60bb` |
+| Mklink-AI-Probe-v0.3.2-x86_64-unknown-linux-gnu.AppImage | `f75c33271b260e62026c8821cf810aa47768bf962eda7019dd6aa98aa70a0392` |

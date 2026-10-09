@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T16:10:40.4787568+08:00`
+- 更新时间：`2026-10-09T16:14:45.0981878+08:00`
 - 分支：`codex/0.3.2-fixes`
 - HEAD：`Based on microkeen/main 078663fe; inspect Git for current 0.3.2 fix head.`
 - 远端 HEAD：`microkeen/main 078663fe; task changes pushed only to codex/0.3.2-fixes.`
 - 工作树：Isolated desktop-platforms worktree; original main checkout and released artifacts preserved.
-- 当前任务：0.3.2候选源d8b08304：Mac/Linux USB枚举与同身份挂载盘自动识别修复完成。原生run37895715688三平台构建、各47通过/1跳过、包内CLI/MCP/Web/退出全部通过；共享后台2754、GUI328及反馈CI通过。ARM64/Intel DMG与Linux DEB/AppImage已生成，正在下载并核对本地产物；客户已同意Mac实测，不能把云机检查当作USB/安装验收。PR35保留草稿、未合并发布。详见v032-cross-platform.md。
+- 当前任务：0.3.2候选交付完成，待客户Mac/Linux真机复测。源d8b08304已修USB枚举与同身份挂载盘自动识别；ARM64/Intel DMG及Linux DEB/AppImage均在主工作区.build/artifacts/v032-desktop-candidates，CRC/SHA256校验通过。原生run37895715688三平台构建、各47通过/1跳过、包内CLI/MCP/Web/退出通过；共享后台2754、GUI328及反馈CI通过。无USB真机/安装交互/公证结论。PR35仍草稿，未合并发布；详情v032-cross-platform.md。
 - 状态：`in_progress`
 
 ## 里程碑
