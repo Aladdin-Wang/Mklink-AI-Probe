@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T22:43:27.1017577+08:00`
+- 更新时间：`2026-10-10T00:17:28+08:00`
 - 分支：`codex/0.3.2-fixes`
 - HEAD：`Based on microkeen/main 078663fe; inspect Git for current 0.3.2 fix head.`
 - 远端 HEAD：`microkeen/main 078663fe; task changes pushed only to codex/0.3.2-fixes.`
 - 工作树：Isolated desktop-platforms worktree; original main checkout and released artifacts preserved.
-- 当前任务：0.3.2 补充 MHz 输入、确认回退1MHz后保留连接、收发模式毫秒/RX/TX及独立RTT面板尺寸；补齐Mac/Linux自升级载荷和发布映射。专项183 Python/96 GUI通过，完整回归进行中。e1候选实际GUI自动升级V4.6.5已成功，目标512KiB不变。固件已交接最终V4.6.6/V3.6.2候选，尚未刷入及回归。详见v032-release-preparation.md，不继承旧V4.6.4证据。
+- 当前任务：0.3.2 发布准备：MHz、收发毫秒/RX/TX、独立RTT面板和Mac/Linux更新载荷已实现。86cfdff4冻结Windows候选+V4.6.6已完成可用硬件矩阵，512KiB保全，设备明确释放。原生3e39e1ef三平台构建成功。完整软件及包验收结果见v032-release-preparation.md和v032-final-candidate.md；V3换接、客户Mac/Linux实机及签名原地更新仍待完成。仅准备，不合并/签名/发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,6 +20,7 @@
 
 ## 验证证据
 
+- **0.3.2最终候选与既有修复回归**：见v032-final-candidate.md。86cfdff4冻结候选实际GUI升级V4.6.6；30MHz Flash128B在1kHz/请求1µs两档完整性指标均0，最大样本间隔1049/233µs；RTT8/Watch4/UART并行、文件检查、在线/脱机/共享烧录成功/失败/停止恢复、Keil下载断点单步退出及OpenOCD、GUI退出AI接续、旧端点重发现、最后6.299秒释放通过；512KiB逐字不变，未改VCC。真实收发毫秒/RX/TX、独立RTT拖动及20/30MHz保存通过。旧155次status5不冒作新固件故障注入证据。914 GUI/生产构建通过；原生3e39e1ef构建37949511991全部成功；完整Python/Rust和交付状态以发布准备报告为准。 全量Python4634通过/2跳过，Rust21+6通过；三平台下载CRC和载荷SHA256均核验，当前候选可交客户复测。
 - **0.3.2冻结候选V4/Keil收敛**：详见v032-hardware-closure.md。e1eee01e frozen + UF2 2684d904：在线/脱机/共享及负向自动恢复、30MHz时间戳负载、RTT8/Watch4/UART、Keil下载断点单步、OpenOCD、Flash512KiB不变、旧端点重连和6.261秒释放。Keil期间155读错不误断，退出自动恢复；用户屏幕确认已连接。固件另有断线计时误判待修，新固件和最终自动升级仍未收敛。
 - **0.3.1正式发布**：v031-release-handoff.md：main/tag 1d61159d，clean locked GUI912、签名NSIS与SiteAgent重建通过；冻结MCP/CLI、4.825秒lobby、36项Web字节一致、10.340秒原生窗口、无Python子进程及正常退出通过；UAC安装豁免。三端资产/应用及固件索引已核对。用户原GUI保留，本次不连接目标。
 - **0.3.1 dumpmem队列修复和最终候选回归**：产品77d4849c/资源f586fd94：完整Python4576通过/2跳过686.57秒、GUI912、Rust桌面21/SiteAgent6、三项CI通过。安装旧版30MHz capture最大时间戳缺口84.113ms；新NSIS提取原生窗口三轮10万点最大98/89/82µs，measure5/15/30秒最大123/125/121µs，均主机丢弃0。SuperWatch单变量1kHz/单变量最大/三变量最大各20秒最大采样1046/127/129µs，最大批次105.169/73.280/56.691ms，队列/WS丢弃0。冻结MCP/CLI、原生启动、GUI退出AI读和最后释放通过；原生安装UAC豁免。NSIS/Skill/SiteAgent同源候选哈希见manifest，详细证据v031-dump-queue.md。未证明30MHz Flash连续读取status5修复，未重做所有旧烧录/串口/升级矩阵。
@@ -27,7 +28,6 @@
 - **0.3.1发布准备及最终可用硬件验收**：见v031-release-preparation.md、v031-hardware-acceptance.md。完整Python4566通过/2跳过640.25秒、GUI911、Rust桌面21/SiteAgent6，候选构建及403fad75三项CI通过。NSIS/Skill/SiteAgent哈希冻结，提取候选不等于覆盖安装，UAC人工项豁免。V4.6.2发现1kHz Watch饿死UART，固件修复并明确交接V4.6.3后重新核对UF2/AXF、备份原程序，RTT8+Watch4+UART在100Hz/1kHz/请求1µs三档各5次完整154B响应，读错误0。在线15.50秒/脱机20.75秒/共享27.03秒及失败/停止均恢复采集；OpenOCD halt/step/resume/shutdown、GUI退出AI接续、真实串口记录/队列/广播/文件、RAM RTT搜索通过。512KiB与新备份相同SHA40aab8a117e7db22dfeffd13a2a592ab596bdd28a66fcd4a26443d2e72548732。旧endpoint明确connect恢复同一探针，最后6.018秒退出释放端口。真实原生提取程序冷启动6.006秒、退出不影响AI。VCC未改。现有硬件范围完成；旧型号升级、外部RS485及覆盖安装未实测，不冒称通过。
 - **0.3.1下载、控制权和界面**：下载源码7b9c87a8/资源b91acb92：Python扩大818、最终相关75通过；GUI最终相关150、TypeScript和生产构建通过，真实浏览器模拟API验证拒绝清凭据及完成自动解锁。控制权/Skill源码7e46aabe：最终364项Python/文档回归及Skill quick_validate通过，含真实无硬件后台进程经新管理入口退出/释放实例锁。修复GUI所有权遗留，新增不依赖connect的诊断/定向管理。见v031-download-acquisition.md、v031-runtime-recovery.md。本批未构建NSIS/覆盖Skill或客户电脑实机验证。 固件升级6d2fc0fa：311 Python、54 GUI、57文档通过，自动同身份UF2与无指令手动回退；串口折叠0e6047ac：24 GUI通过；两批TypeScript/生产构建与真实浏览器模拟API通过，草稿折叠保留。报告v031-firmware-update-ui.md、v031-serial-extensions.md。均未打包安装或刷实机。
 - **0.3.1启动及连接修复**：首批启动：1013 Python、905 GUI、21 Rust通过；本地提取包冷启动12.159秒、Web/MCP/CLI通过，实际覆盖安装受WinError740阻挡。连接批次：1175 Python扩大回归通过；最终ed67c134回归404通过；GUI 907通过，生产页面占用提示/管理入口浏览器验证通过（模拟API）。协议50，明确连接重新发现同一USB身份、撤销失效目标会话并保留UART/在途任务；已知MI_04恢复不做多余身份打印；target busy不毒化MUX、不重放写。实体拔插/旧固件/客户电脑待回归。报告v031-startup-audit.md、v031-connections.md；最终本地构建状态见连接报告。
-- **0.3.0正式发布回归**：4471 Python通过/2跳过；902 GUI通过（干净npm ci后再次通过）；签名NSIS安装退出0，三负载哈希匹配。本地Skill更新，7059目标/2224算法；冻结版和Skill MCP/CLI通过。桌面配置/枚举通过；Web由用户手动确认连接STM32与v0.3.0。关闭后无MKLink进程、8765/8766无监听。详见v030-release-handoff.md，不能等同所有实体矩阵重新通过。
 
 ## 架构决策
 
@@ -41,16 +41,16 @@
 
 ## 真机环境
 
-- **state**：V4 当前V4.6.5，由e1候选实际GUI自动升级成功并确认版本；512KiB与旧基线相同，无VCC改动，所有测试客户端已退出。固件交接V4.6.6最终候选未刷入；根会话继续持有硬件验收，完成后明确释放并让固件会话通知用户换V3。
-- **installer**：e1eee01e Windows NSIS SHA256 022c90d7dcf6e9324f690445083d3a06412ec659e47862a68f797b969abe4c89 已提取冻结入口和真机验证，不是覆盖安装。用户UAC确认项豁免。同期Mac arm64/x64及Linux x64云构建37928492193均成功，尚无当地USB/MSC实机证据。
+- **state**：V4已通过最新冻结候选实际GUI升级V4.6.6，完整目标程序保全，所有采集/串口/Keil/OpenOCD/测试后台已退出，明确释放给固件会话。V3.6.2等待用户换接及明确交接；不凭端口空闲接管。新V4物理屏幕状态仍待目视确认。
+- **installer**：Windows86cfdff4 NSIS SHA256 c3463d7ad42c426f82efce986dbf3b7f413fd91b3707176019e26a28cfadce15，提取冻结后台和生产Web实测，不是覆盖安装；UAC人工项用户豁免。三平台3e39e1ef与Windows产品代码相同但打包提交不同，正式同源要求仍需整合后重建；候选未签名更新/未公证，不声称实装升级通过。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 完成本轮全套Python/GUI及新候选构建，真实浏览器验证MHz、毫秒收发与多RTT独立尺寸。
-2. 新冻结候选GUI自动升级V4.6.6并完成采集/烧录/IDE共存/退出回归，V4完成明确释放后协调换V3。
-3. 完成三平台含更新载荷的原生构建与冻结验证，交付候选并记录客户Mac/Linux实机、签名自升级尚未验证。
-4. 逐项维护v032-release-preparation.md；UAC确认豁免，PR35不合并、不签名、不发布。
+1. 以v032-release-preparation.md逐项核对当前全量软件、冻结包及原生候选证据；检查当前Git/CI而不继承旧候选通过。
+2. 等待固件会话及用户V3换接明确交接后补齐V3.6.2真机；V4新屏幕、物理断线、老设备手动升级等未测边界如实保留。
+3. 将最新Mac arm64/Intel及Linux x64候选交客户进行安装、USB/MSC、脱机写入及UF2重枚举；签名后原地自升级需后续正式授权及实装。
+4. 仅准备发布，PR35不合并、不签名、不发布、不修改更新渠道。正式发布必须统一源提交重建与核验。
 
 ## 已知限制
 

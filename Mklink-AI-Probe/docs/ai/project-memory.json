@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-09T22:43:27.1017577+08:00",
+  "updated_at": "2026-10-10T00:17:28+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "0.3.2 补充 MHz 输入、确认回退1MHz后保留连接、收发模式毫秒/RX/TX及独立RTT面板尺寸；补齐Mac/Linux自升级载荷和发布映射。专项183 Python/96 GUI通过，完整回归进行中。e1候选实际GUI自动升级V4.6.5已成功，目标512KiB不变。固件已交接最终V4.6.6/V3.6.2候选，尚未刷入及回归。详见v032-release-preparation.md，不继承旧V4.6.4证据。"
+    "current_task": "0.3.2 发布准备：MHz、收发毫秒/RX/TX、独立RTT面板和Mac/Linux更新载荷已实现。86cfdff4冻结Windows候选+V4.6.6已完成可用硬件矩阵，512KiB保全，设备明确释放。原生3e39e1ef三平台构建成功。完整软件及包验收结果见v032-release-preparation.md和v032-final-candidate.md；V3换接、客户Mac/Linux实机及签名原地更新仍待完成。仅准备，不合并/签名/发布。"
   },
   "milestones": [
     {
@@ -34,6 +34,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "0.3.2最终候选与既有修复回归",
+      "result": "见v032-final-candidate.md。86cfdff4冻结候选实际GUI升级V4.6.6；30MHz Flash128B在1kHz/请求1µs两档完整性指标均0，最大样本间隔1049/233µs；RTT8/Watch4/UART并行、文件检查、在线/脱机/共享烧录成功/失败/停止恢复、Keil下载断点单步退出及OpenOCD、GUI退出AI接续、旧端点重发现、最后6.299秒释放通过；512KiB逐字不变，未改VCC。真实收发毫秒/RX/TX、独立RTT拖动及20/30MHz保存通过。旧155次status5不冒作新固件故障注入证据。914 GUI/生产构建通过；原生3e39e1ef构建37949511991全部成功；完整Python/Rust和交付状态以发布准备报告为准。 全量Python4634通过/2跳过，Rust21+6通过；三平台下载CRC和载荷SHA256均核验，当前候选可交客户复测。"
+    },
     {
       "area": "0.3.2冻结候选V4/Keil收敛",
       "result": "详见v032-hardware-closure.md。e1eee01e frozen + UF2 2684d904：在线/脱机/共享及负向自动恢复、30MHz时间戳负载、RTT8/Watch4/UART、Keil下载断点单步、OpenOCD、Flash512KiB不变、旧端点重连和6.261秒释放。Keil期间155读错不误断，退出自动恢复；用户屏幕确认已连接。固件另有断线计时误判待修，新固件和最终自动升级仍未收敛。"
@@ -61,10 +65,6 @@
     {
       "area": "0.3.1启动及连接修复",
       "result": "首批启动：1013 Python、905 GUI、21 Rust通过；本地提取包冷启动12.159秒、Web/MCP/CLI通过，实际覆盖安装受WinError740阻挡。连接批次：1175 Python扩大回归通过；最终ed67c134回归404通过；GUI 907通过，生产页面占用提示/管理入口浏览器验证通过（模拟API）。协议50，明确连接重新发现同一USB身份、撤销失效目标会话并保留UART/在途任务；已知MI_04恢复不做多余身份打印；target busy不毒化MUX、不重放写。实体拔插/旧固件/客户电脑待回归。报告v031-startup-audit.md、v031-connections.md；最终本地构建状态见连接报告。"
-    },
-    {
-      "area": "0.3.0正式发布回归",
-      "result": "4471 Python通过/2跳过；902 GUI通过（干净npm ci后再次通过）；签名NSIS安装退出0，三负载哈希匹配。本地Skill更新，7059目标/2224算法；冻结版和Skill MCP/CLI通过。桌面配置/枚举通过；Web由用户手动确认连接STM32与v0.3.0。关闭后无MKLink进程、8765/8766无监听。详见v030-release-handoff.md，不能等同所有实体矩阵重新通过。"
     }
   ],
   "decisions": [
@@ -77,8 +77,8 @@
     "用户最新已提供最终V3.6.0/V4.6.0/HPMLink V4.6.0 UF2并明确授权一起发布，取代此前暂缓指示。文件由用户编译提供，不得将先前HIL候选的哈希或性能结果称为最终二进制重新实测。"
   ],
   "hardware": {
-    "state": "V4 当前V4.6.5，由e1候选实际GUI自动升级成功并确认版本；512KiB与旧基线相同，无VCC改动，所有测试客户端已退出。固件交接V4.6.6最终候选未刷入；根会话继续持有硬件验收，完成后明确释放并让固件会话通知用户换V3。",
-    "installer": "e1eee01e Windows NSIS SHA256 022c90d7dcf6e9324f690445083d3a06412ec659e47862a68f797b969abe4c89 已提取冻结入口和真机验证，不是覆盖安装。用户UAC确认项豁免。同期Mac arm64/x64及Linux x64云构建37928492193均成功，尚无当地USB/MSC实机证据。",
+    "state": "V4已通过最新冻结候选实际GUI升级V4.6.6，完整目标程序保全，所有采集/串口/Keil/OpenOCD/测试后台已退出，明确释放给固件会话。V3.6.2等待用户换接及明确交接；不凭端口空闲接管。新V4物理屏幕状态仍待目视确认。",
+    "installer": "Windows86cfdff4 NSIS SHA256 c3463d7ad42c426f82efce986dbf3b7f413fd91b3707176019e26a28cfadce15，提取冻结后台和生产Web实测，不是覆盖安装；UAC人工项用户豁免。三平台3e39e1ef与Windows产品代码相同但打包提交不同，正式同源要求仍需整合后重建；候选未签名更新/未公证，不声称实装升级通过。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
@@ -92,10 +92,10 @@
     "Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。"
   ],
   "next_actions": [
-    "完成本轮全套Python/GUI及新候选构建，真实浏览器验证MHz、毫秒收发与多RTT独立尺寸。",
-    "新冻结候选GUI自动升级V4.6.6并完成采集/烧录/IDE共存/退出回归，V4完成明确释放后协调换V3。",
-    "完成三平台含更新载荷的原生构建与冻结验证，交付候选并记录客户Mac/Linux实机、签名自升级尚未验证。",
-    "逐项维护v032-release-preparation.md；UAC确认豁免，PR35不合并、不签名、不发布。"
+    "以v032-release-preparation.md逐项核对当前全量软件、冻结包及原生候选证据；检查当前Git/CI而不继承旧候选通过。",
+    "等待固件会话及用户V3换接明确交接后补齐V3.6.2真机；V4新屏幕、物理断线、老设备手动升级等未测边界如实保留。",
+    "将最新Mac arm64/Intel及Linux x64候选交客户进行安装、USB/MSC、脱机写入及UF2重枚举；签名后原地自升级需后续正式授权及实装。",
+    "仅准备发布，PR35不合并、不签名、不发布、不修改更新渠道。正式发布必须统一源提交重建与核验。"
   ],
   "continuation_protocol": [
     "交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。"
