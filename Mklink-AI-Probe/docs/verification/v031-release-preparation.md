@@ -124,3 +124,32 @@ V3、HPM、多探针、客户 CS32L015、外部串口设备等不存在于最终
 2026-10-09后续：用户已覆盖安装，三负载哈希与acdcc997一致，安装态确认。
 30MHz dumpmem / SuperWatch丢失和批次间隔专项已完成，发现独立待修问题；
 详见[v031-installed-30mhz.md](v031-installed-30mhz.md)，不能将此前通过扩大为这些问题已修复。
+
+## 2026-10-09 队列修复后的发布前回归
+
+最终产品代码 77d4849c、生产资源 f586fd94；已 fetch main 并确认分支包含当前 main。
+用户授权的完整回归在 f586fd94 上执行：Python 4576 通过/2 跳过（缺可选 hil_core.observe），
+GUI 912 通过，桌面 Rust 21/Site Agent Rust 6 通过；三个 GitHub CI 全通过。
+详见 [v031-dump-queue.md](v031-dump-queue.md)，完整日志为 `.build/reports/v031-queue-*`。
+
+标准本地 NSIS 已构建，冻结 MCP/CLI/精简 PATH 与原生桌面实测通过。
+30MHz 最大速率 RAM capture 三轮各 100000 点最大时间戳间隔为 98/89/82µs，
+主机丢弃均 0；对比修复前最大 84.113ms。5/15/30秒 measure 也全部无丢弃。
+原生 SuperWatch 单变量1kHz、单/三变量最大速率各20秒，没有队列丢弃和WS序列缺口。
+GUI 退出后冻结 MCP 仍能读取；真正关闭最后 MCP 后 endpoint 消失，未遗留 MKLink 进程。
+初轮收尾脚本误用了默认 keep_alive，已保留失败记录并修正测试设置后重测同一二进制。
+
+新 NSIS、Skill ZIP、Site Agent portable 的统一哈希清单为
+`.build/artifacts/v031-dump-fix-77d4849c/manifest.json`。Skill 包7059目标/2224算法、
+39项Web资源核对通过；远程核心来自全套测试中的干净独立源码构建，190个Python文件
+与最终源码逐个匹配，测试覆盖冻结远程入口；Site Agent GUI release构建及组合包校验通过。
+
+- NSIS SHA256：`043bfd222208d2b33705b6d81144d7b62dd7e20f0d75061c1cbe9fdc7b6159c0`。
+- Skill SHA256：`f79a82b6087807547171c420b171ffa5d29a3d2093708c2132b3886673deddd6`。
+- Site Agent portable SHA256：`0ab4bef9278bbac73903ffca259e5cdcc0336f3cee881cec9baac42c1aac6425`。
+
+本次没有覆盖安装，用户已安装的仍是 acdcc997；管理员确认验证按既有豁免跳过。
+没有改供电或写目标程序。本轮补验不冒充旧候选全部烧录/升级/串口矩阵重跑。
+30MHz Flash128B/1kHz连续读取 status5 仍未通过稳定性验收，必须保留已知限制，
+不能宣称全档全功能通过。该限制已写入发布说明，需在正式发布决策时审阅。
+没有合并、签名、发布或更新任何渠道。
