@@ -46,7 +46,8 @@ def unix_bundle_config(config_path: Path, system: str):
     original = config_path.read_bytes()
     config = json.loads(original)
     bundle = config["bundle"]
-    bundle["targets"] = ["dmg"] if system == "Darwin" else ["deb", "appimage"]
+    # Retain the .app after DMG packaging so it can also become an updater tar.
+    bundle["targets"] = ["app", "dmg"] if system == "Darwin" else ["deb", "appimage"]
     bundle["createUpdaterArtifacts"] = False
     bundle["externalBin"] = ["binaries/mklink-sidecar"]
     bundle["icon"] = [p for p in bundle["icon"] if p.endswith(".png")]
