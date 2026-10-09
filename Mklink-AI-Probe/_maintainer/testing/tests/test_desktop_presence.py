@@ -29,6 +29,30 @@ def upstream_views():
     return httpx.ASGITransport(app=upstream), views
 
 
+def test_proxy_renews_presence_without_any_webview_requests():
+    import json
+    import time
+    from mklink.runtime_idle import IDLE_SECONDS
+    renewed = []
+    views = set()
+    def handle(request):
+        body = json.loads(request.content)
+        if body.get('release'):
+            views.discard(body['client_id'])
+        else:
+            views.add(body['client_id'])
+            renewed.append(time.monotonic())
+        return httpx.Response(200, json={'registered': bool(views)})
+    app = create_proxy({'port': 8765, 'token': 'one'}, port=8766, instance_id='one',
+                       transport=httpx.MockTransport(handle))
+    with TestClient(app, base_url='http://127.0.0.1:8766'):
+        time.sleep(IDLE_SECONDS + 1.2)
+        assert len(views) == 1
+        assert len(renewed) >= 5
+        assert max(b - a for a, b in zip(renewed, renewed[1:])) < IDLE_SECONDS
+    assert not views
+
+
 def test_native_close_releases_only_its_view_before_shutdown_callback():
     transport, views = upstream_views()
     first = create_proxy({'port': 8765, 'token': 'one'}, port=8766, instance_id='one', transport=transport)
@@ -87,12 +111,12 @@ def test_shutdown_waits_for_inflight_heartbeat_then_removes_record():
         app = create_proxy({'port': 8765, 'token': 'one'}, port=8766, instance_id='one', transport=httpx.MockTransport(handle))
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://127.0.0.1:8766') as client:
-                heartbeat = asyncio.create_task(client.post('/api/runtime/control/view', json={'client_id': 'page'}))
+                # The proxy now sends the first heartbeat before the page loads.
                 await entered.wait()
                 shutdown = asyncio.create_task(client.post('/api/desktop/shutdown', json={'instance_id': 'one'}))
                 await asyncio.sleep(0.01)
+                assert not shutdown.done()
                 complete.set()
-                assert (await heartbeat).status_code == 200
                 assert (await shutdown).status_code == 200
                 assert not views
     asyncio.run(scenario())

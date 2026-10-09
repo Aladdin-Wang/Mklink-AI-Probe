@@ -22,6 +22,13 @@ describe('RTT API contracts', () => {
     expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/api/ports', '/api/ports/uart'])
   })
 
+  it('retains structured disconnect conflicts so the UI can show the owners', async () => {
+    const detail = { reason: 'shared_clients_attached', message: 'Shared device', clients: [{ name: 'IDE', kind: 'mcp' }] }
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ detail }) })
+    await expect(useMklinkApi().disconnectDevice()).rejects.toMatchObject({ message: 'Shared device', status: 409, detail })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('connects the current probe without navigating or restarting the page', async () => {
     sharedRuntime.value = true
     const navigate = vi.spyOn(window.location, 'replace').mockImplementation(() => {})

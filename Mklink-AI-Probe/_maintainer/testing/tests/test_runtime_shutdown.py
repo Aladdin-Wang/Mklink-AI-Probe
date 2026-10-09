@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from mklink.runtime import discover, request, runtime_lock
+from mklink.runtime import control_runtime, discover, request, runtime_lock
 
 
 @pytest.mark.parametrize('disconnect', ['reset', 'fin', 'open'])
@@ -57,7 +57,9 @@ def test_backend_exits_and_releases_owner_after_stream_clients(tmp_path, monkeyp
                 elif disconnect == 'fin':
                     peer.shutdown(socket.SHUT_WR)
                     peer.close()
-            assert request(info, 'POST', '/_runtime/stop', {'confirm': True}) == {'status': 'stopping'}
+            snapshot = control_runtime(probe='lobby')
+            assert snapshot['pid'] == process.pid and snapshot['clients'] == []
+            assert control_runtime('stop-backend', probe='lobby', confirm=True) == {'status': 'stopping'}
             assert process.wait(timeout=10) == 0
             assert not endpoint.exists()
             with runtime_lock('owner.lock', 'lobby'):

@@ -1,5 +1,6 @@
 """Shared jobs deliver complete target options once, without direct fallback."""
 import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -12,6 +13,44 @@ from test_runtime_jobs import terminal, fixture, body
 
 
 CFG = ['0xfcf90001U', '0x00000007U', '0x00000000U', '0xf3000000U']
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_real_flash_route_pauses_and_restores_capture_without_nested_lock(monkeypatch, tmp_path, fail):
+    device, _ = _connected_symbol_device(tmp_path)
+    calls = []
+    manager = SimpleNamespace(running=True, paused=False)
+    def stop():
+        calls.append('stop')
+        manager.running = False
+    def restart():
+        calls.append('restart')
+        manager.running = True
+    manager.stop, manager._restart_after_operation = stop, restart
+    monkeypatch.setattr('mklink.remote.api.acquire_dashboard_resources', lambda *args: [])
+    monkeypatch.setattr('mklink.probes.inventory', lambda: [])
+    def flash(**kwargs):
+        assert not manager.running
+        calls.append('flash')
+        if fail:
+            raise RuntimeError('simulated flash failure')
+        return {'success': True}
+    device.flash = flash
+    app = create_app(project_root=str(tmp_path))
+    monkeypatch.setattr('mklink.remote.dashboards.get_managers', lambda: {'rtt': manager})
+    app.state.mklink_state['device'] = device
+    install_runtime(app, {'port': 8765, 'token': 'test', 'instance_id': 'flash-capture',
+                          'jobs_path': str(tmp_path / 'jobs.json')})
+    firmware = tmp_path / 'demo.bin'
+    firmware.write_bytes(b'fixture')
+    with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'test'}) as client:
+        response = client.post('/api/runtime/jobs/', json={**body('flash'), 'arguments': {'firmware': str(firmware)}})
+        assert response.status_code == 202, response.text
+        job = terminal(client, response.json()['job_id'])
+        assert job['state'] == ('unknown' if fail else 'succeeded'), job
+        assert calls == ['stop', 'flash', 'restart']
+        assert manager.running
+        assert app.state.mklink_state['acquisition_transition']['state'] == 'restored'
 
 
 def test_shared_job_preserves_hpm_options_and_deduplicates_after_file_removed(monkeypatch, tmp_path):

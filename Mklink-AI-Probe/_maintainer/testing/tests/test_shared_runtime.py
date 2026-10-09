@@ -146,6 +146,7 @@ def test_internal_operation_retains_http_and_attach_exclusion_after_cancel(runti
 
 def test_shared_capture_does_not_restart_or_steal(runtime):
     client, _, calls, managers, _ = runtime
+    client.post('/api/runtime/control/view', json={'client_id': 'gui'})
     managers["rtt"].running = True  # started in GUI
     session = attach(client)
     assert call(client, session, "rtt_start").json()["reused"]
@@ -170,6 +171,50 @@ def test_stream_owner_cannot_stop_other_subscriber(runtime):
     assert calls == ["start", "stop"]
 
 
+@pytest.mark.parametrize('window_exit', ['release', 'expired', 'websocket'])
+def test_closed_gui_capture_can_be_recovered_by_sole_ai(runtime, window_exit):
+    import time
+    client, control, calls, managers, _ = runtime
+    managers['rtt'].running = True
+    borrower, other = attach(client), attach(client)
+    if window_exit == 'websocket':
+        with client.websocket_connect('ws://127.0.0.1:8765/api/runtime/control/view/gui') as socket:
+            socket.receive_json()
+            assert call(client, borrower, 'rtt_start').json()['reused']
+            assert call(client, borrower, 'rtt_stop').status_code == 409
+    else:
+        client.post('/api/runtime/control/view', json={'client_id': 'gui'})
+        assert call(client, borrower, 'rtt_start').json()['reused']
+        assert call(client, borrower, 'rtt_stop').status_code == 409
+        if window_exit == 'expired':
+            control.views['gui']['expires'] = time.monotonic() - 1
+        else:
+            client.post('/api/runtime/control/view', json={'client_id': 'gui', 'release': True})
+    assert call(client, other, 'rtt_stop').status_code == 409  # must subscribe
+    assert call(client, other, 'rtt_start').json()['reused']
+    assert call(client, borrower, 'rtt_stop').status_code == 409  # cannot evict a reader
+    status = client.get('/api/runtime/control/status').json()
+    capture = next(s for s in status['streams'] if s['name'] == 'rtt')
+    assert capture['owner'] == {'kind': 'gui', 'active': False} and capture['subscribers'] == 2
+    client.post('/_runtime/detach', json={'session_id': other})
+    assert call(client, borrower, 'rtt_stop').status_code == 200
+    assert calls == ['stop'] and not managers['rtt'].running
+
+
+@pytest.mark.parametrize('remote_kind', ['agent', 'window'])
+def test_remote_gui_owner_is_not_abandoned(runtime, remote_kind):
+    client, _, calls, managers, app = runtime
+    managers['rtt'].running = True
+    if remote_kind == 'agent':
+        app.state.site_agent = SimpleNamespace(active_connections=1)
+    else:
+        app.state.remote_window_activity = lambda: True
+    borrower = attach(client)
+    assert call(client, borrower, 'rtt_start').json()['reused']
+    assert call(client, borrower, 'rtt_stop').status_code == 409
+    assert not calls
+
+
 def test_subscribe_cannot_join_a_capture_while_it_is_stopping(runtime):
     client, control, _, managers, _ = runtime
     session = attach(client)
@@ -180,6 +225,35 @@ def test_subscribe_cannot_join_a_capture_while_it_is_stopping(runtime):
         assert not control.sessions[session].streams
     finally:
         client.portal.call(control.operation_lock.release)
+
+
+@pytest.mark.parametrize('path', [
+    '/api/online-flash/images/inspect', '/api/online-flash/images/inspect-path',
+])
+@pytest.mark.parametrize('busy', ['operation', 'job'])
+def test_local_image_inspection_does_not_reserve_device(runtime, path, busy):
+    client, control, calls, managers, app = runtime
+    managers['rtt'].running = managers['superwatch'].running = True
+
+    @app.post(path)
+    async def inspect():
+        assert managers['rtt'].running and managers['superwatch'].running
+        return {'image_id': 'local-snapshot'}
+
+    if busy == 'operation':
+        client.portal.call(control.operation_lock.acquire)
+    else:
+        control.jobs.jobs['in-progress'] = {'job_id': 'in-progress', 'state': 'running'}
+    try:
+        assert client.post(path, json={}).json() == {'image_id': 'local-snapshot'}
+        assert client.post(path, headers={'X-Auth-Token': 'bad'}, json={}).status_code == 401
+        assert client.post('/api/device/read-memory', json={'address': '0x20000000', 'size': 4}).status_code == 409
+        assert not calls
+    finally:
+        if busy == 'operation':
+            client.portal.call(control.operation_lock.release)
+        else:
+            control.jobs.jobs.pop('in-progress')
 
 
 def test_auth_origin_and_project_binding(runtime, tmp_path):
@@ -218,7 +292,7 @@ def test_browser_cookie_bootstrap(runtime):
 def test_multiple_probes_cannot_run_unbound_disk_writes(runtime, monkeypatch):
     client, _, calls, _, _ = runtime
     monkeypatch.setattr('mklink.probes.inventory', lambda: [{'probe_id': 'one'}, {'probe_id': 'two'}])
-    for path in ('/api/probe/firmware-upgrade', '/api/offline-download/deploy', '/api/offline-download/trigger'):
+    for path in ('/api/offline-download/deploy', '/api/offline-download/trigger'):
         assert client.post(path, json={}).status_code == 409
     assert calls == []
 

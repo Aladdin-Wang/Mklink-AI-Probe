@@ -28,6 +28,10 @@ RTT、SystemView、VOFA 和 SuperWatch 的图表暂停或页面隐藏只减少�
 桌面内部 `desktop-proxy` 仅转发共享后台，不直接连接下载器。
 
 配置页依次为本地设备、文件来源、固件升级和后台管理；本机别名在后台管理中修改，仅影响本机，不写下载器固件。
+固件升级支持自动与手动两条路径：能进入并确认对应 Bootloader U 盘时自动复制 UF2，
+重新读到新版本才显示完成；老版本缺少进入指令或未检测到对应盘时显示下载按钮和
+按键步骤，不弹升级错误。无法识别型号时由用户选择 MicroLink V3/V4 或 HPMLink V4，
+不自动猜测。文件复制结果未确认时先检查设备，不自动重试。
 远程功能统一在顶部“远程服务”，包含本机提供服务和连接远端下载器。
 
 1. 下载器所在电脑选择目标下载器，在“远程服务”启动局域网监听，取得服务地址和访问令牌。
@@ -114,7 +118,7 @@ Windows 标准 NSIS 安装包采用 per-machine 安装，在安装结束后以�
 
 Pack 索引、已安装 Pack 和临时上传均位于用户数据根目录，Windows 默认为 `%LOCALAPPDATA%\MKLink\pyocd`；可在启动服务前设置 `MKLINK_PYOCD_HOME` 覆盖。可复用已下载的 Pack 缓存。更新索引和下载 Pack 继承服务进程的 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境；断网时可用最后一份有效索引和已安装 Pack。
 
-在线烧录会申请 `TARGET_DEBUG` 资源，与 RTT、SystemView、VOFA、SuperWatch 等会话冲突时返回 HTTP 409 及当前 owner/resource；先停止或由用户确认交接冲突会话。`POST /jobs/{job_id}/stop` 只设置协作式取消：运行中的底层操作返回后，任务才进入 `stopped`，执行 disconnect 并释放租约。页面显示“停止中”时不要立即开启新任务或拔除探针。
+在线烧录会申请 `TARGET_DEBUG` 资源。0.3.1 后台自动暂停 RTT、SystemView、VOFA、SuperWatch，任务结束后按原参数恢复；暂停或恢复失败会报告，其他在途硬件任务仍返回冲突。`POST /jobs/{job_id}/stop` 只设置协作式取消：运行中的底层操作返回后才完成停止、释放资源和恢复采集。页面显示“停止中”时不要立即开启新任务或拔除探针。
 
 ## Dashboard 生命周期
 
@@ -130,11 +134,12 @@ Pack 索引、已安装 Pack 和临时上传均位于用户数据根目录，Win
 
 FastAPI 后端维护 `mklink_bridge`、`serial_port`、`modbus_port` 三类资源租约。串口/Modbus dashboard 启动后会登记租约；停止或强制释放时会同时关闭对应后台 manager，避免虚拟串口被占用后无法释放。
 
-注意：REST API 是 GUI/dashboard 的 HTTP 包装层。Agent 或命令行释放本地串口资源时优先使用 CLI，不需要启动 FastAPI：
+REST API 是当前已认证后台的 HTTP 包装层，端口不固定。AI 优先用
+`runtime_status`/`runtime_control`，CLI 用 `runtime control`，见
+[控制权与恢复](runtime-recovery.md)。查询本机端口锁可用：
 
 ```powershell
 python -m mklink resources status --port COM3
-python -m mklink resources release-serial --port COM3
 ```
 
 常用端点：
@@ -144,12 +149,8 @@ python -m mklink resources release-serial --port COM3
 - `POST /api/resources/release` — 按 owner 或 resource 释放，例如 `{"owner":"user:dashboard:serial"}` 或 `{"resource":"serial_port"}`。
 - `POST /api/resources/release-all` — 停止所有已登记 dashboard 并释放全部租约。
 
-示例：
+这些端点遵守共享准入，仍有会话或任务时不会强制释放。独立 CLI
+`resources release-serial` 仅清理失效锁；其 `--force` 会结束活跃持有进程，
+不能作为正常结束 AI 会话或停止某路采集的方法。
 
-```powershell
-curl http://127.0.0.1:8765/api/resources/status
-curl -X POST http://127.0.0.1:8765/api/resources/release-serial -H "Content-Type: application/json" -d "{}"
-curl -X POST http://127.0.0.1:8765/api/resources/release -H "Content-Type: application/json" -d "{\"resource\":\"serial_port\"}"
-```
-
-远程 GUI 两端需支持 `gui.bridge` 版本1，共享后台协议44；HTTP/SSE和二进制WebSocket复用原数据格式。转发固定于握手时的后台实例，服务重启需显式重连，不提供通用网络代理或本机管理隧道。
+远程 GUI 两端需支持 `gui.bridge` 版本1，并核对当前共享后台协议；HTTP/SSE和二进制WebSocket复用原数据格式。转发固定于握手时的后台实例，服务重启需显式重连，不提供通用网络代理或本机管理隧道。

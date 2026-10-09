@@ -811,6 +811,9 @@ def create_offline_download_router(
         from mklink.discovery import find_microkeen_disk
 
         try:
+            header_id = request.headers.get('X-MKLink-Request-Id')
+            if header_id is not None and header_id != request_id:
+                raise HTTPException(422, 'Request receipt does not match deployment request_id')
             payload = json.loads(config_json)
             if not isinstance(payload, Mapping):
                 raise OfflineDownloadError("offline config must be an object")

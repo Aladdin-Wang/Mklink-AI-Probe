@@ -88,6 +88,7 @@ export interface OfflinePreview {
 }
 
 export interface OfflineDeployResult {
+  acquisition?: { errors: string[] }
   status: 'deployed'
   model: 'V2' | 'V3' | 'V4'
   script_name: string
@@ -97,6 +98,7 @@ export interface OfflineDeployResult {
 }
 
 export interface OfflineTriggerResult {
+  acquisition?: { errors: string[] }
   status: 'completed' | 'failed'
   lines: string[]
 }

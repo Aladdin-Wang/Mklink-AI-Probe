@@ -445,11 +445,11 @@ def _looks_like_bootloader(root: str | Path) -> bool:
     return any((path / marker).is_file() for marker in ("INFO_UF2.TXT", "INDEX.HTM", "CURRENT.UF2"))
 
 
-def _wait_for_bootloader_drive(previous: str | None, timeout: float) -> str | None:
+def _wait_for_bootloader_drive(previous: str | None, timeout: float, finder=None) -> str | None:
     deadline = time.monotonic() + timeout
     disappeared = False
     while time.monotonic() < deadline:
-        current = _find_bootloader_disk()
+        current = (finder or _find_bootloader_disk)()
         if current is None or (previous and current.rstrip("\\/").casefold() != previous.rstrip("\\/").casefold() and not Path(current).exists()):
             disappeared = True
         elif current and Path(current).is_dir() and (disappeared or _looks_like_bootloader(current)):
@@ -466,11 +466,17 @@ def upgrade_probe_firmware(
     confirm: bool = False,
     bootloader_timeout: float = 20.0,
     verify_timeout: float = 20.0,
+    disk_reader=None,
+    bootloader_finder=None,
 ) -> dict:
     """Upgrade a connected probe through its UF2 bootloader drive."""
     if confirm is not True:
         raise ValueError("firmware upgrade requires confirm=True")
-    disk = _probe_disk()
+    disk_reader = disk_reader or _probe_disk
+    try:
+        disk = disk_reader()
+    except (OSError, RuntimeError):
+        disk = None
     if not disk:
         return {"status": "no_probe_disk", "message": "未找到 MICROKEEN U 盘"}
     current = read_microkeen_version(disk)
@@ -517,20 +523,40 @@ def upgrade_probe_firmware(
             **manual_details,
         }
     try:
-        enter()
-        boot_disk = _wait_for_bootloader_drive(disk, bootloader_timeout)
+        try:
+            enter()
+        except Exception:
+            return {'status': 'manual_required', 'message': '此下载器暂不能自动进入升级模式，请下载固件后按键进入 Bootloader。', **manual_details}
+        try:
+            boot_disk = _wait_for_bootloader_drive(disk, bootloader_timeout, bootloader_finder)
+        except (OSError, RuntimeError):
+            boot_disk = None
         if not boot_disk:
             return {
                 "status": "manual_required",
                 "message": "未检测到 Bootloader U 盘，请按住升级键手动升级",
                 **manual_details,
             }
+        # Recheck identity immediately before writing; never follow a reused letter.
+        if bootloader_finder is not None:
+            try:
+                verified_boot_disk = bootloader_finder()
+            except (OSError, RuntimeError):
+                verified_boot_disk = None
+            if verified_boot_disk != boot_disk:
+                return {'status': 'manual_required', 'message': '升级 U 盘已变化，请下载固件后手动升级。', **manual_details}
         target = Path(boot_disk) / candidate.name
-        shutil.copyfile(source, target)
+        try:
+            shutil.copyfile(source, target)
+        except OSError:
+            return {'status': 'copied_unverified', 'message': '固件复制未确认完成，请检查升级 U 盘和下载器状态；不要重复点击自动升级。', **manual_details}
         deadline = time.monotonic() + verify_timeout
         verified = None
         while time.monotonic() < deadline:
-            active = _probe_disk()
+            try:
+                active = disk_reader()
+            except (OSError, RuntimeError):
+                active = None
             if active:
                 version = read_microkeen_version(active)
                 if version is not None:

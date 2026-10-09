@@ -84,6 +84,7 @@ async function mountView() {
     global: {
       stubs: {
         FirmwareUpdateModal: true,
+        RuntimePanel: true,
       },
     },
   })
@@ -340,7 +341,25 @@ describe('ConfigView', () => {
     })
   })
 
-  it('switches a failed strict connection to Auto Search for the next attempt', async () => {
+  it('shows shared owners and opens management without evicting them', async () => {
+    sharedRuntime.value = true
+    mocks.deviceStatus.connected = true
+    mocks.api.disconnectDevice.mockRejectedValueOnce(Object.assign(new Error('shared'), {
+      detail: { reason: 'shared_clients_attached', clients: [{ name: 'VS Code', kind: 'mcp' }] },
+    }))
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="disconnect-local"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="connection-owners"]').text()).toContain('VS Code (mcp)')
+    expect(mocks.toastError).not.toHaveBeenCalled()
+    expect(mocks.api.disconnectDevice).toHaveBeenCalledOnce()
+    await wrapper.get('[data-testid="manage-connection-owners"]').trigger('click')
+    expect(wrapper.get('[data-testid="config-section-runtime"]').attributes('aria-current')).toBe('page')
+    expect(mocks.api.disconnectDevice).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('preserves a failed strict selection for the next attempt', async () => {
     mocks.api.connectDevice
       .mockRejectedValueOnce(new Error('selected port unavailable'))
       .mockResolvedValueOnce({ port: 'TEST_PORT_A' })
@@ -355,13 +374,13 @@ describe('ConfigView', () => {
       port: 'TEST_PORT_B',
       axf: 'C:\\saved\\app.axf',
     })
-    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('TEST_PORT_B')
 
     await wrapper.get('[data-testid="connect-local"]').trigger('click')
     await flushPromises()
 
     expect(mocks.api.connectDevice).toHaveBeenNthCalledWith(2, {
-      restore_last: true,
+      port: 'TEST_PORT_B',
       axf: 'C:\\saved\\app.axf',
     })
   })
@@ -763,6 +782,8 @@ describe('ConfigView', () => {
 
     expect(wrapper.get('[data-testid="manual-firmware-download"]').text()).toContain('最新固件：V3.3.7')
     expect(wrapper.get('[data-testid="firmware-upgrade-status"]').text()).toContain('未检测到 Bootloader U 盘')
+    expect(mocks.toastError).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="firmware-manual-steps"]').text()).toContain('按住升级按键')
 
     await wrapper.get('[data-testid="download-firmware"]').trigger('click')
     await flushPromises()
@@ -770,5 +791,35 @@ describe('ConfigView', () => {
     expect(mocks.api.downloadProbeFirmware).toHaveBeenCalledWith('V3', 'microlink')
     expect(mocks.saveBlobFile).toHaveBeenCalledWith('MicroLink_V3.3.7.uf2', blob)
     expect(wrapper.get('[data-testid="firmware-download-status"]').text()).toContain('Gitee')
+  })
+
+  it('offers explicit firmware model selection when an old probe cannot be identified', async () => {
+    mocks.api.upgradeProbeFirmware.mockResolvedValueOnce({ status: 'manual_required', message: '暂时无法识别下载器' })
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-firmware"]').trigger('click')
+    await wrapper.get('[data-testid="upgrade-firmware"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="download-firmware"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="firmware-model-choice"]').setValue('hpm')
+    expect(wrapper.get('[data-testid="download-firmware"]').attributes('disabled')).toBeUndefined()
+    mocks.api.downloadProbeFirmware.mockResolvedValueOnce({ blob: new Blob(), filename: 'HPMLink_V4.6.0.uf2', source: 'github' })
+    await wrapper.get('[data-testid="download-firmware"]').trigger('click')
+    await flushPromises()
+    expect(mocks.api.downloadProbeFirmware).toHaveBeenCalledWith('V4', 'hpmlink')
+    expect(mocks.toastError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows verified automatic update success without manual fallback', async () => {
+    mocks.api.upgradeProbeFirmware.mockResolvedValueOnce({ status: 'updated', verified_version: 'V4.6.0' })
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-firmware"]').trigger('click')
+    await wrapper.get('[data-testid="upgrade-firmware"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="firmware-upgrade-status"]').text()).toContain('升级完成：V4.6.0')
+    expect(wrapper.find('[data-testid="manual-firmware-download"]').exists()).toBe(false)
+    expect(mocks.toastSuccess).toHaveBeenCalled()
+    expect(mocks.toastError).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 })

@@ -564,6 +564,10 @@ def test_device_dynamic_systemview_primes_host_scan_and_uses_found_address(
 
     assert reads == [
         (requested_addr, scan_size),
+        # Validate candidates during search, then recheck the selected block
+        # before starting a target stream.
+        (actual_addr, 24),
+        (actual_addr + 24, len(descriptors)),
         (actual_addr, 24),
         (actual_addr + 24, len(descriptors)),
     ]

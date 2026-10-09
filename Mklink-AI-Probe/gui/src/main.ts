@@ -31,14 +31,17 @@ async function startApp() {
     endpointProgress = Math.min(74, endpointProgress + 1)
     updateStartup(endpointProgress, '正在启动本地服务…', 'Starting local service…')
   }, 180)
+  let endpointReady = false
   try {
     await initializeRuntimeEndpoint()
+    endpointReady = true
   } catch (error) {
     console.error('[main] backend endpoint initialization failed:', error)
   } finally {
     window.clearInterval(endpointTimer)
   }
-  updateStartup(80, '本地服务已就绪', 'Local service is ready')
+  if (endpointReady) updateStartup(80, '本地服务已就绪', 'Local service is ready')
+  else updateStartup(80, '正在检查服务状态…', 'Checking service status…')
   const [{ default: App }, { default: router }] = await Promise.all([
     import('./App.vue'),
     import('./router'),

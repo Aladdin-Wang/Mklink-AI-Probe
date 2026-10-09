@@ -45,11 +45,15 @@ def body(action='reset', request_id='test-operation'):
 
 
 def terminal(client, job_id):
-    for _ in range(100):
-        value = client.get('/api/runtime/jobs/'+job_id).json()
+    deadline = time.monotonic() + 5.0
+    value = None
+    while time.monotonic() < deadline:
+        response = client.get('/api/runtime/jobs/'+job_id)
+        assert response.status_code == 200, response.text
+        value = response.json()
         if value['state'] != 'running': return value
         time.sleep(.01)
-    pytest.fail('job did not complete')
+    pytest.fail(f'job did not complete within 5 seconds: {value!r}')
 
 
 def test_job_retains_exclusion_and_deduplicates_after_client_leaves(fixture):

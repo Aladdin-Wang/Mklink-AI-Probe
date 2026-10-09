@@ -10,21 +10,21 @@ Skill 或发布流程；按需读参考页。
 
 ## 开始前
 
-- 每个会话首次加载本 Skill 时立即检查版本：调用 MCP
-  `ping(force_update_check=True)` 并读取 `update`；没有该参数或 MCP 时，在本
-  Skill 根目录运行 `python scripts/skill_update.py check --force --json`。
-  不等到首次设备操作，不使用上次会话的 24 小时缓存；本会话后续调用不重复检查。
-  离线继续任务，发现新版本时简要提示；安装仍须用户同意，按需读
+- 首次加载立即检查版本：MCP `ping(force_update_check=True)` 读取 `update`；
+  缺 MCP/参数时在 Skill 根目录运行 `python scripts/skill_update.py check --force --json`。
+  本会话只查一次，不沿用旧缓存。离线继续任务；新版简要提示，安装须用户同意，见
   [安装与更新](references/install.md)。
 - **下载固件先选后端**：除 HPM ROM 路径或用户明确指定方式外，优先使用用户
   工程已配置的 IDE（Keil 等）编译下载，其次 pyOCD 在线下载，最后脱机下载。
-  执行前读取[下载优先级](references/firmware-download-priority.md)。用户已确认
-  Keil 能下载时，优先复用该工程配置，不继续盲试脱机 FLM。
+  先读[下载优先级](references/firmware-download-priority.md)，复用已确认可用的 Keil 配置。
 - 优先使用共享 MCP；先读[共享后台](references/shared-runtime.md)，参数以 schema/`--help` 为准。
   **GUI 已打开也可连接**：`connect(probe=...)` 复用工程和符号；`gui_call` 调用已声明的共享能力。
   RTT 已运行时无参数 `rtt_start()` 订阅，用 `rtt_read_channel` 读取。
   不发送旧 `RTTView.start/stop`，不另开串口；缺能力不退回独占。
   默认后台采集；需用户看效果才用 `gui_present`，先选窗口。
+- **占用先查后台**：`runtime_status(probe=...)` 无需连接，查询会话、采集和任务。
+  GUI 关闭不等于后台退出，AI 任务完成须 `disconnect`。占用/失败时读
+  [控制权与恢复](references/runtime-recovery.md)。
 - 首次需要生成脚本、日志、采集或报告时，工作根目录固定为用户指定的非系统盘
   目录；用户未指定时使用目标项目 `.mklink/`。项目在系统盘或没有项目时先询问，
   不写 Skill 目录、AI 客户端目录、桌面或系统临时目录。按需读取
@@ -33,9 +33,9 @@ Skill 或发布流程；按需读参考页。
 ## 不可绕过的设备边界
 
 - **单探针串行**：先读 `ping.limits`。同一下载器、命令口或目标串口同一时刻只
-  执行一个命令；新固件的 RTT/SuperWatch 由统一调度并行采集，内存读写仍按单请求串行，旧固件采集继续独占。共享模式可同时读取后台已采集的缓存。多下载器先 `discover_probes`，明确选择 ID 或别名，
-  不选择枚举列表的第一项。共享 `disconnect` 只退出本客户端；不要为了读变量停止
-  其他客户端的采集。独立工具复用连接、不并行设备调用，停止流后再断开。
+  执行一个命令；新版 RTT/SuperWatch 统一调度并行，旧固件采集独占。共享客户端可
+  同时读缓存。多下载器用 `discover_probes` 明确 ID/别名，不默认选第一台。
+  `disconnect` 仅退出本客户端；读变量不停止他人采集。独立工具复用连接，停流再断开。
 - **VOFA 与 dump**：`read_memory`/`read_ram` 只做快照；连续曲线用
   `dump_memory`。dump/SuperWatch 每次最多 **15 个**离散地址或 region；共享
   VOFA 最多 **64 路**、对齐合并后最多 **15 个读取分组**，连续 float 简写最多
@@ -50,9 +50,9 @@ Skill 或发布流程；按需读参考页。
   字节**（文本 `rtt_write` 或二进制 `rtt_write_hex`），超限不得自动拆分；文件或日志走 YMODEM/串口专用传输，禁止拆分
   绕过；旧串口映射模式的输入不得包含或跨调用拼接探针保留串 `RTTView.stop()`；多路复用模式按二进制传输。`capture_rtt` 的
   `pattern` 是 1~256 UTF-8 字节的字面子串，不是正则表达式。
-- **MCP Timeout**：超时后只调用一次 `device_status`，随后结束旧会话并只执行一次
-  `disconnect` → `connect` 恢复。任一步失败就停止并请用户重新拔插；禁止自动重试
-  超时原调用，也禁止循环发送 stop、`reboot_probe` 或 `reboot()`。
+- **MCP Timeout**：查 `runtime_status`/`job_status`；无在途任务才显式
+  `disconnect` → `connect` 恢复原设备。失败按控制权参考页处理；不重放未知结果，
+  不循环 stop、`reboot_probe` 或 `reboot()`。
 - **AXF/ELF**：默认使用内置 pyelftools；`readelf_available:false` 不阻塞操作。
   只有用户明确指定 `elf_backend=external` 才调用外部 readelf/addr2line。
 - **未知 MCU / 共享算法**：原生或脱机路径先 `inspect_mcu` / `mcu-detect` 只读检查统一目录；

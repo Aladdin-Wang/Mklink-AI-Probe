@@ -72,7 +72,10 @@ export async function initializeRuntimeEndpoint(): Promise<void> {
   await listen<BackendEndpoint>('backend-endpoint-changed', event => {
     applyBackendEndpoint(event.payload)
   })
-  for (let attempt = 0; attempt < 200; attempt++) {
+  // Rust allows 120s for two cold onefile extractions. Keep the loading UI
+  // alive until that budget has elapsed, including IPC/scheduling overhead.
+  const deadline = Date.now() + 125_000
+  while (Date.now() < deadline) {
     const endpoint = await invoke<BackendEndpoint | null>('backend_endpoint')
     if (endpoint) {
       applyBackendEndpoint(endpoint)

@@ -55,6 +55,10 @@ class DeviceNotConnectedError(DeviceError):
     pass
 
 
+class _InvalidRTTControlBlock(DeviceError):
+    """Readable RAM that isn't a structurally valid RTT control block."""
+
+
 _RT_THREAD_NAME_RE = re.compile(rb"[A-Za-z_][A-Za-z0-9_.-]*")
 _RT_NAME_MAX_DEFAULT = 8
 _SRAM_START = 0x20000000
@@ -332,7 +336,8 @@ class Device:
         bridge = MKLinkSerialBridge(candidate)
         try:
             if not bridge.connect():
-                raise DeviceNotConnectedError(f'Failed to connect to selected MKLink port {candidate}; no fallback attempted')
+                reason = getattr(bridge, 'last_connect_error', None) or 'Command-port handshake failed'
+                raise DeviceNotConnectedError(f'Failed to connect to selected MKLink port {candidate}: {reason}; no fallback attempted')
         except BaseException:
             bridge.close()
             raise
@@ -1447,7 +1452,7 @@ class Device:
     def _find_rtt_control_block(
         self, start_address: int, search_size: int,
     ) -> int | None:
-        """Find an aligned RTT signature without entering probe stream mode."""
+        """Find a validated RTT block, skipping incidental signature strings."""
         search_size = max(0, int(search_size))
         if start_address % 4:
             raise DeviceError("RTT scan address must be 4-byte aligned")
@@ -1467,7 +1472,17 @@ class Device:
             )
             for relative in range(0, max_candidate, 4):
                 if raw[relative:relative + len(_RTT_SIGNATURE)] == _RTT_SIGNATURE:
-                    return start_address + offset + relative
+                    candidate = start_address + offset + relative
+                    if not self._target_ram_contains(candidate, 24):
+                        continue
+                    try:
+                        info = self._read_rtt_control_block(candidate)
+                    except _InvalidRTTControlBlock:
+                        continue
+                    # An empty/uninitialized table can contain the signature too.
+                    # Transport errors must propagate instead of triggering more I/O.
+                    if any(buffer['active'] for buffer in info['up_buffers']):
+                        return candidate
         return None
 
     def _parse_rtt_descriptor(
@@ -1519,24 +1534,23 @@ class Device:
             control_block_addr, 24, purpose="RTT control block",
         )
         header = self.read_memory(control_block_addr, 24)
-        if len(header) != 24 or header[:10] != _RTT_SIGNATURE:
-            raise DeviceError("RTT control block has an invalid signature")
+        if len(header) != 24:
+            raise DeviceError("RTT control block read was truncated")
+        if header[:10] != _RTT_SIGNATURE:
+            raise _InvalidRTTControlBlock("RTT control block has an invalid signature")
 
         max_up = int.from_bytes(header[16:20], "little")
         max_down = int.from_bytes(header[20:24], "little")
         if not 1 <= max_up <= _RTT_MAX_TARGET_BUFFERS:
-            raise DeviceError("RTT control block has an invalid UpBuffer count")
+            raise _InvalidRTTControlBlock("RTT control block has an invalid UpBuffer count")
         if not 0 <= max_down <= _RTT_MAX_TARGET_BUFFERS:
-            raise DeviceError("RTT control block has an invalid DownBuffer count")
+            raise _InvalidRTTControlBlock("RTT control block has an invalid DownBuffer count")
 
         descriptor_count = max_up + max_down
         descriptor_bytes = descriptor_count * _RTT_DESCRIPTOR_SIZE
         descriptor_address = control_block_addr + 24
-        self._require_target_ram_range(
-            descriptor_address,
-            descriptor_bytes,
-            purpose="RTT descriptor table",
-        )
+        if not self._target_ram_contains(descriptor_address, descriptor_bytes):
+            raise _InvalidRTTControlBlock("RTT descriptor table is outside known target writable RAM")
         raw = self.read_memory(descriptor_address, descriptor_bytes)
         if len(raw) != descriptor_bytes:
             raise DeviceError("RTT descriptor table read was truncated")
@@ -1615,6 +1629,18 @@ class Device:
             )
         return down
 
+    def validate_rtt_channels(self, channel: int, channels: list[int] | None = None) -> None:
+        """Reject unsupported capture requests before replacing a live stream."""
+        selected = list(channels) if channels is not None else [channel]
+        if not selected or len(selected) > 8 or len(set(selected)) != len(selected) or any(type(ch) is not int or not 0 <= ch < 8 for ch in selected) or channel not in selected:
+            raise ValueError('channels must be unique integers 0..7 and include channel')
+        multiplex = self._bridge.supports_multiplex() is True if hasattr(self._bridge, 'supports_multiplex') else False
+        if not multiplex and (selected != [channel] or channel > 2):
+            raise DeviceError(
+                '当前固件仅支持单个 RTT 通道（0、1 或 2），请选择一个通道或更新探针固件。 '
+                'This firmware supports one RTT channel (0, 1 or 2); select one channel or update the probe firmware.'
+            )
+
     def rtt_start(
         self,
         addr: str | int | None = None,
@@ -1641,12 +1667,9 @@ class Device:
             self._project_root,
             source_path=self._axf,
         )
+        self.validate_rtt_channels(channel, channels)
         multiplex = self._bridge.supports_multiplex() is True if hasattr(self._bridge, 'supports_multiplex') else False
         selected = list(channels) if channels is not None else [channel]
-        if not selected or len(selected)>8 or len(set(selected))!=len(selected) or any(type(ch) is not int or not 0<=ch<8 for ch in selected) or channel not in selected:
-            raise ValueError('channels must be unique integers 0..7 and include channel')
-        if not multiplex and (selected != [channel] or channel > 2):
-            raise DeviceError('Multiple RTT channels require updated multiplex firmware')
         if multiplex:
             self._bridge.enable_multiplex()
         if self._rtt_session and self._rtt_session._running:

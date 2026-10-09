@@ -1080,15 +1080,40 @@ describe('online flash task workspace behavior', () => {
     first.unmount()
     const restored = mount(await onlineFlashView())
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(2))
-    expect(restored.text()).toContain(requestId)
+    expect(restored.find('[data-testid="online-recovery"]').exists()).toBe(false)
     expect(restored.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
     expect(vi.mocked(fetch).mock.calls.filter(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toHaveLength(1)
     finished = true
-    await restored.get('[data-testid="query-online-request"]').trigger('click')
-    await vi.waitFor(() => expect(restored.find('[data-testid="online-recovery"]').exists()).toBe(false))
+    await vi.waitFor(() => expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBeNull(), { timeout: 2000 })
     expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBeNull()
     expect(restored.get('[data-testid="job-state"]').text()).toContain('烧录完成')
     restored.unmount()
+  })
+
+  it('clears a definite rejection without manual acknowledgement or resubmission', async () => {
+    const fallback = viewFetch()
+    let requestId = ''
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs') && options?.method === 'POST') {
+        requestId = new Headers(options.headers).get('X-MKLink-Request-Id')!
+        return new Response(JSON.stringify({ detail: 'Invalid target configuration' }), {
+          status: 422, headers: { 'X-MKLink-Submission': 'not-started' },
+        })
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    if (wrapper.find('[data-testid="confirmation-accept"]').exists()) await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
+    await vi.waitFor(() => expect(requestId).not.toBe(''))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Invalid target configuration')
+    expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBeNull()
+    expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined()
+    expect(vi.mocked(fetch).mock.calls.filter(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toHaveLength(1)
+    wrapper.unmount()
   })
 
   it.each(['missing', 'unknown', 'unreachable'])('keeps %s outcomes blocked without replay', async mode => {
@@ -1703,6 +1728,42 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect-path'))).toHaveLength(2))
     expect(wrapper.text()).toContain('已自动检查')
     expect(open).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('ignores a superseded desktop inspection failure after the latest inspection succeeds', async () => {
+    const fallback = viewFetch()
+    vi.stubGlobal('isTauri', true)
+    vi.doMock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => 'C:\\firmware\\firmware.hex') }))
+    let finishOld!: (response: Response) => void
+    let inspections = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/images/inspect-path')) {
+        if (++inspections === 1) return new Promise<Response>(resolve => { finishOld = resolve })
+        return new Response(JSON.stringify({
+          image_id: 'latest', file_name: 'firmware.hex', format: 'hex', size: 32,
+          sha256: 'abc123', start: 0x08000000, end: 0x08000020,
+          segments: [{ start: 0x08000000, end: 0x08000020 }], base_address: null,
+          sector_operations_available: true, sectors: [{ address: 0x08000000, size: 0x1000 }],
+        }), { status: 200 })
+      }
+      if (url.includes('/images/source-status?')) return new Response(JSON.stringify({
+        available: true, file_name: 'firmware.hex', size: 32, mtime_ns: 100,
+      }), { status: 200 })
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(inspections).toBe(1))
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('已自动检查'))
+    finishOld(new Response(JSON.stringify({ detail: 'Another shared operation or exclusive job is active' }), { status: 409 }))
+    await flushPromises()
+    expect(wrapper.text()).toContain('已自动检查')
+    expect(wrapper.text()).not.toContain('固件检查失败')
     wrapper.unmount()
   })
 

@@ -1,4 +1,4 @@
-"""Read-only probe commands, executed only by the selected shared backend."""
+"""Probe queries and guarded updates executed by the selected shared backend."""
 from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
 
@@ -54,6 +54,53 @@ def check_firmware(state, firmware_root):
     selected = select_probe(state['shared_probe_id'])
     return check_probe_firmware(selected['port'], firmware_root, version_reader=lambda port:
                                 parse_probe_version(_query(state, 'probe_version')['raw']))
+
+
+def upgrade_firmware(state, firmware_root):
+    """One identity-bound update; inability to enter UF2 becomes a manual path."""
+    from mklink.firmware_check import upgrade_probe_firmware
+    from mklink.probe_volumes import FirmwareVolumes
+    from mklink.probes import select_probe
+    if state.get('shared_probe_id') in (None, 'lobby'):
+        return {'status': 'manual_required', 'message': '请先在本地设备页选择下载器，或选择型号下载固件后手动升级。'}
+    try:
+        selected = select_probe(state['shared_probe_id'])
+        volumes = FirmwareVolumes(selected)
+    except RuntimeError:
+        return {'status': 'manual_required', 'message': '暂时无法识别下载器，请选择正确型号下载固件后手动升级。'}
+
+    class CommandPort:
+        def enter_bootloader(self):
+            from mklink.bridge import MKLinkSerialBridge
+            from mklink.remote.resource_manager import ResourceGroup
+            manager = state['resource_manager']
+            owner = 'user:api:firmware-upgrade'
+            manager.acquire_many((ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG,
+                                  ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH), owner)
+            device = state.get('device')
+            bridge = None
+            try:
+                # Selection may have changed while the firmware was downloading.
+                current = select_probe(state['shared_probe_id'])
+                if device is not None and device.connected:
+                    if device.port.casefold() != current['port'].casefold():
+                        raise RuntimeError('Probe port changed')
+                    device.enter_bootloader()
+                else:
+                    bridge = MKLinkSerialBridge(current['port'])
+                    if not bridge.connect(recover_stream=False):
+                        raise RuntimeError('Command port unavailable')
+                    bridge.enter_bootloader()
+            finally:
+                try:
+                    if bridge is not None:
+                        bridge.close()
+                finally:
+                    manager.release(owner)
+
+    return upgrade_probe_firmware(CommandPort(), firmware_root, confirm=True,
+                                  disk_reader=volumes.find,
+                                  bootloader_finder=lambda: volumes.find(bootloader=True))
 
 
 def create_probe_router(state):

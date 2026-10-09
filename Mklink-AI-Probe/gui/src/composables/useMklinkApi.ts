@@ -46,7 +46,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
       else if (d && typeof d === 'object' && 'message' in d) msg = String(d.message)
       else if (d) msg = JSON.stringify(d)
     }
-    throw new Error(msg)
+    throw Object.assign(new Error(msg), { status: res.status, detail: err?.detail })
   }
   return res.json()
 }

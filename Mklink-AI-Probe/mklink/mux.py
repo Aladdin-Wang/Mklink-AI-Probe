@@ -20,7 +20,11 @@ class MuxError(ConnectionError):
 class MuxTargetError(RuntimeError):
     def __init__(self, status):
         self.status = status
-        super().__init__(f'Multiplex target status {status}; failed writes may have an unknown outcome')
+        message = ('Multiplex target busy (status 6); debugger access is currently reserved. '
+                   'Retry explicitly when available; the request was not replayed'
+                   if status == 6 else
+                   f'Multiplex target status {status}; failed writes may have an unknown outcome')
+        super().__init__(message)
 
 
 def packet(op, epoch, request, payload=b''):

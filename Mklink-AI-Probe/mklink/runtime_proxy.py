@@ -48,6 +48,30 @@ def create_proxy(info, *, port, instance_id, transport=None):
     closing = False
     runtime_changed = asyncio.Event()
 
+    async def renew_view():
+        nonlocal view_registered
+        # The native window owns this record even before its WebView loads.
+        # Mark attempted registrations too: a lost response still needs release.
+        view_registered = True
+        return await app.state.client.post(
+            f"http://127.0.0.1:{info['port']}/api/runtime/control/view",
+            headers={"X-Auth-Token": info['token']},
+            json={'client_id': view_id}, timeout=0.5,
+        )
+
+    async def keep_view_alive():
+        while not closing:
+            async with view_lock:
+                if closing:
+                    return
+                try:
+                    response = await renew_view()
+                    response.raise_for_status()
+                except httpx.HTTPError:
+                    # Never reconnect hardware or replay a command on failure.
+                    pass
+            await asyncio.sleep(1)
+
     async def release_view():
         nonlocal view_registered
         if not view_registered:
@@ -67,16 +91,20 @@ def create_proxy(info, *, port, instance_id, transport=None):
     async def lifespan(app):
         async with httpx.AsyncClient(base_url=base, transport=transport, timeout=None, trust_env=False) as client:
             app.state.client = client
+            presence = asyncio.create_task(keep_view_alive())
             try:
                 yield
             finally:
+                presence.cancel()
+                await asyncio.gather(presence, return_exceptions=True)
                 async with view_lock:
                     await release_view()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.shutdown = None
     origins = DESKTOP_ORIGINS | {f"http://127.0.0.1:{port}"}
-    app.add_middleware(CORSMiddleware, allow_origins=sorted(origins), allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=sorted(origins), allow_methods=["*"],
+                       allow_headers=["*"], expose_headers=['X-MKLink-Submission'])
 
     @app.middleware("http")
     async def local_only(request, call_next):
@@ -115,13 +143,8 @@ def create_proxy(info, *, port, instance_id, transport=None):
             # A native window survives navigation/pagehide; shutdown owns release.
             if body.get('release') is True:
                 return {'registered': view_registered, 'device_closed': False}
-            view_registered = True  # Also clean up a registration with a lost response.
             try:
-                response = await app.state.client.post(
-                    f"http://127.0.0.1:{info['port']}/api/runtime/control/view",
-                    headers={"X-Auth-Token": info['token']},
-                    json={'client_id': view_id}, timeout=0.5,
-                )
+                response = await renew_view()
                 return JSONResponse(response.json(), status_code=response.status_code)
             except httpx.HTTPError:
                 return JSONResponse({'detail': 'Shared runtime unavailable'}, status_code=503)

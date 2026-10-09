@@ -109,6 +109,7 @@ def test_abandoned_capture_requires_sole_subscriber_for_recovery(vofa, expired, 
 
 def test_gui_owned_capture_can_be_borrowed_but_not_stopped_by_ai(vofa):
     client, _, _, _, _, manager, behavior = vofa
+    client.post('/api/runtime/control/view', json={'client_id': 'gui'})
     assert client.post('/api/dash/vofa/start', json={'channels': [{'path': 'counter'}]}).status_code == 200
     ai = attach(client)
     assert call(client, ai, 'vofa_start').json()['reused']

@@ -112,6 +112,35 @@ def test_unchanged_identity_keeps_existing_handshake(bound_probe, monkeypatch):
         bridge.close()
 
 
+@pytest.mark.parametrize('mode', ['normal', 'systemview', 'text_stream', 'mux', 'no_prompt'])
+def test_known_usb_command_interface_never_executes_identity_script(bound_probe, monkeypatch, mode):
+    serial_port = Mock(is_open=True)
+    monkeypatch.setattr(bridge_module.serial, 'Serial', Mock(return_value=serial_port))
+    reader = Mock()
+    reader.is_alive.return_value = False
+    monkeypatch.setattr(bridge_module.threading, 'Thread', Mock(return_value=reader))
+    monkeypatch.setattr(bridge_module.time, 'sleep', lambda _: None)
+    bridge = MKLinkSerialBridge('COM10')
+    bridge._prompt_event = Mock()
+    bridge._prompt_event.wait.side_effect = {
+        'normal': [True], 'systemview': [False, False, True],
+        'text_stream': [False, False, False, True], 'mux': [False, False],
+        'no_prompt': [False, False],
+    }[mode]
+    verify = Mock(side_effect=AssertionError('Known USB identity must not execute a script under the DAP lock'))
+    monkeypatch.setattr(bridge, '_verify_identity', verify)
+    if mode == 'mux':
+        bridge._mux_marker.parent.mkdir(parents=True, exist_ok=True)
+        bridge._mux_marker.write_text('MLX1', encoding='ascii')
+        monkeypatch.setattr('mklink.mux.MuxTransport', Mock())
+    try:
+        assert bridge.connect(recover_stream=mode != 'no_prompt') is (mode != 'no_prompt')
+        verify.assert_not_called()
+        assert all(b'__mklink_probe_' not in call.args[0] for call in serial_port.write.call_args_list)
+    finally:
+        bridge.close()
+
+
 def test_runtime_binding_cannot_be_changed_or_cleared(bound_probe):
     selected = next(p for p in inventory() if p['port'] == 'COM10')['probe_id']
     binding.bind_runtime(selected)

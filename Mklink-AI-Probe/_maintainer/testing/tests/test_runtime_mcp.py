@@ -12,6 +12,70 @@ from test_shared_device import shared
 from test_shared_runtime import runtime
 
 
+def test_runtime_recovery_does_not_require_or_create_attachment(runtime, monkeypatch):
+    from mklink.runtime import RuntimeErrorResponse
+    client, control, calls, managers, _ = runtime
+    seen = []
+    def selected(probe):
+        seen.append(probe)
+        return control.info
+    def request(info, method, path, payload=None, **kwargs):
+        response = client.request(method, path, json=payload)
+        if response.is_error:
+            raise RuntimeErrorResponse(response.text)
+        return response.json()
+    monkeypatch.setattr('mklink.runtime.selected_runtime', selected)
+    monkeypatch.setattr('mklink.runtime.request', request)
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', lambda **kw: pytest.fail('Recovery attached hardware'))
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            tools = [t.name for t in await mcp.list_tools()]
+            assert 'runtime_selector' not in tools
+            status = (await mcp.call_tool('runtime_status', {'probe': 'chosen'})).data
+            assert status['clients'] == [] and calls == []
+            session = client.post('/_runtime/attach', json={'client_name': 'old AI'}).json()['session_id']
+            public_id = control.sessions[session].public_id
+            args = {'action': 'detach-client', 'probe': 'chosen', 'client_id': public_id}
+            assert (await mcp.call_tool('runtime_control', args, raise_on_error=False)).is_error
+            assert session in control.sessions
+            assert (await mcp.call_tool('runtime_control', {**args, 'confirm': True})).data['detached']
+            # Detached clients cannot keep the old backend session alive.
+            assert client.post('/_runtime/heartbeat', json={'session_id': session}).status_code == 409
+            managers['rtt'].running = True
+            stop = {'action': 'stop-backend', 'probe': 'chosen', 'confirm': True}
+            assert (await mcp.call_tool('runtime_control', stop, raise_on_error=False)).is_error
+            await mcp.call_tool('runtime_control', {'action': 'stop-acquisition', 'stream': 'rtt',
+                                                   'probe': 'chosen', 'confirm': True})
+            assert (await mcp.call_tool('runtime_control', stop)).data['status'] == 'stopping'
+    asyncio.run(scenario())
+    assert calls == ['stop'] and all(probe == 'chosen' for probe in seen)
+
+
+def test_diagnostics_keep_selected_identity_after_disconnect_without_reattaching(monkeypatch):
+    selections, connections = [], []
+    class Adapter:
+        info = {'probe_id': 'original', 'port': 1234}
+        def __init__(self, **kwargs): pass
+        def connect(self, **kwargs):
+            connections.append(kwargs)
+            return {'connected': True}
+        def close(self): pass
+    def control(action='status', **kwargs):
+        selections.append(kwargs['probe'])
+        return {'status': 'not_running'}
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', Adapter)
+    monkeypatch.setattr('mklink.runtime.control_runtime', control)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            await mcp.call_tool('connect', {'probe': 'original'})
+            await mcp.call_tool('runtime_status', {})
+            await mcp.call_tool('runtime_status', {'probe': 'other'})
+            await mcp.call_tool('disconnect', {})
+            await mcp.call_tool('runtime_status', {})
+    asyncio.run(scenario())
+    assert selections == ['original', 'other', 'original'] and len(connections) == 1
+
+
 def test_power_query_uses_selected_or_attached_backend_without_implicit_target(monkeypatch):
     created, queries = [], []
     class ProbeClient:

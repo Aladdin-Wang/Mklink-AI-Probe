@@ -663,6 +663,7 @@ async def _start_dashboard_manager_transaction(
     if not start_ok:
         await rollback_start_effects()
         raise start_result
+    manager._restart_after_operation = start_call
     return "started", stopped
 
 
@@ -852,6 +853,7 @@ def create_app(
             "X-MKLink-Firmware-Name",
             "X-MKLink-Firmware-Version",
             "X-MKLink-Firmware-Source",
+            "X-MKLink-Submission",
         ],
     )
 
@@ -1761,6 +1763,7 @@ def create_app(
         restore_last: bool = Body(default=False),
     ):
         runtime = getattr(app.state, "shared_runtime", None)
+        port_changed = False
         if runtime is not None:
             from mklink.probes import select_probe
             from mklink.runtime import RuntimeErrorResponse
@@ -1774,13 +1777,10 @@ def create_app(
                 raise HTTPException(409, str(exc)) from exc
             runtime.prune()
             current = _state.get("device")
-            if current and current.connected:
+            port_changed = bool(current and current.port and current.port.casefold() != port.casefold())
+            if current and current.connected and not port_changed:
                 restore_last = False  # Reuse live symbols; never reparse on an implicit reconnect.
-            if current and runtime.target_sessions and not current.connected:
-                raise HTTPException(409, 'Detach stale clients before explicitly reconnecting the probe')
-            if current and current.connected and current.port.casefold() != port.casefold():
-                raise HTTPException(409, 'Probe port changed; release the old connection first')
-            if runtime.target_sessions and current and current.connected and any(value is not None for value in (axf, mcu, elf_backend)):
+            if runtime.target_sessions and current and current.connected and not port_changed and any(value is not None for value in (axf, mcu, elf_backend)):
                 raise HTTPException(status_code=409, detail="Detach shared clients before changing device configuration or symbols")
         preferred_port = None
         if restore_last:
@@ -1795,7 +1795,7 @@ def create_app(
                 else previous.get("elf_backend")
             )
         stale_device = _state.get("device")
-        if stale_device is not None and not stale_device.connected:
+        if stale_device is not None and (not stale_device.connected or port_changed):
             # A USB removal makes ``Device.connected`` false immediately, but
             # the old bridge still owns its serial handle and advisory port
             # lock until ``close()`` runs.  Reconnecting in the same desktop
@@ -1803,6 +1803,12 @@ def create_app(
             # restart could release it.  Tear down dashboards and the stale
             # session before opening the newly enumerated probe.
             await _disconnect_shared_device()
+        if runtime is not None and (stale_device is None or not stale_device.connected or port_changed):
+            # A repaired serial connection is a new target attachment, even if
+            # an earlier cleanup already removed the old Device from state.
+            # Old clients must explicitly attach again; preserve UART leases.
+            for key in list(runtime.target_sessions):
+                runtime.sessions.pop(key, None)
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
             manager = get_managers()["superwatch"]
@@ -1951,6 +1957,10 @@ def create_app(
         device = None
         try:
             root = _fc._resolve_firmware_root()
+            if _state.get('shared_runtime'):
+                from mklink.runtime_probe import upgrade_firmware
+                device = _state.get('device')
+                return await run_in_threadpool(upgrade_firmware, _state, root)
             if _state.get("device") and _state["device"].connected:
                 async with _exclusive_probe_control("firmware-upgrade") as (device, stopped):
                     result = await run_in_threadpool(
@@ -2071,7 +2081,7 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(error)) from error
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        async with _exclusive_probe_control("flash") as (device, _stopped):
+        async def program(device):
             try:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
@@ -2081,6 +2091,17 @@ def create_app(
                 return result
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+
+        if _state.get('shared_runtime'):
+            from mklink.remote.acquisition import suspend_acquisition
+            # Suspension owns the dashboard lock for the whole operation.
+            # Do not nest _exclusive_probe_control, which acquires it again.
+            async with suspend_acquisition(_state, app.state.shared_runtime) as report:
+                async with async_target_debug_lease(_state, 'flash'):
+                    result = await program(_state['device'])
+            return {**result, 'acquisition': report}
+        async with _exclusive_probe_control('flash') as (device, _stopped):
+            return await program(device)
 
     @app.post("/api/device/security")
     async def security_operation(body: dict = Body(...)):
@@ -2400,6 +2421,9 @@ def create_app(
                 _state["project_root"],
                 source_path=getattr(_state["device"], "_axf", None),
             )
+            validate_channels = getattr(_state["device"], "validate_rtt_channels", None)
+            if callable(validate_channels):
+                await asyncio.to_thread(validate_channels, channel, channels)
             validate_request = getattr(
                 _state["device"], "validate_rtt_stream_request", None,
             )

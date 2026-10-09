@@ -90,7 +90,7 @@ class RuntimeJobs:
         if self.active or c.operation_lock.locked() or c.attach_lock.locked() or c.online_job():
             raise HTTPException(409, 'Another operation is active; no job was queued')
         from mklink.remote.dashboards import active_bridge_dashboards
-        if active_bridge_dashboards():
+        if active_bridge_dashboards() and action != 'flash':
             raise HTTPException(409, 'Stop acquisition explicitly before an exclusive job')
         device = c.app.state.mklink_state.get('device')
         if action != 'security' and (not device or not device.connected):
@@ -229,9 +229,12 @@ class RuntimeJobs:
         started = asyncio.get_running_loop().create_future()
         async def operation():
             try:
-                response = await start()
-                started.set_result({**response, 'runtime_job_id':job['job_id'], 'request_id':request_id})
-                return await self._observe_online(job, {'online_job_id':response['job_id']})
+                from mklink.remote.acquisition import suspend_acquisition
+                async with suspend_acquisition(c.app.state.mklink_state, c) as report:
+                    response = await start()
+                    started.set_result({**response, 'runtime_job_id':job['job_id'], 'request_id':request_id})
+                    result = await self._observe_online(job, {'online_job_id':response['job_id']})
+                return {**result, 'acquisition': report}
             except BaseException as error:
                 if not started.done():
                     started.set_exception(error)

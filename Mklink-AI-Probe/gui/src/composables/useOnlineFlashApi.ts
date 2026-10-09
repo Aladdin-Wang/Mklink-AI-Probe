@@ -87,8 +87,9 @@ export class OnlineFlashApiError extends Error {
   readonly owner: string | null
   readonly resource: string | null
   readonly detail: unknown
+  readonly notStarted: boolean
 
-  constructor(status: number, fallback: string, payload: unknown) {
+  constructor(status: number, fallback: string, payload: unknown, notStarted = false) {
     const detail = errorDetail(payload)
     super(errorMessage(detail, fallback || `HTTP ${status}`))
     this.name = 'OnlineFlashApiError'
@@ -97,6 +98,7 @@ export class OnlineFlashApiError extends Error {
     this.owner = stringField(detail, 'owner')
     this.resource = stringField(detail, 'resource')
     this.detail = detail
+    this.notStarted = notStarted
   }
 }
 
@@ -112,7 +114,8 @@ async function request<T>(path: string, options: RequestInit = {}, base = ONLINE
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => null)
-    throw new OnlineFlashApiError(response.status, response.statusText, payload)
+    throw new OnlineFlashApiError(response.status, response.statusText, payload,
+      response.headers.get('X-MKLink-Submission') === 'not-started')
   }
   return response.json() as Promise<T>
 }
@@ -374,7 +377,11 @@ export function useOnlineFlashApi() {
       return await request('/jobs', { method: 'POST', body: JSON.stringify(job),
         headers: { 'X-MKLink-Request-Id': requestId } })
     } catch (error) {
-      throw new Error(`${error instanceof Error ? error.message : String(error)}; request_id=${requestId}`)
+      if (error instanceof Error) {
+        error.message += `; request_id=${requestId}`
+        throw error
+      }
+      throw new Error(`${String(error)}; request_id=${requestId}`)
     }
   }
 
@@ -385,7 +392,7 @@ export function useOnlineFlashApi() {
   async function retainedJob(requestId: string) {
     const payload = await request<{ jobs: Array<{
       request_id: string; action: string; state: string; online_job_id?: string;
-      result: { job?: JobSnapshot } | null; error: string | null;
+      result: { job?: JobSnapshot; acquisition?: { errors: string[] } } | null; error: string | null;
     }> }>('/jobs/', {}, '/api/runtime')
     const job = payload.jobs.find(item => item.request_id === requestId && item.action === 'online_flash')
     return job ?? null

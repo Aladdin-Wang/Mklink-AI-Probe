@@ -1,7 +1,7 @@
 # Passive inventory only. USB ancestry is verified by cfgmgr32 in probe_volumes.py.
 $ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$volumes = @(Get-CimInstance Win32_Volume | Where-Object Label -eq 'MICROKEEN')
+$volumes = @(Get-CimInstance Win32_Volume)
 $rows = @(foreach ($disk in Get-CimInstance Win32_DiskDrive) {
     if ($disk.PNPDeviceID -notlike 'USBSTOR\*') { continue }
     foreach ($partition in Get-CimAssociatedInstance -InputObject $disk -Association Win32_DiskDriveToDiskPartition) {

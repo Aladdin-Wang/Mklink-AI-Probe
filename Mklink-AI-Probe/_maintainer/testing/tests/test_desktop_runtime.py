@@ -168,14 +168,19 @@ def test_two_desktop_sidecars_get_independent_endpoints(tmp_path, monkeypatch):
             endpoints.append(endpoint)
 
         assert endpoints[0]["port"] != endpoints[1]["port"]
+        # No WebView has sent a presence request. Both native proxies must
+        # nevertheless keep the shared runtime alive past its idle deadline.
+        time.sleep(6)
+        _wait_for_health(endpoints[0]["port"], "desktop-instance-0")
         _stop_process(processes[0])
         _wait_for_health(endpoints[1]["port"], "desktop-instance-1")
     finally:
         for process in reversed(processes):
             _stop_process(process)
-        from mklink.runtime import running_runtimes, request
-        for info in running_runtimes():
-            request(info, "POST", "/_runtime/stop", {"confirm": True})
-        deadline = time.monotonic() + 10
+        from mklink.runtime import running_runtimes
+        # Abrupt process death cannot release presence synchronously. Its
+        # normal TTL must expire; explicit stop correctly refuses live leases.
+        deadline = time.monotonic() + 15
         while running_runtimes() and time.monotonic() < deadline:
-            time.sleep(0.1)
+            time.sleep(0.2)
+        assert not running_runtimes()

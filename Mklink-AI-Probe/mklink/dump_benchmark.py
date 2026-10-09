@@ -45,12 +45,16 @@ def measure(device, regions: list[tuple[int, int]], *, duration: float = 3,
     includes the existing 200ms probe-timestamp warmup. No raw sample history.
     """
     from mklink.dump_memory import DumpMemoryStreamSession, DumpSampleAssembler, check_capture_cancelled
+    from mklink.mux_watch import PackedWatchSample
     size = validate_measurement(regions, duration, period, speed_profile)
     check_capture_cancelled(cancelled)
     device._require_connected()
     if speed_profile is not None:
         device.set_debug_speed(speed_profile)
     session = DumpMemoryStreamSession(device._bridge, regions, period, allow_legacy_bulk=True)
+    # MUX batches already contain validated complete samples. Avoid expanding
+    # each one into region dictionaries and assembling it a second time.
+    session.packed_frames = True
     intervals = Counter()
     first_seen = first = last = last_complete = None
     count = 0
@@ -64,11 +68,14 @@ def measure(device, regions: list[tuple[int, int]], *, duration: float = 3,
             frames = session.read_frames(max_bytes=262144)
             for frame in frames:
                 check_capture_cancelled(cancelled)
-                payloads = assembler.feed(frame)
-                if payloads is None:
-                    continue
-                ts = assembler.timestamp_us
-                assembler = DumpSampleAssembler([n for _, n in regions], ordered=True)
+                if isinstance(frame, PackedWatchSample):
+                    ts = frame.timestamp_us
+                else:
+                    payloads = assembler.feed(frame)
+                    if payloads is None:
+                        continue
+                    ts = assembler.timestamp_us
+                    assembler = DumpSampleAssembler([n for _, n in regions], ordered=True)
                 if last_complete is not None and ts <= last_complete:
                     raise RuntimeError('mem_dump non-increasing timestamp')
                 last_complete = ts
@@ -88,8 +95,9 @@ def measure(device, regions: list[tuple[int, int]], *, duration: float = 3,
     finally:
         session.stop()
     stats = session.stats
-    if any(stats[k] for k in ('parser_crc_errors','parser_dropped_frames','firmware_flagged_frames')):
-        raise RuntimeError(f'mem_dump integrity failure: {stats}')
+    if any(stats.get(k, 0) for k in ('parser_crc_errors','parser_dropped_frames',
+                                   'parser_dropped_bytes','firmware_flagged_frames')):
+        raise RuntimeError(f'mem_dump integrity failure: {stats}; max_interval_us={max(intervals, default=0)}')
     if count < 2 or last <= first:
         raise RuntimeError('Not enough complete mem_dump samples')
     def quantile(fraction):

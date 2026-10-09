@@ -56,6 +56,7 @@ const portsLoading = ref(false)
 const savingLocal = ref(false)
 const connecting = ref(false)
 const disconnecting = ref(false)
+const connectionOwners = ref<string[] | null>(null)
 const browsingFiles = ref(false)
 const parsingSymbols = ref(false)
 let symbolParseGeneration = 0
@@ -68,13 +69,22 @@ const firmwareUpgradeStatus = ref('')
 const firmwareUpgradeResult = ref<ProbeFirmwareUpgrade | null>(null)
 const firmwareDownloading = ref(false)
 const firmwareDownloadStatus = ref('')
+const manualFirmwareChoice = ref('')
 const usbNamingAction = ref<'idle' | 'apply' | 'restore'>('idle')
 const manualFirmwareUpgrade = computed(() => {
   const result = firmwareUpgradeResult.value
   if (!result || result.status === 'updated' || result.status === 'up_to_date') return null
-  return result.download_available && result.latest_version && result.firmware && result.model
-    ? result
-    : null
+  return result
+})
+const firmwareDownloadTarget = computed(() => {
+  const result = manualFirmwareUpgrade.value
+  if (result?.download_available && result.model) return { model: result.model, family: result.family || 'microlink' as const }
+  const choices = {
+    v3: { model: 'V3', family: 'microlink' },
+    v4: { model: 'V4', family: 'microlink' },
+    hpm: { model: 'V4', family: 'hpmlink' },
+  } as const
+  return choices[manualFirmwareChoice.value as keyof typeof choices] || null
 })
 
 async function refreshPorts() {
@@ -145,6 +155,8 @@ async function selectLocalPort() {
 }
 
 async function connectLocal() {
+  if (connecting.value || disconnecting.value) return
+  connectionOwners.value = null
   localPortTouched = true
   connecting.value = true
   try {
@@ -172,9 +184,11 @@ async function connectLocal() {
       await refreshRttForSymbols(symbolPath)
     }
   } catch (error: any) {
-    localPort.value = ''
-    localPortExplicit.value = false
-    config.value = { ...config.value, com_port: '' }
+    // A failed explicit selection must stay selected for the next attempt.
+    if (!localPortExplicit.value) {
+      localPort.value = ''
+      config.value = { ...config.value, com_port: '' }
+    }
     toast.error(tr('连接失败: ', 'Connection failed: ') + error.message)
   } finally {
     connecting.value = false
@@ -182,11 +196,17 @@ async function connectLocal() {
 }
 
 async function disconnectLocal() {
+  if (disconnecting.value || connecting.value) return
+  connectionOwners.value = null
   disconnecting.value = true
   try {
     await disconnectDevice()
   } catch (error: any) {
-    toast.error(tr('断开失败: ', 'Disconnect failed: ') + error.message)
+    if (error.detail?.reason === 'shared_clients_attached') {
+      connectionOwners.value = (error.detail.clients || []).map((client: { name: string; kind: string }) => `${client.name} (${client.kind})`)
+    } else {
+      toast.error(tr('断开失败: ', 'Disconnect failed: ') + error.message)
+    }
   } finally {
     disconnecting.value = false
   }
@@ -340,6 +360,7 @@ async function upgradeFirmware() {
   ))) return
   firmwareUpgrading.value = true
   firmwareUpgradeResult.value = null
+  manualFirmwareChoice.value = ''
   firmwareDownloadStatus.value = ''
   firmwareUpgradeStatus.value = tr('正在升级探针固件...', 'Upgrading probe firmware...')
   try {
@@ -356,7 +377,6 @@ async function upgradeFirmware() {
       toast.success(firmwareUpgradeStatus.value)
     } else {
       firmwareUpgradeStatus.value = result.message || tr('未完成自动升级，请按提示手动升级', 'Automatic update did not complete; follow the manual update instructions')
-      toast.error(firmwareUpgradeStatus.value)
     }
     await recheckFirmware()
   } catch (error: any) {
@@ -368,7 +388,7 @@ async function upgradeFirmware() {
 }
 
 async function downloadFirmware() {
-  const result = manualFirmwareUpgrade.value
+  const result = firmwareDownloadTarget.value
   if (!result?.model || firmwareDownloading.value) return
   firmwareDownloading.value = true
   firmwareDownloadStatus.value = tr('正在下载固件...', 'Downloading firmware...')
@@ -488,7 +508,7 @@ onUnmounted(() => {
             class="btn btn-primary icon-command"
             type="button"
             data-testid="connect-local"
-            :disabled="connecting || (deviceStatus.connected && !switchingProbe)"
+            :disabled="connecting || disconnecting || (deviceStatus.connected && !switchingProbe)"
             @click="connectLocal"
           >
             <Usb :size="15" aria-hidden="true" />
@@ -498,12 +518,17 @@ onUnmounted(() => {
             class="btn icon-command"
             type="button"
             data-testid="disconnect-local"
-            :disabled="disconnecting || !deviceStatus.connected"
+            :disabled="disconnecting || connecting || !deviceStatus.connected"
             @click="disconnectLocal"
           >
             <Unplug :size="15" aria-hidden="true" />
             {{ disconnecting ? tr('断开中...', 'Disconnecting...') : tr('断开', 'Disconnect') }}
           </button>
+        </div>
+
+        <div v-if="connectionOwners !== null" role="alert" data-testid="connection-owners">
+          <p>{{ tr('设备仍被以下客户端共享，断开前请在后台管理中结束相应会话：', 'The device is shared by these clients. End their sessions in Backend Management before disconnecting:') }} {{ connectionOwners.join('、') }}</p>
+          <button class="btn btn-sm" type="button" data-testid="manage-connection-owners" @click="activeSection = 'runtime'">{{ tr('打开后台管理', 'Open Backend Management') }}</button>
         </div>
 
         <div v-if="IS_TAURI" class="port-naming-actions" data-testid="usb-port-naming">
@@ -551,19 +576,34 @@ onUnmounted(() => {
           <span v-if="firmwareCheck?.current_version" class="firmware-version">{{ firmwareCheck.current_version }}</span>
         </header>
         <div class="firmware-upgrade-content">
-          <p>{{ tr('读取 MICROKEEN U 盘版本，检查 GitHub/Gitee 最新固件并自动完成 UF2 升级。', 'Read the MICROKEEN drive version, check GitHub/Gitee, and complete the UF2 update automatically.') }}</p>
+          <p>{{ tr('检查最新固件，支持的下载器会自动进入升级模式并完成升级。老版本无法自动进入时，可下载固件后按键升级。', 'Check for firmware and update automatically when supported. Older probes can be updated manually using the upgrade button and a downloaded firmware file.') }}</p>
           <button class="btn" type="button" data-testid="upgrade-firmware" :disabled="firmwareUpgrading" @click="upgradeFirmware">
             {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('检查并升级固件', 'Check and Update Firmware') }}
           </button>
           <div v-if="manualFirmwareUpgrade" class="manual-firmware-download" data-testid="manual-firmware-download">
-            <strong>{{ tr('自动升级未完成', 'Automatic update did not complete') }}</strong>
-            <span>{{ tr('最新固件：', 'Latest firmware: ') }}{{ manualFirmwareUpgrade.latest_version }}</span>
+            <strong>{{ manualFirmwareUpgrade.status === 'copied_unverified' ? tr('请检查升级结果', 'Check the update result') : tr('手动升级', 'Manual update') }}</strong>
+            <span v-if="manualFirmwareUpgrade.latest_version">{{ tr('最新固件：', 'Latest firmware: ') }}{{ manualFirmwareUpgrade.latest_version }}</span>
             <p class="firmware-upgrade-status" data-testid="firmware-upgrade-status">{{ firmwareUpgradeStatus }}</p>
-            <button class="btn icon-command" type="button" data-testid="download-firmware" :disabled="firmwareDownloading" @click="downloadFirmware">
+            <label v-if="!manualFirmwareUpgrade.download_available" class="firmware-model-choice">
+              {{ tr('下载器型号', 'Probe model') }}
+              <select v-model="manualFirmwareChoice" data-testid="firmware-model-choice" :disabled="firmwareDownloading">
+                <option value="">{{ tr('请选择机身对应型号', 'Select the model shown on your probe') }}</option>
+                <option value="v3">MicroLink V3</option>
+                <option value="v4">MicroLink V4</option>
+                <option value="hpm">HPMLink V4</option>
+              </select>
+            </label>
+            <button class="btn icon-command" type="button" data-testid="download-firmware" :disabled="firmwareDownloading || !firmwareDownloadTarget" @click="downloadFirmware">
               <Download :size="14" aria-hidden="true" />
               {{ firmwareDownloading ? tr('下载中...', 'Downloading...') : tr('下载固件', 'Download Firmware') }}
             </button>
             <span v-if="firmwareDownloadStatus" class="firmware-download-status" data-testid="firmware-download-status">{{ firmwareDownloadStatus }}</span>
+            <ol class="firmware-manual-steps" data-testid="firmware-manual-steps">
+              <li>{{ tr('将对应型号的 UF2 固件下载并保存到本地。', 'Download and save the UF2 firmware for your probe model.') }}</li>
+              <li>{{ tr('拔下 USB，按住升级按键再插入 USB：V3 为两个眼睛中间的按钮，V4 / HPMLink 为侧边拨轮按钮。', 'Unplug USB, hold the upgrade button, then reconnect USB. V3: the button between the two eyes. V4 / HPMLink: the side wheel button.') }}</li>
+              <li>{{ tr('出现 Bootloader U 盘后，将 UF2 文件复制到该盘根目录，等待复制和升级完成。', 'When the Bootloader drive appears, copy the UF2 file to its root and wait for copying and updating to finish.') }}</li>
+              <li>{{ tr('等待下载器重新启动；若未自动重启，复制完成后重新插拔 USB，再检查固件版本。', 'Wait for the probe to restart. If it does not restart automatically, reconnect USB after copying finishes, then check the firmware version.') }}</li>
+            </ol>
           </div>
           <span v-else-if="firmwareUpgradeStatus" class="firmware-upgrade-status" data-testid="firmware-upgrade-status">{{ firmwareUpgradeStatus }}</span>
         </div>
@@ -625,10 +665,13 @@ onUnmounted(() => {
   gap: 8px;
   margin-top: 4px;
   padding: 12px;
-  border-left: 3px solid #f59e0b;
-  background: var(--warn-bg);
-  color: var(--warn);
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+  color: var(--fg);
 }
+
+.firmware-model-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.firmware-manual-steps { margin: 8px 0 0; padding-left: 22px; line-height: 1.8; }
 
 .manual-firmware-download p {
   margin: 0;

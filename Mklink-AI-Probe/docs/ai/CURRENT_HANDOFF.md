@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-08T10:08:32+08:00`
-- 分支：`main`
-- HEAD：`Release source main ec1d2834038b13632d4a88fa3057b5ee5fb65ff2; use Git for later handoff commits.`
-- 远端 HEAD：`Official v0.3.0 immutable release at ec1d2834038b13632d4a88fa3057b5ee5fb65ff2; later main handoff commits do not move the tag.`
-- 工作树：V3 main bdd18d7 and V4 main ed73ae9 integrated. Final signed installer and Skill installed and qualified; publication status in release handoff.
-- 当前任务：0.3.0正式发布、三端更新索引与固件V3.6.0/V4.6.0/HPMLink V4.6.0完成；NSIS和本地Skill已更新。交接记录保留HPM/SES及未验证矩阵边界。长期目标保持暂停。
-- 状态：`complete`
+- 更新时间：`2026-10-09T12:30:12.7995501+08:00`
+- 分支：`codex/0.3.1-fixes`
+- HEAD：`Product 77d4849c; production assets f586fd94 (build 77d4849c). Full regression and three CI checks passed on f586fd94791093d49d8aec105d87e2718776f37f. Later documentation only; inspect Git for current tip.`
+- 远端 HEAD：`microkeen/codex/0.3.1-fixes / PR #33; verify Git for latest documentation tip.`
+- 工作树：Isolated host fix worktree; queue fix, production assets and verification committed separately. New local NSIS/Skill/SiteAgent frozen; installed directory remains acdcc997.
+- 当前任务：用户授权队列修复及正式发布前回归已执行：77d4849c消除dumpmem热路径重复组装/JSON积压，增加字节丢弃失败判断和会话增量统计；没有诊断代码或固件批次改动。f586fd94完整Python4576通过/2可选hil_core跳过、GUI912、Rust21+6、三个CI全通过。冻结原生包30MHz capture三轮最大98/89/82µs且丢弃0，修复前84.113ms；measure5/15/30秒丢弃0，SuperWatch三个20秒场景无丢弃。GUI退出AI继续读、最后MCP真正退出后释放通过；首轮测试keep_alive设置问题保留记录。新NSIS/Skill/SiteAgent已准备，未覆盖安装、未合并签名发布。30MHz Flash连续读status5仍是独立已知限制，不能宣称全档全功能通过。详见v031-dump-queue.md及发布准备报告。 用户现已明确授权正式发布0.3.1和指定MicroLink V4.6.3 UF2；发布进行中，尚未宣称完成。按最新要求status5不列入正式发布说明，完整证据保留交接/验证报告，下一版本处理。
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -20,19 +20,19 @@
 
 ## 验证证据
 
+- **0.3.1 dumpmem队列修复和最终候选回归**：产品77d4849c/资源f586fd94：完整Python4576通过/2跳过686.57秒、GUI912、Rust桌面21/SiteAgent6、三项CI通过。安装旧版30MHz capture最大时间戳缺口84.113ms；新NSIS提取原生窗口三轮10万点最大98/89/82µs，measure5/15/30秒最大123/125/121µs，均主机丢弃0。SuperWatch单变量1kHz/单变量最大/三变量最大各20秒最大采样1046/127/129µs，最大批次105.169/73.280/56.691ms，队列/WS丢弃0。冻结MCP/CLI、原生启动、GUI退出AI读和最后释放通过；原生安装UAC豁免。NSIS/Skill/SiteAgent同源候选哈希见manifest，详细证据v031-dump-queue.md。未证明30MHz Flash连续读取status5修复，未重做所有旧烧录/串口/升级矩阵。
+- **0.3.1原生桌面选文件并发修复**：v031-desktop-image-inspection.md：安装旧候选复现本地检查并发409；源码acdcc997、资源d89c0827修复两条本地检查独立硬件锁和前端取消请求竞态。192 Python/118 GUI、生产NSIS构建及三项CI通过，冻结MCP/CLI/5.44秒启动通过。新包提取原生桌面：Watch、RTT8、两者并行三种状态12次并发文件检查全200，实际文件对话框选HEX并点击烧录10.73秒成功，RTT8/Watch1自动暂停恢复且数据增长。10MHz读回512KiB与备份一致，30MHz原连接大块读偶发status5尚未归因；低频通过不代表30MHz修复。VCC未变、时钟未保存。正常退出后进程/endpoint消失、命令口可开关。新NSIS SHA5f2858333155e541a40c850fec97e0e05e27c33638d05337880983b13f975780，实际覆盖因740未完成，安装目录仍旧候选。证据.build/artifacts/v031-inspection-fix。 用户后续已实际覆盖安装，三负载哈希一致；30MHz专项见v031-installed-30mhz.md，原先等待安装状态已解除。
+- **0.3.1发布准备及最终可用硬件验收**：见v031-release-preparation.md、v031-hardware-acceptance.md。完整Python4566通过/2跳过640.25秒、GUI911、Rust桌面21/SiteAgent6，候选构建及403fad75三项CI通过。NSIS/Skill/SiteAgent哈希冻结，提取候选不等于覆盖安装，UAC人工项豁免。V4.6.2发现1kHz Watch饿死UART，固件修复并明确交接V4.6.3后重新核对UF2/AXF、备份原程序，RTT8+Watch4+UART在100Hz/1kHz/请求1µs三档各5次完整154B响应，读错误0。在线15.50秒/脱机20.75秒/共享27.03秒及失败/停止均恢复采集；OpenOCD halt/step/resume/shutdown、GUI退出AI接续、真实串口记录/队列/广播/文件、RAM RTT搜索通过。512KiB与新备份相同SHA40aab8a117e7db22dfeffd13a2a592ab596bdd28a66fcd4a26443d2e72548732。旧endpoint明确connect恢复同一探针，最后6.018秒退出释放端口。真实原生提取程序冷启动6.006秒、退出不影响AI。VCC未改。现有硬件范围完成；旧型号升级、外部RS485及覆盖安装未实测，不冒称通过。
+- **0.3.1下载、控制权和界面**：下载源码7b9c87a8/资源b91acb92：Python扩大818、最终相关75通过；GUI最终相关150、TypeScript和生产构建通过，真实浏览器模拟API验证拒绝清凭据及完成自动解锁。控制权/Skill源码7e46aabe：最终364项Python/文档回归及Skill quick_validate通过，含真实无硬件后台进程经新管理入口退出/释放实例锁。修复GUI所有权遗留，新增不依赖connect的诊断/定向管理。见v031-download-acquisition.md、v031-runtime-recovery.md。本批未构建NSIS/覆盖Skill或客户电脑实机验证。 固件升级6d2fc0fa：311 Python、54 GUI、57文档通过，自动同身份UF2与无指令手动回退；串口折叠0e6047ac：24 GUI通过；两批TypeScript/生产构建与真实浏览器模拟API通过，草稿折叠保留。报告v031-firmware-update-ui.md、v031-serial-extensions.md。均未打包安装或刷实机。
+- **0.3.1启动及连接修复**：首批启动：1013 Python、905 GUI、21 Rust通过；本地提取包冷启动12.159秒、Web/MCP/CLI通过，实际覆盖安装受WinError740阻挡。连接批次：1175 Python扩大回归通过；最终ed67c134回归404通过；GUI 907通过，生产页面占用提示/管理入口浏览器验证通过（模拟API）。协议50，明确连接重新发现同一USB身份、撤销失效目标会话并保留UART/在途任务；已知MI_04恢复不做多余身份打印；target busy不毒化MUX、不重放写。实体拔插/旧固件/客户电脑待回归。报告v031-startup-audit.md、v031-connections.md；最终本地构建状态见连接报告。
 - **0.3.0正式发布回归**：4471 Python通过/2跳过；902 GUI通过（干净npm ci后再次通过）；签名NSIS安装退出0，三负载哈希匹配。本地Skill更新，7059目标/2224算法；冻结版和Skill MCP/CLI通过。桌面配置/枚举通过；Web由用户手动确认连接STM32与v0.3.0。关闭后无MKLink进程、8765/8766无监听。详见v030-release-handoff.md，不能等同所有实体矩阵重新通过。
 - **CDC多路复用主机接入**：full-function-audit-030.md末尾：最终安装/Skill与算法资产验证、安装MCP/CLI/Web双GUI、双探针独立退出、同机WLAN认证及隔离通过；冻结MCP打包缺陷已修。最终代码90cee876，后续仅生成资源和文档。完整自动化不等于全部实体边界通过，长期及旧持续目标保持暂停。 历史：docs/verification/cdc-multiplex-host.md：1362后端通过/2跳过，最终Bridge补测69通过；GUI整套851通过、最终相关52通过，生产构建及真实Edge/stdio MCP短测通过。双RTT+Watch+内存读写校验恢复、CLI多通道采集、会话恢复通过。全仓离线安全算法资源及联网wheel测试未通过/未完成。 Skill旧通道上限断言已修正，反馈契约66项通过。 MUX及RTT GUI回归已加入现有CI测试清单。 见cdc-multiplex-host.md安装补验：f17e4047三项CI通过，本地NSIS安装退出0，三负载哈希匹配；sidecar与Skill算法7059/2224验证。安装版Web双RTT+Watch+本地Skill stdio MCP通过，正常关闭6.16秒释放COM；原生桌面及CLI双通道共存、正常退出通过。 RTT多面板与0.3.0记录：54项相关GUI通过，真实浏览器收起保留及双通道+Watch+MCP通过。 b21d071c多面板安装/Skill覆盖、原生版本弹窗与安装态共存补验通过，5.75秒退出。 各通道平等版474ef405：188后端/65GUI、三项CI通过，安装与本地Skill覆盖、真实Web双通道/Watch/MCP/CLI、6.03秒退出释放COM及原生版本说明通过。 V3迁移补验：offline_download/device_configuration两套111通过；首次未绑定本地算法资产时21失败，绑定既有MKLINK_BUILTIN_FLM_ROOT后通过。V3真实配置读取及错误容量拒绝通过，无保护/电压写入。
 - **149固件与后台空闲退出**：docs/verification/runtime-idle-mux-149.md：最终安装版GUI退出6.05秒、AI强杀5.40秒释放COM；真实双网页退出通过，网络排空上限回归4项通过，5508bd06三项CI及固件4ab77c2两项CI通过。 新补验：runtime-idle-deadline.md：保留5秒租约和所有忙碌保护，仅消除最长约1秒的轮询量化；44测试通过，源码真机多客户端和RTT8通过，端口5.232秒释放，后台5.420秒退出。不承诺硬实时5秒；打包安装待后续。 打包补验：3e65f1ad本地NSIS已生成、本地Skill更新；冻结MCP+Skill MCP精简PATH通过，提取包多客户端RTT8/CLI真机端口5.241秒释放，进程5.427秒退出，无Python子进程。包内Web39文件一致；非覆盖安装。
-- **统一远程GUI**：148：应用06494629安装及Skill同步，三项包内负载哈希一致；109后端、247GUI通过，测试修正ff0c5b4c三项CI通过。源码RTT及安装版Memory/符号/SuperWatch、断线禁用并保留快照、桌面代理读取与管理拒绝通过；仅同机LAN短测。
-- **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
-- **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
-- **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
-- **实机与SuperWatch**：docs/verification/v030-release-prep-20261007.md：4471 Python通过/2跳过、902 GUI通过，生产构建通过。V4 3bc7ef7 SES与布局通过、37原生及USB恢复通过；Keil下载校验、RTT8+Watch运行/暂停/单步/恢复/退出通过，初始化后模式校验与传输丢弃为0。无DAP30秒271576.69/s、最大相邻73us、无>1ms。OpenOCD1MHz并行4区域1ms约225~236/s，下载校验与恢复通过，不保证设定频率。安装态和本地Skill待补验；保留其他功能矩阵的实体边界。
 
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议49，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议50，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V3 main bdd18d7、V4 main ed73ae9已通过CI并合并推送；本地已切main。Arm-2D/MicroBoot等子模块保持原状。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -41,15 +41,17 @@
 
 ## 真机环境
 
-- **state**：V4/HPM5301共存与无DAP性能已短测；V3/STM32完成stage95短测后拔出。V4最终固件136525 samples/s、最大84us、无毫秒间隔；V3 269477 samples/s、最大79us。不能外推所有组合或长期。
-- **installer**：正式0.3.0：ec1d2834源码签名NSIS覆盖安装成功，本地Skill同步；安装负载哈希、冻结MCP/CLI及退出释放验证通过。
+- **state**：本轮只读RAM及采样回归结束，未改VCC、未复位或写目标程序。采集及客户端均停止，最终endpoint删除，无MKLink进程残留。硬件已释放，自动跟进仍暂停。100ms时间戳合批正常；独立30MHz Flash连续读取status5仍待固件专项。
+- **installer**：用户安装目录仍acdcc997。新77d4849c本地未签名NSIS已构建并提取原生真机验证，SHA043bfd222208d2b33705b6d81144d7b62dd7e20f0d75061c1cbe9fdc7b6159c0；不是新覆盖安装。管理员确认项依用户豁免跳过。Skill及SiteAgent候选也更新至同源代码，见v031-release-preparation.md。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 后续修复HPM/SES退出遗留DAP占用，并补齐最终固件的完整原生SES/Keil边界矩阵；当前已知限制随发布说明公开。
-2. 网站任务按v030-release-handoff.md与正式Release更新内容；不宣称本轮完成网站部署。
-3. 长期验证继续暂停，等待用户后续通知；保持正式版本标签与同版本发布资产不可变。
+1. 审阅队列修复与最终回归报告v031-dump-queue.md；新本地NSIS/Skill/SiteAgent候选在.build/artifacts/v031-dump-fix-77d4849c，旧安装和旧发布候选不能冒称已含此次修复。
+2. 30MHz Flash128B/1kHz连续读取status5仍未稳定通过；固件会话仅源码确认普通SWD/AP读路径失败，未改硬件/固件。按用户最新要求仅交接保留限制及显式10MHz替代，下一版本处理；需要专项时先明确设备交接，不吞错误或自动降档。
+3. 正式合并、签名和发布仍待用户明确授权。产品/资源最终f586fd94已完整回归并CI通过；后续仅文档。正式main产物需按发布流程构建签名并核对三端资产，不提前改渠道。
+4. 发布组合需V4.6.3或后续UART修复固件；公开固件渠道仍V4.6.0。旧型号升级、缺失夹具等限制按硬件报告保留，UAC人工确认已豁免。
+5. mklink自动跟进与长期验证继续暂停；本轮设备已释放。VCC改动仍逐次确认具体电压，只回烧有备份的已知程序。
 
 ## 已知限制
 

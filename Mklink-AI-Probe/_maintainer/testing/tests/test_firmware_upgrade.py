@@ -2,6 +2,7 @@ from pathlib import Path
 import hashlib
 import io
 import os
+import pytest
 from urllib.error import URLError
 
 from mklink import firmware_check as fc
@@ -390,6 +391,45 @@ def test_manual_upgrade_result_includes_latest_download_details(monkeypatch, tmp
         "family": "microlink",
         "download_available": True,
     }
+
+
+@pytest.mark.parametrize('failure', ['unsupported', 'missing_drive', 'identity_changed'])
+def test_failed_bootloader_entry_returns_download_instead_of_exception(monkeypatch, tmp_path, failure):
+    _readme(tmp_path, 'V3.3.6')
+    firmware = tmp_path / 'MicroLink_V3.3.7.uf2'
+    firmware.write_bytes(_valid_uf2())
+    candidate = fc.FirmwareInfo(firmware.name, fc.Version(3, 3, 7), 'V3', firmware)
+    monkeypatch.setattr(fc, 'latest_firmware', lambda *a, **kw: candidate)
+    monkeypatch.setattr(fc, '_wait_for_bootloader_drive', lambda *a: None if failure == 'missing_drive' else str(tmp_path))
+    monkeypatch.setattr(fc.shutil, 'copyfile', lambda *a: pytest.fail('Copied to unverified bootloader'))
+    class Device:
+        def enter_bootloader(self):
+            if failure == 'unsupported': raise TimeoutError('unsupported')
+    result = fc.upgrade_probe_firmware(Device(), tmp_path, confirm=True, disk_reader=lambda: str(tmp_path),
+                                      bootloader_finder=lambda: None)
+    assert result['status'] == 'manual_required' and result['download_available']
+    assert result['model'] == 'V3' and result['firmware'] == firmware.name
+
+
+def test_bound_update_copies_and_verifies_without_global_drive_scan(monkeypatch, tmp_path):
+    application = tmp_path / 'application'
+    boot = tmp_path / 'boot'
+    application.mkdir(); boot.mkdir()
+    _readme(application, 'V4.5.2')
+    (boot / 'INFO_UF2.TXT').write_text('Board-ID: MicroKeenLink\n', encoding='ascii')
+    firmware = tmp_path / 'MicroLink_V4.6.0.uf2'
+    firmware.write_bytes(_valid_uf2())
+    candidate = fc.FirmwareInfo(firmware.name, fc.Version(4, 6, 0), 'V4', firmware)
+    monkeypatch.setattr(fc, 'latest_firmware', lambda *a, **kw: candidate)
+    def forbidden(): pytest.fail('Bound update used global drive scan')
+    monkeypatch.setattr(fc, '_probe_disk', forbidden)
+    monkeypatch.setattr(fc, '_find_bootloader_disk', forbidden)
+    class Device:
+        def enter_bootloader(self): _readme(application, 'V4.6.0')
+    result = fc.upgrade_probe_firmware(Device(), tmp_path, confirm=True,
+                                      disk_reader=lambda: str(application), bootloader_finder=lambda: str(boot))
+    assert result['status'] == 'updated' and result['verified_version'] == 'V4.6.0'
+    assert (boot / firmware.name).read_bytes() == firmware.read_bytes()
 
 
 def test_firmware_download_endpoint_returns_binary_and_source(monkeypatch, tmp_path):

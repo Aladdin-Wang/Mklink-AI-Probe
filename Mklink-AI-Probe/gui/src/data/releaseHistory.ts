@@ -9,6 +9,23 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.3.1', date: '2026-10-08',
+    summary: '改善连接恢复、烧录与固件升级',
+    summaryEn: 'Improve connection recovery, flashing and firmware updates',
+    changes: [
+      '修复慢电脑后台启动超时、拔插后重连及 GUI / AI 共享控制权恢复。',
+      '在线、脱机烧录自动暂停采集并在结束后恢复，修复共享烧录等待卡住。',
+      '支持的下载器自动升级；旧版提供本地固件下载和按键升级步骤。',
+      '串口助手扩展功能默认折叠，RTT 搜索跳过无效签名。',
+    ],
+    changesEn: [
+      'Fix slow backend startup, reconnect after replug and shared GUI / AI control recovery.',
+      'Pause and restore capture around online/offline flashing; fix stalled shared flash jobs.',
+      'Update supported probes automatically; offer firmware downloads and button instructions for older probes.',
+      'Collapse optional Serial Assistant panels and skip invalid RTT signatures during search.',
+    ],
+  },
+  {
     version: '0.3.0', date: '2026-10-08',
     summary: '共享连接、多通道 RTT 与高速采集',
     summaryEn: 'Shared connections, multichannel RTT and high-speed capture',

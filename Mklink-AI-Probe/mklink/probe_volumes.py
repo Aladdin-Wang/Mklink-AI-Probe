@@ -67,7 +67,8 @@ def resolve_volume(probe_id):
     if not probe['identity_stable']:
         raise RuntimeError('MSC requires a unique USB serial number')
     identity = (probe['vid'], probe['pid'], probe['serial_number'].casefold())
-    matches = [row for row in volume_inventory() if row.get('usb_identity') == identity]
+    matches = [row for row in volume_inventory() if row.get('usb_identity') == identity
+               and row.get('label', 'MICROKEEN') == 'MICROKEEN']
     if len(matches) != 1:
         raise RuntimeError('Bound probe must have exactly one verified MICROKEEN volume; no disk selected')
     row = matches[0]
@@ -75,3 +76,44 @@ def resolve_volume(probe_id):
     if not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', row['root'], re.I):
         raise RuntimeError('A stable Windows volume GUID is required')
     return {'probe_id': probe_id, 'root': row['root'], 'drive': row['drive'], 'verified': True}
+
+
+class FirmwareVolumes:
+    """Retain USB identity while CDC disappears during a UF2 update.
+
+    V3/V4 application descriptors expose OTP words 88/89 (16 hex chars);
+    MicroLink/HPMLink UF2 descriptors expose words 88..91 (32 hex chars).
+    Never identify the bootloader by label, drive letter or enumeration order.
+    """
+    def __init__(self, probe):
+        if not probe['identity_stable']:
+            raise RuntimeError('Firmware update requires a unique USB serial number')
+        self.identity = (probe['vid'], probe['pid'], probe['serial_number'].casefold())
+
+    def find(self, *, bootloader=False):
+        def matches(row):
+            identity = row.get('usb_identity')
+            if not identity:
+                return False
+            if identity == self.identity:
+                return True
+            return (bootloader and identity[:2] == self.identity[:2] == (0x0d28, 0x0202)
+                    and re.fullmatch('[0-9a-f]{16}', self.identity[2]) is not None
+                    and re.fullmatch('[0-9a-f]{32}', identity[2]) is not None
+                    and identity[2][:16] == self.identity[2])
+        rows = [row for row in volume_inventory() if matches(row)]
+        if len(rows) != 1:
+            return None
+        root = rows[0]['root']
+        if not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', root, re.I):
+            return None
+        if bootloader:
+            try:
+                info = (Path(root) / 'INFO_UF2.TXT').read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                return None
+            if not re.search(r'(?m)^Board-ID:\s*MicroKeenLink\s*$', info):
+                return None
+        elif rows[0].get('label') != 'MICROKEEN':
+            return None
+        return root

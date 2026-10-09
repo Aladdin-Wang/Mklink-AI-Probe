@@ -29,7 +29,7 @@ function detailMessage(detail: unknown, fallback: string): string {
   if (detail && typeof detail === 'object') {
     const value = detail as Record<string, unknown>
     if (value.code === 'PROBE_BUSY') {
-      return tr(`探针正被 ${resourceOwnerLabel(value.conflict_owner ?? value.owner)} 占用，请先停止该功能后重试。`, `The probe is in use by ${resourceOwnerLabel(value.conflict_owner ?? value.owner)}. Stop it and retry.`)
+      return tr(`探针正在执行 ${resourceOwnerLabel(value.conflict_owner ?? value.owner)} 的操作，请等待操作完成。`, `The probe is executing an operation for ${resourceOwnerLabel(value.conflict_owner ?? value.owner)}. Wait for it to finish.`)
     }
     if (typeof value.message === 'string') return value.message
     try { return JSON.stringify(value) } catch { return fallback }
@@ -37,9 +37,18 @@ function detailMessage(detail: unknown, fallback: string): string {
   return fallback
 }
 
+export class OfflineFlashApiError extends Error {
+  readonly notStarted: boolean
+  constructor(message: string, notStarted: boolean) {
+    super(message)
+    this.notStarted = notStarted
+  }
+}
+
 async function responseError(response: Response): Promise<Error> {
   const payload = await response.json().catch(() => null)
-  return new Error(detailMessage(payload?.detail, response.statusText || `HTTP ${response.status}`))
+  return new OfflineFlashApiError(detailMessage(payload?.detail, response.statusText || `HTTP ${response.status}`),
+    response.headers.get('X-MKLink-Submission') === 'not-started')
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -85,8 +94,10 @@ export function useOfflineFlashApi() {
     body.append('request_id', requestId)
     firmwareFiles.forEach(file => body.append('firmware_files', file, file.name))
     flmFiles.forEach(file => body.append('flm_files', file, file.name))
-    return request<OfflineDeployResult>('/deploy', { method: 'POST', body }).catch(error => {
-      throw new Error(`${error instanceof Error ? error.message : String(error)}; request_id=${requestId}`)
+    return request<OfflineDeployResult>('/deploy', { method: 'POST', body,
+      headers: { 'X-MKLink-Request-Id': requestId } }).catch(error => {
+      if (error instanceof Error) { error.message += `; request_id=${requestId}`; throw error }
+      throw new Error(`${String(error)}; request_id=${requestId}`)
     })
   }
 

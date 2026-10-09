@@ -2,6 +2,40 @@ import pytest
 from mklink import probe_volumes as volumes
 
 
+@pytest.mark.parametrize('serial,expected', [
+    ('0123456789abcdef', True), ('0123456789abcdef1111222233334444', True),
+    ('0123456789abcdee1111222233334444', False), ('0123456789abcdef12', False),
+])
+def test_firmware_bootloader_uses_exact_or_documented_uid_mapping(monkeypatch, serial, expected):
+    from pathlib import Path
+    root = '\\\\?\\Volume{11111111-1111-1111-1111-111111111111}\\'
+    row = {'usb_identity': (0xd28, 0x202, serial), 'root': root, 'label': 'UF2'}
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda: [row])
+    monkeypatch.setattr(Path, 'read_text', lambda self, **kw: 'UF2 Bootloader\r\nBoard-ID: MicroKeenLink\r\n')
+    binding = volumes.FirmwareVolumes({'identity_stable': True, 'vid': 0xd28, 'pid': 0x202,
+                                      'serial_number': '0123456789ABCDEF'})
+    assert binding.find(bootloader=True) == (root if expected else None)
+    assert binding.find() is None
+
+
+def test_firmware_bootloader_never_uses_another_or_ambiguous_disk(monkeypatch):
+    from pathlib import Path
+    root = '\\\\?\\Volume{11111111-1111-1111-1111-111111111111}\\'
+    row = {'usb_identity': (0xd28, 0x202, '0123456789abcdef1111222233334444'), 'root': root}
+    rows = [row, dict(row)]
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda: rows)
+    monkeypatch.setattr(Path, 'read_text', lambda self, **kw: 'Board-ID: MicroKeenLink\n')
+    binding = volumes.FirmwareVolumes({'identity_stable': True, 'vid': 0xd28, 'pid': 0x202,
+                                      'serial_number': '0123456789abcdef'})
+    assert binding.find(bootloader=True) is None
+    rows.pop()
+    row['root'] = 'G:\\'  # reused drive letters are never accepted
+    assert binding.find(bootloader=True) is None
+    row['root'] = root
+    monkeypatch.setattr(Path, 'read_text', lambda self, **kw: 'Board-ID: OtherBoard\n')
+    assert binding.find(bootloader=True) is None
+
+
 def test_volume_binding_uses_full_usb_identity_and_stable_volume_path(monkeypatch):
     monkeypatch.setattr('mklink.probes.select_probe', lambda _: {
         'identity_stable': True, 'vid': 0xd28, 'pid': 0x202, 'serial_number': 'FIRST'})

@@ -37,6 +37,28 @@ def test_missing_b1_block_stops_and_fails(monkeypatch):
     session.stop.assert_called_once()
 
 
+def test_packed_measurement_preserves_cross_batch_timestamp_gaps(monkeypatch):
+    from mklink.mux_watch import PackedWatchSample
+    frames = [PackedWatchSample(t, b'abcd', 0) for t in (0, 200000, 200004, 208417)]
+    dev, session = run_frames(monkeypatch, frames, 4)
+    result = measure(dev, [(0x20000000, 4)], duration=1)
+    assert session.packed_frames is True
+    assert result['samples'] == 3
+    assert result['max_interval_us'] == 8413
+    assert result['incomplete_tail'] is False
+    session.stop.assert_called_once()
+
+
+def test_queue_byte_loss_cannot_return_success(monkeypatch):
+    from mklink.mux_watch import PackedWatchSample
+    dev, session = run_frames(monkeypatch,
+        [PackedWatchSample(t, b'abcd', 0) for t in (0, 200000, 210000)], 4)
+    session.stats['parser_dropped_bytes'] = 1024
+    with pytest.raises(RuntimeError, match='max_interval_us=10000'):
+        measure(dev, [(0x20000000, 4)], duration=1)
+    session.stop.assert_called_once()
+
+
 @pytest.mark.parametrize('kwargs',[{'duration':31},{'duration':float('nan')},{'period':0},{'period':float('inf')}])
 def test_invalid_measurement_never_touches_device(kwargs):
     dev=Mock()
