@@ -9,6 +9,8 @@ on:
       - 'Mklink-AI-Probe/scripts/build_workspace.ps1'
       - 'Mklink-AI-Probe/mklink/remote/stcp.py'
       - 'Mklink-AI-Probe/mklink/usb*.py'
+      - 'Mklink-AI-Probe/mklink/*probe_volumes.py'
+      - 'Mklink-AI-Probe/packaging/linux/**'
       - 'Mklink-AI-Probe/mklink/discovery.py'
       - 'Mklink-AI-Probe/mklink/serial/_port.py'
       - 'Mklink-AI-Probe/_maintainer/testing/desktop_unix_smoke.py'
@@ -73,7 +75,7 @@ jobs:
       - name: Build native desktop installer
         run: ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('skills/tauri-gui-builder/scripts/build_unix.py')
       - name: USB regression tests
-        run: ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('-m', 'pytest', '-q', '_maintainer/testing/tests/test_usb_interfaces.py', '_maintainer/testing/tests/test_usb_platform.py', '_maintainer/testing/tests/test_discovery.py')
+        run: ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('-m', 'pytest', '-q', '_maintainer/testing/tests/test_usb_interfaces.py', '_maintainer/testing/tests/test_usb_platform.py', '_maintainer/testing/tests/test_discovery.py', '_maintainer/testing/tests/test_probe_volumes.py', '_maintainer/testing/tests/test_posix_probe_volumes.py')
       - name: Qualify frozen backend and installed package contents
         run: ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('_maintainer/testing/desktop_unix_smoke.py', '${{ matrix.target }}')
       - name: Upload installers and qualification report

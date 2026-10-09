@@ -1,4 +1,4 @@
-"""Identity-bound Windows MSC discovery. Labels/drive letters never identify a probe."""
+"""Identity-bound MSC discovery. Labels/mount names never identify a probe."""
 from __future__ import annotations
 
 import ctypes
@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 
 
 def usb_ancestor(instance_id):
@@ -35,7 +36,12 @@ def usb_ancestor(instance_id):
 
 def volume_inventory():
     if os.name != 'nt':
-        raise RuntimeError('Identity-bound MSC discovery is currently supported on Windows only')
+        from mklink.posix_probe_volumes import macos_volume_inventory, linux_volume_inventory
+        if sys.platform == 'darwin':
+            return macos_volume_inventory()
+        if sys.platform.startswith('linux'):
+            return linux_volume_inventory()
+        raise RuntimeError('USB volume discovery is unavailable on this operating system')
     script = Path(__file__).with_name('windows_probe_volumes.ps1')
     powershell = shutil.which('pwsh') or shutil.which('powershell.exe')
     if not powershell:
@@ -61,6 +67,16 @@ def volume_inventory():
     return rows
 
 
+def validated_volume_root(row):
+    if row.get('platform') in ('darwin', 'linux'):
+        from mklink.posix_probe_volumes import validate_mount
+        if not validate_mount(row):
+            raise RuntimeError('Verified USB volume is no longer mounted; no disk selected')
+    elif not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', row['root'], re.I):
+        raise RuntimeError('A stable Windows volume GUID is required')
+    return row['root']
+
+
 def resolve_volume(probe_id):
     from mklink.probes import select_probe
     probe = select_probe(probe_id)
@@ -72,10 +88,7 @@ def resolve_volume(probe_id):
     if len(matches) != 1:
         raise RuntimeError('Bound probe must have exactly one verified MICROKEEN volume; no disk selected')
     row = matches[0]
-    # Volume GUID paths remain tied to the volume if Windows reuses a drive letter.
-    if not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', row['root'], re.I):
-        raise RuntimeError('A stable Windows volume GUID is required')
-    return {'probe_id': probe_id, 'root': row['root'], 'drive': row['drive'], 'verified': True}
+    return {'probe_id': probe_id, 'root': validated_volume_root(row), 'drive': row['drive'], 'verified': True}
 
 
 class FirmwareVolumes:
@@ -104,8 +117,9 @@ class FirmwareVolumes:
         rows = [row for row in volume_inventory() if matches(row)]
         if len(rows) != 1:
             return None
-        root = rows[0]['root']
-        if not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', root, re.I):
+        try:
+            root = validated_volume_root(rows[0])
+        except RuntimeError:
             return None
         if bootloader:
             try:

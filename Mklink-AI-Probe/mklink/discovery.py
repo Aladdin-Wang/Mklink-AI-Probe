@@ -182,18 +182,16 @@ def _find_posix_microkeen_disk() -> str | None:
 
 
 def find_microkeen_disk() -> str | None:
-    """Resolve the bound probe's volume; unbound Windows callers require one probe.
+    """Resolve the selected USB device's volume on Windows, macOS and Linux.
 
-    Windows drive letters, volume labels and environment overrides are not
-    device identities. The legacy POSIX mount lookup remains independent.
+    Unbound callers require exactly one probe; names and environment overrides
+    must not bypass physical device identity on any platform.
     """
     from mklink.probes import bound_probe, select_probe
     from mklink.probe_volumes import resolve_volume
 
     probe_id = bound_probe()
     if probe_id is None:
-        if os.name != "nt":
-            return _find_posix_microkeen_disk()
         probe_id = select_probe()['probe_id']
     return resolve_volume(probe_id)['root']
 

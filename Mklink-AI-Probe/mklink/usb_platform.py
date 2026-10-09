@@ -89,9 +89,9 @@ def macos_interface_number(info):
 def linux_interface_number(info, *, sysfs_root=Path("/sys/class/tty")):
     """Use bInterfaceNumber from the selected tty's sysfs ancestry."""
     device_string = str(getattr(info, "device", ""))
-    device = Path(device_string)
     if not device_string.startswith("/dev/"):
         return None
+    device = Path(device_string)
     try:
         node = (Path(sysfs_root) / device.resolve().name / "device").resolve(strict=True)
         number = None

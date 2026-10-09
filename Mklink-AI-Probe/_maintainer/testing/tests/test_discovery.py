@@ -212,8 +212,7 @@ def test_probe_port_terminates_a_partial_repl_line_before_identity(monkeypatch):
     ]
 
 
-def test_unbound_windows_disk_uses_probe_identity_not_label_or_override(monkeypatch):
-    monkeypatch.setattr(discovery.os, "name", "nt")
+def test_unbound_disk_uses_probe_identity_not_label_or_override(monkeypatch):
     monkeypatch.setattr('mklink.probes._bound_probe', None)
     monkeypatch.setenv('MKLINK_MICROKEEN_DISK', 'E:')
     monkeypatch.setattr('mklink.probes.inventory', lambda: [{'probe_id': 'selected'}])
@@ -229,10 +228,9 @@ def test_unbound_windows_disk_uses_probe_identity_not_label_or_override(monkeypa
     assert resolved == ['selected']
 
 
-def test_unbound_windows_disk_rejects_missing_or_multiple_probes_before_volume_io(monkeypatch):
+def test_unbound_disk_rejects_missing_or_multiple_probes_before_volume_io(monkeypatch):
     import pytest
     from mklink.runtime import RuntimeErrorResponse
-    monkeypatch.setattr(discovery.os, "name", "nt")
     monkeypatch.setattr('mklink.probes._bound_probe', None)
     monkeypatch.setenv('MKLINK_MICROKEEN_DISK', 'E:')
     monkeypatch.setattr('mklink.probe_volumes.resolve_volume', lambda *a: pytest.fail('Ambiguous disk resolution'))
@@ -242,9 +240,8 @@ def test_unbound_windows_disk_rejects_missing_or_multiple_probes_before_volume_i
             discovery.find_microkeen_disk()
 
 
-def test_unbound_windows_missing_volume_does_not_fall_back_to_label(monkeypatch):
+def test_unbound_missing_volume_does_not_fall_back_to_label(monkeypatch):
     import pytest
-    monkeypatch.setattr(discovery.os, "name", "nt")
     monkeypatch.setattr('mklink.probes._bound_probe', None)
     monkeypatch.setattr('mklink.probes.inventory', lambda: [{'probe_id': 'selected'}])
     def missing(probe_id):

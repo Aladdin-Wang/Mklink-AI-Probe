@@ -53,7 +53,10 @@ def unix_bundle_config(config_path: Path, system: str):
     if system == "Darwin":
         bundle["macOS"] = {"minimumSystemVersion": "11.0", "signingIdentity": "-"}
     else:
-        bundle["linux"] = {"deb": {"depends": ["libwebkit2gtk-4.1-0", "libusb-1.0-0", "libudev1"]}}
+        bundle["linux"] = {"deb": {
+            "depends": ["libwebkit2gtk-4.1-0", "libusb-1.0-0", "libudev1"],
+            "files": {"/lib/udev/rules.d/70-mklink.rules": "../../packaging/linux/70-mklink.rules"},
+        }}
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     try:
         yield
@@ -78,6 +81,8 @@ def main():
     target = builder.native_target()
     output = Path(os.environ["MKLINK_BUILD_OUTPUT_DIR"]) / target
     output.mkdir(parents=True, exist_ok=True)
+    if system == "Linux":
+        shutil.copy2(root / "packaging" / "linux" / "70-mklink.rules", output / "70-mklink.rules")
     library_name = "libmklink-stcp.dylib" if system == "Darwin" else "libmklink-stcp.so"
     native = root / "native" / "stcp_bridge"
     (native / "build").mkdir(exist_ok=True)

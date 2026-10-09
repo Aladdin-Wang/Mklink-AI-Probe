@@ -31,3 +31,13 @@
 云构建机无探针；冻结 CLI/MCP、后端健康、Web 资源与退出检查不等同交互式安装及硬件验收。
 Mac 包仅 ad-hoc 签名，无 Apple Developer ID 公证；不签署更新包，不自动发布。
 现有远程服务密钥保存和原生剪贴板仍为 Windows 专用实现；本轮不得宣称这些功能跨平台验收完成。
+MSC 卷绑定现按系统识别：Windows 保留卷 GUID；macOS 由 IORegistry 中 IOMedia BSD Name
+沿 USB 设备祖先关联 VID/PID/序列号，再用 diskutil plist 读取实际挂载点与卷名；Linux 由
+mountinfo 的设备号关联 lsblk 卷元数据和 sysfs USB 祖先。不使用卷名/目录名猜身份，不按
+枚举顺序选盘。每次解析重新盘点；POSIX 挂载点在返回前检查设备号与 inode，卸载后残留目录、
+链接、身份改变、重复匹配均拒绝。运行态与 UF2 升级共用解析，保留已知 UID 映射和板型检查。
+未挂载的卷交给操作系统/用户挂载，程序不会自动提权或挂载其他磁盘。
+这不是从发现到所有后续文件操作的原子句柄认证，不能宣称拔盘/重挂载竞态完全消除。
+新增系统元数据 fixture 覆盖多设备同卷标、错身份、过期挂载、空序列号及 UF2；Mac/Linux
+真实脱机写入和重枚举仍待客户候选包复测。Linux DEB 携带限定 VID/PID 的 udev 规则；
+AppImage 同目录提供该规则，权限配置需客户按实际发行版管理。

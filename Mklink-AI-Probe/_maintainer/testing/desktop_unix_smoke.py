@@ -59,7 +59,7 @@ def main():
         subprocess.run([str(image), "--appimage-extract"], cwd=work, check=True, stdout=subprocess.DEVNULL)
         assert (work / "squashfs-root" / "usr" / "bin" / "mklink-sidecar").is_file()
     sidecar = binary_root / "mklink-sidecar"
-    cli = subprocess.run([str(sidecar), "mcu-detect", "--device", "STM32F103RE"], cwd=workspace, env=env, text=True, capture_output=True, timeout=90)
+    cli = subprocess.run([str(sidecar), "mcu-detect", "--device", "STM32F103RE", "--json"], cwd=workspace, env=env, text=True, capture_output=True, timeout=90)
     if cli.returncode or '"candidates"' not in cli.stdout or "STM32F103" not in cli.stdout:
         raise RuntimeError(f"Frozen CLI failed: {cli.stdout}\n{cli.stderr}")
     asyncio.run(check_mcp(sidecar, env, workspace))
@@ -80,7 +80,14 @@ def main():
             def get(path):
                 with opener.open(origin + path, timeout=15) as response:
                     return response.read()
-            health = json.loads(get("/api/health"))
+            while True:
+                try:
+                    health = json.loads(get("/api/health"))
+                    break
+                except (OSError, ValueError):
+                    if process.poll() is not None or time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.2)
             assert health["status"] == "ok", health
             html = get("/").decode()
             assets = re.findall(r'(?:src|href)="([^\"]+\.(?:js|css))"', html)
