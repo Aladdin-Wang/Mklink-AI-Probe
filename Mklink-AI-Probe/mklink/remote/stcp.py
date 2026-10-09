@@ -163,15 +163,19 @@ def _candidate_libraries(explicit: str | Path | None) -> list[Path]:
     if configured:
         candidates.append(Path(configured).expanduser())
     executable_root = Path(sys.executable).resolve().parent
+    library_name = ("mklink-stcp.dll" if sys.platform == "win32" else
+                    "libmklink-stcp.dylib" if sys.platform == "darwin" else "libmklink-stcp.so")
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        candidates.append(Path(sys._MEIPASS) / library_name)
     candidates.extend(
         [
-            executable_root / "mklink-stcp.dll",
-            executable_root / "lib" / "mklink-stcp.dll",
+            executable_root / library_name,
+            executable_root / "lib" / library_name,
             Path(__file__).resolve().parents[2]
             / "native"
             / "stcp_bridge"
             / "build"
-            / "mklink-stcp.dll",
+            / library_name,
         ]
     )
     result: list[Path] = []

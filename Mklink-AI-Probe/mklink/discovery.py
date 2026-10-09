@@ -23,6 +23,7 @@ from mklink.usb_interfaces import (
     MKLINK_COMMAND_INTERFACE,
     is_mklink_usb_port,
     usb_interface_number,
+    usb_interface_numbers,
 )
 
 # MICROKEEN 磁盘名称
@@ -94,9 +95,10 @@ def discover_mklink_command_ports() -> list[object]:
     Missing interface metadata is not permission to send commands to arbitrary
     UARTs. Such devices require an explicitly selected port for connection.
     """
-    return [port for port in list_ports.comports()
+    ports = list(list_ports.comports())
+    return [port for port, number in zip(ports, usb_interface_numbers(ports))
             if is_mklink_usb_port(port)
-            and usb_interface_number(port) == MKLINK_COMMAND_INTERFACE]
+            and number == MKLINK_COMMAND_INTERFACE]
 
 
 def find_mklink_cdc_port(serial_number: object = None) -> str | None:

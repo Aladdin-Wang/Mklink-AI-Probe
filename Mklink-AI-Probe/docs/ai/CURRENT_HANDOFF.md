@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T13:03:19.089994+08:00`
-- 分支：`main`
-- HEAD：`Official v0.3.1 source 1d61159d8990fe2f9e879100d149be50b32b9a33. Later publication-evidence documentation only; inspect Git for current tip.`
-- 远端 HEAD：`microkeen/main includes PR #33; immutable v0.3.1 points to 1d61159d. Publication documentation follows separately.`
-- 工作树：Official clean-main publication clone retained under ignored .build. Existing primary-checkout changes and running user application were preserved.
-- 当前任务：用户授权的0.3.1及指定MicroLink V4.6.3已正式发布，三端资产和应用/固件索引核对通过。应用tag/source=1d61159d，安装包SHA c1dcaa1c；指定UF2 SHA e960cb70与旧605验收构建不同，仅本次静态校验，不冒称再次HIL。最终签名包冻结MCP/CLI、36项Web资产和原生窗口/退出通过，干净依赖GUI912再次通过；UAC覆盖安装豁免，保留用户当前GUI。status5按要求留交接给下一版本，不在正式发布说明中。详见v031-release-handoff.md。自动跟进与长期测试继续暂停。
-- 状态：`complete`
+- 更新时间：`2026-10-09T14:27:16.7736319+08:00`
+- 分支：`codex/0.3.2-fixes`
+- HEAD：`Based on microkeen/main 078663fe; inspect Git for current 0.3.2 fix head.`
+- 远端 HEAD：`microkeen/main 078663fe; task changes pushed only to codex/0.3.2-fixes.`
+- 工作树：Isolated desktop-platforms worktree; original main checkout and released artifacts preserved.
+- 当前任务：用户要求0.3.2修复分支：修复macOS/Linux USB命令口枚举，生成macOS ARM64/Intel和Linux x64安装包。首轮75项通过，原生CI构建待执行。无真机连接、无发布授权沿用。详情v032-cross-platform.md。
+- 状态：`in_progress`
 
 ## 里程碑
 

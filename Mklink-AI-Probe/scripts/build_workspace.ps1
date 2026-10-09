@@ -27,7 +27,9 @@ if ($BuildRoot -eq $drive) { throw 'A dedicated build subdirectory is required.'
 
 function Assert-BuildPath([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path)
-    if (-not $full.StartsWith($BuildRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Outside build root: $full" }
+    $separator = [IO.Path]::DirectorySeparatorChar
+    $comparison = if ($separator -eq '\') { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    if (-not $full.StartsWith($BuildRoot.TrimEnd($separator) + $separator, $comparison)) { throw "Outside build root: $full" }
     $cursor = $full
     while ($cursor -and $cursor -ne $drive) {
         if (Test-Path -LiteralPath $cursor) {

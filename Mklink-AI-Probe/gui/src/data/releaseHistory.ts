@@ -9,6 +9,19 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.3.2', date: '2026-10-09',
+    summary: '跨平台连接修复与桌面安装包预览',
+    summaryEn: 'Cross-platform USB fixes and desktop package preview',
+    changes: [
+      '修复 macOS USB 拓扑被误读为接口号，以及 Linux 接口名称导致的命令口识别失败。',
+      '补充 macOS Apple Silicon / Intel 和 Linux x64 桌面构建，平台验证进行中。',
+    ],
+    changesEn: [
+      'Fix command-port discovery when macOS topology is mistaken for an interface or Linux interface names obscure metadata.',
+      'Add macOS Apple Silicon / Intel and Linux x64 desktop builds; platform qualification is in progress.',
+    ],
+  },
+  {
     version: '0.3.1', date: '2026-10-08',
     summary: '改善连接恢复、烧录与固件升级',
     summaryEn: 'Improve connection recovery, flashing and firmware updates',
