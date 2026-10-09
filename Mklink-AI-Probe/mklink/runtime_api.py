@@ -19,6 +19,13 @@ from mklink.runtime_capabilities import CAPABILITIES, STREAMS, LIFECYCLE_CAPABIL
 
 RESOURCE_RELEASE_PATHS = frozenset({'/api/resources/release-all', '/api/resources/release'})
 UART_EXCLUSIVE_PATHS = RESOURCE_RELEASE_PATHS | {'/api/probe/firmware-upgrade'}
+# These POSTs parse host files and cache immutable image snapshots. They neither
+# access the probe nor change the active job. In particular, a replacement
+# inspection must not fail while a cancelled inspection is still finishing.
+LOCAL_IMAGE_INSPECTION_PATHS = frozenset({
+    '/api/online-flash/images/inspect',
+    '/api/online-flash/images/inspect-path',
+})
 active_operation = ContextVar('mklink_runtime_operation', default=None)
 
 
@@ -371,7 +378,7 @@ class RuntimeGate:
             or path in {"/api/device/core-registers", "/api/device/hardfault", "/api/device/hardfault-detail",
                         "/api/dash/superwatch/inspect", "/api/probe/firmware-check"}
         ) and not path.startswith(("/api/browser-session/", "/api/runtime/"))
-        if not hardware:
+        if not hardware or (method == 'POST' and path in LOCAL_IMAGE_INSPECTION_PATHS):
             return await self.app(scope, receive, send)
         session_id = headers.get(b"x-mklink-session", b"").decode()
         if is_uart_path(path):

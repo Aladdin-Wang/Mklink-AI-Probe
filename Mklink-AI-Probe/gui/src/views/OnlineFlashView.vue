@@ -890,7 +890,10 @@ async function inspectImage(): Promise<void> {
     preview.setSource({ imageId: result.image_id, start: result.start, size: result.end - result.start })
     await loadVisible(0, 360)
   } catch (error) {
-    if (!(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = tr(`固件检查失败：${message(error)}`, `Firmware inspection failed: ${message(error)}`)
+    if (!disposed && generation === inspectionGeneration && !controller.signal.aborted && inspectionController === controller
+      && !(error instanceof DOMException && error.name === 'AbortError')) {
+      inspectError.value = tr(`固件检查失败：${message(error)}`, `Firmware inspection failed: ${message(error)}`)
+    }
   } finally {
     if (inspectionController === controller) { inspectionController = null; inspectBusy.value = false }
   }

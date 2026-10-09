@@ -1731,6 +1731,42 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
+  it('ignores a superseded desktop inspection failure after the latest inspection succeeds', async () => {
+    const fallback = viewFetch()
+    vi.stubGlobal('isTauri', true)
+    vi.doMock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => 'C:\\firmware\\firmware.hex') }))
+    let finishOld!: (response: Response) => void
+    let inspections = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/images/inspect-path')) {
+        if (++inspections === 1) return new Promise<Response>(resolve => { finishOld = resolve })
+        return new Response(JSON.stringify({
+          image_id: 'latest', file_name: 'firmware.hex', format: 'hex', size: 32,
+          sha256: 'abc123', start: 0x08000000, end: 0x08000020,
+          segments: [{ start: 0x08000000, end: 0x08000020 }], base_address: null,
+          sector_operations_available: true, sectors: [{ address: 0x08000000, size: 0x1000 }],
+        }), { status: 200 })
+      }
+      if (url.includes('/images/source-status?')) return new Response(JSON.stringify({
+        available: true, file_name: 'firmware.hex', size: 32, mtime_ns: 100,
+      }), { status: 200 })
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(inspections).toBe(1))
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('已自动检查'))
+    finishOld(new Response(JSON.stringify({ detail: 'Another shared operation or exclusive job is active' }), { status: 409 }))
+    await flushPromises()
+    expect(wrapper.text()).toContain('已自动检查')
+    expect(wrapper.text()).not.toContain('固件检查失败')
+    wrapper.unmount()
+  })
+
   it('automatically reloads a rebuilt browser firmware file from its retained handle', async () => {
     const fetchMock = viewFetch()
     vi.stubGlobal('fetch', fetchMock)
