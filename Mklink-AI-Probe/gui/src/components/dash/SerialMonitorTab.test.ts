@@ -263,7 +263,8 @@ describe('SerialMonitorTab', () => {
     }
     await vi.waitFor(() => expect(wrapper.find('[data-testid="serial-save-log"]').attributes('disabled')).toBeUndefined())
     expect(wrapper.get('[data-testid="serial-log-text"]').attributes('aria-pressed')).toBe('true')
-    expect((wrapper.get('[data-testid="serial-log-timestamp"]').element as HTMLInputElement).checked).toBe(false)
+    expect((wrapper.get('[data-testid="serial-log-timestamp"]').element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.get('.virtual-log-time').text()).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3}$/)
     expect(wrapper.get('.virtual-log-text').text()).toBe('OK\\n')
     await wrapper.get('[data-testid="serial-log-hex"]').trigger('click')
     expect(wrapper.get('.virtual-log-text').text()).toBe('4F 4B 0A')

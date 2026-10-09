@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T20:43:23.5214307+08:00`
+- 更新时间：`2026-10-09T22:43:27.1017577+08:00`
 - 分支：`codex/0.3.2-fixes`
 - HEAD：`Based on microkeen/main 078663fe; inspect Git for current 0.3.2 fix head.`
 - 远端 HEAD：`microkeen/main 078663fe; task changes pushed only to codex/0.3.2-fixes.`
 - 工作树：Isolated desktop-platforms worktree; original main checkout and released artifacts preserved.
-- 当前任务：0.3.2 e1eee01e 冻结候选完成可用 V4.6.4 硬件矩阵：30MHz Flash时间戳、RTT8/Watch4/UART、并行固件检查、在线/脱机/共享烧录、失败/取消自动恢复、512KiB回读一致。Keil实际下载/断点/单步/退出，552秒258次检查均连接，155次固件读取错误未停采，退出后自动续采；用户确认断点时V4屏幕已连接。OpenOCD通过。Web GUI退出AI接续、后台旧端点重连及6.261秒释放通过。固件另修普通内存错误误触发断线，待新UF2/hash后复测；当前没有新固件验收结论。PR35未合并发布。
+- 当前任务：0.3.2 补充 MHz 输入、确认回退1MHz后保留连接、收发模式毫秒/RX/TX及独立RTT面板尺寸；补齐Mac/Linux自升级载荷和发布映射。专项183 Python/96 GUI通过，完整回归进行中。e1候选实际GUI自动升级V4.6.5已成功，目标512KiB不变。固件已交接最终V4.6.6/V3.6.2候选，尚未刷入及回归。详见v032-release-preparation.md，不继承旧V4.6.4证据。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -41,17 +41,16 @@
 
 ## 真机环境
 
-- **state**：本轮 V4.6.4 UF2 2684d904… 已完成所列可用硬件验收；Keil退出调试、目标运行，完整512KiB与测试前一致。所有测试客户端/后台正常退出、命令/UART端口已证实释放。没有改VCC。固件会话仍只改源码，不凭本次释放自动接管；待新UF2明确交接后主机续验。
+- **state**：V4 当前V4.6.5，由e1候选实际GUI自动升级成功并确认版本；512KiB与旧基线相同，无VCC改动，所有测试客户端已退出。固件交接V4.6.6最终候选未刷入；根会话继续持有硬件验收，完成后明确释放并让固件会话通知用户换V3。
 - **installer**：e1eee01e Windows NSIS SHA256 022c90d7dcf6e9324f690445083d3a06412ec659e47862a68f797b969abe4c89 已提取冻结入口和真机验证，不是覆盖安装。用户UAC确认项豁免。同期Mac arm64/x64及Linux x64云构建37928492193均成功，尚无当地USB/MSC实机证据。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 等待固件会话新的芯片识别/屏幕断线修复UF2及精确hash交接；不得将本轮2684d904的HIL结果移作新固件通过。VCC每次改动仍确认具体电压。
-2. 新固件就绪后完成CHERRYUF2最终策略按钮自动升级及新固件IDE/采集回归；原升级失败后维护续传不等于完整自动升级通过。
-3. 收敛持续物理断线/恢复、RS485外部夹具、Mac/Linux USB/MSC实测；缺硬件如实保留。最新三平台e1候选构建已成功，下载与交付状态核对本地platforms目录。
-4. 本轮Windows为NSIS提取冻结后台和实际Web GUI，不能称新覆盖安装；安装管理员确认验证按用户豁免跳过。PR35只推修复分支，不合并发布0.3.2。
-5. 保留v032-hardware-closure.md、v032-firmware-upgrade.md、v032-superwatch-read-recovery.md及私有hil证据；旧正式发布资产不变，长期验证与mklink自动跟进仍暂停。
+1. 完成本轮全套Python/GUI及新候选构建，真实浏览器验证MHz、毫秒收发与多RTT独立尺寸。
+2. 新冻结候选GUI自动升级V4.6.6并完成采集/烧录/IDE共存/退出回归，V4完成明确释放后协调换V3。
+3. 完成三平台含更新载荷的原生构建与冻结验证，交付候选并记录客户Mac/Linux实机、签名自升级尚未验证。
+4. 逐项维护v032-release-preparation.md；UAC确认豁免，PR35不合并、不签名、不发布。
 
 ## 已知限制
 

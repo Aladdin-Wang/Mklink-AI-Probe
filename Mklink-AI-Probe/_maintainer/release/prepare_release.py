@@ -15,6 +15,11 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import Sequence
 
+try:
+    from _maintainer.release.desktop_assets import collect_desktop_assets
+except ModuleNotFoundError:  # Direct script invocation.
+    from desktop_assets import collect_desktop_assets
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PUBLIC_SKILL_DIRECTORIES = (
@@ -237,6 +242,7 @@ def prepare_release(
     site_agent_archive: Path | str,
     site_agent_manifest: Path | str,
     skill_archive: Path | str | None = None,
+    desktop_manifests: Sequence[Path | str] = (),
 ) -> dict[str, object]:
     if not version or any(separator in version for separator in ("/", "\\")):
         raise ValueError("release version must be a path-safe value")
@@ -284,6 +290,10 @@ def prepare_release(
         ),
     ]
 
+    desktop_updates = {}
+    if desktop_manifests:
+        desktop_sources, desktop_updates = collect_desktop_assets(desktop_manifests, version, source_commit)
+        sources.extend(desktop_sources)
     names: set[str] = set()
     for _source, name in sources:
         folded = name.casefold()
@@ -313,6 +323,8 @@ def prepare_release(
         "versions": _source_versions(),
         "assets": assets,
     }
+    if desktop_updates:
+        manifest["desktop_updates"] = desktop_updates
     (output / "release-manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=True) + "\n",
         encoding="utf-8",
@@ -341,6 +353,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--site-agent-archive", required=True, type=Path)
     parser.add_argument("--site-agent-manifest", required=True, type=Path)
+    parser.add_argument("--desktop-manifest", action="append", default=[], type=Path,
+                        help="Native build manifest; supply all three platforms with signed updater payloads")
     return parser
 
 
@@ -355,6 +369,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         skill_archive=args.skill_archive,
         site_agent_archive=args.site_agent_archive,
         site_agent_manifest=args.site_agent_manifest,
+        desktop_manifests=args.desktop_manifest,
     )
     print(json.dumps({
         "release_version": manifest["release_version"],

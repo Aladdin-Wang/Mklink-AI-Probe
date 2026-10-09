@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import platform
@@ -50,6 +51,15 @@ def main():
         finally:
             subprocess.run(["hdiutil", "detach", str(mount)], check=True)
         binary_root = destination / "Contents" / "MacOS"
+        updater_root = work / "updater-root"
+        updater_root.mkdir()
+        subprocess.run(["tar", "-xzf", str(next(output.glob("*.app.tar.gz"))), "-C", str(updater_root)], check=True)
+        updater_bin = next(updater_root.glob("*.app")) / "Contents" / "MacOS"
+        for executable in ("mklink-ai-probe", "mklink-sidecar"):
+            packaged = binary_root / executable
+            update = updater_bin / executable
+            assert os.access(update, os.X_OK), "Updater lost executable permissions"
+            assert hashlib.sha256(packaged.read_bytes()).digest() == hashlib.sha256(update.read_bytes()).digest()
     else:
         extracted = work / "deb-root"
         subprocess.run(["dpkg-deb", "-x", str(next(output.glob("*.deb"))), str(extracted)], check=True)
@@ -107,6 +117,8 @@ def main():
     report = {"target": target, "frozen_cli": "passed", "frozen_mcp": "passed", "backend_health": health,
               "production_web_assets": len(assets), "startup_seconds": round(elapsed, 3), "graceful_shutdown": "passed",
               "package_contents": "DMG mounted/copied" if platform.system() == "Darwin" else "DEB and AppImage extracted",
+              "updater_payload": "app.tar.gz matches DMG executables and preserves executable permissions" if platform.system() == "Darwin" else "DEB and AppImage payloads use installer-specific updater keys",
+              "signed_update_installation": "not tested; unsigned candidate",
               "native_gui_interaction": "not tested", "system_installer_interaction": "not tested", "usb_hardware": "not tested"}
     (output / "qualification.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

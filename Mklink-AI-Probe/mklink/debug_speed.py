@@ -4,6 +4,10 @@ from __future__ import annotations
 PROFILES = {"low": 4_000_000, "medium": 10_000_000, "high": 20_000_000, "ultra": 30_000_000}
 
 
+class ClockProfileUnavailable(ValueError):
+    """Requested kernel is unavailable, but 1 MHz was explicitly acknowledged."""
+
+
 def validate_clock_hz(hz: int) -> int:
     """Keep legacy clocks up to 10 MHz and the two calibrated high kernels."""
     if type(hz) is not int or not (1 <= hz <= 10_000_000 or hz in (20_000_000, 30_000_000)):
@@ -38,15 +42,24 @@ def apply_bridge_profile(bridge, profile: str) -> dict:
     response = bridge.send_command(f"cmd.set_swd_clock({hz})")
     confirmed = False
     interface = "JTAG" if hpm else "SWD"
+    # Deferred connects set the clock before reading the target IDCODE.
+    # An exact firmware reply can identify the selected transport in that case.
+    if not bridge.idcode and re.search(rf"(?m)^JTAG profile={hz}\s*$", response):
+        interface = "JTAG"
     match = re.search(rf"{interface} profile=(\d+)\b", response)
     confirmed = bool(match and int(match.group(1)) == hz)
     legacy = match is None and profile in ("low", "medium") and f"set clock {hz}" in response
     if not confirmed and not legacy:
         # The command completed but this firmware lacks the exact timing
         # kernel. Restore a conservative clock, never label fallback as high.
-        bridge.send_command("cmd.set_swd_clock(1000000)")
+        fallback = bridge.send_command("cmd.set_swd_clock(1000000)")
+        if not isinstance(fallback, str) or not any(
+            line.strip() == "set clock 1000000" for line in fallback.splitlines()
+        ):
+            bridge._ctx.swd_clock_hz = 0
+            raise ValueError(f"Probe firmware did not confirm {interface} profile or fallback clock")
         bridge._ctx.swd_clock_hz = 1_000_000
-        raise ValueError(f"Probe firmware does not confirm this {interface} profile; restored 1 MHz")
+        raise ClockProfileUnavailable(f"Probe firmware does not confirm this {interface} profile; restored 1 MHz")
     bridge._ctx.swd_clock_hz = hz
     return {"profile": profile, "clock_hz": hz, "profile_confirmed": confirmed,
             "interface": interface,

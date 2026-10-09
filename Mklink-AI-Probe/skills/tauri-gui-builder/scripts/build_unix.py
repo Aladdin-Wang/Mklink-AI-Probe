@@ -115,10 +115,26 @@ def main():
             shutil.copy2(source, destination)
             packages.append({"name": destination.name, "size": destination.stat().st_size,
                              "sha256": hashlib.sha256(destination.read_bytes()).hexdigest()})
+        updater_platforms = {}
+        if system == "Darwin":
+            apps = list((bundles / "macos").glob("*.app"))
+            if len(apps) != 1:
+                raise RuntimeError("Expected one macOS application for updater payload")
+            destination = output / f"Mklink-AI-Probe-v{version}-{target}.app.tar.gz"
+            # Native tar preserves executable modes and framework symlinks.
+            builder.run(["tar", "-czf", str(destination), "-C", str(apps[0].parent), apps[0].name])
+            packages.append({"name": destination.name, "size": destination.stat().st_size,
+                             "sha256": hashlib.sha256(destination.read_bytes()).hexdigest()})
+            arch = "aarch64" if target.startswith("aarch64-") else "x86_64"
+            updater_platforms[f"darwin-{arch}"] = destination.name
+        else:
+            for suffix, installer in [(".AppImage", "appimage"), (".deb", "deb")]:
+                updater_platforms[f"linux-x86_64-{installer}"] = next(p["name"] for p in packages if p["name"].endswith(suffix))
         manifest = {"version": version, "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
                     "target": target, "os": platform.platform(), "python": sys.version,
                     "updater_signed": False, "apple_notarized": False, "hardware_tested": False,
-                    "algorithm_source_sha256": SKILL_SHA256, "files": packages}
+                    "algorithm_source_sha256": SKILL_SHA256, "files": packages,
+                    "updater_platforms": updater_platforms}
         (output / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         (output / "SHA256SUMS.txt").write_text("".join(f"{p['sha256']}  {p['name']}\n" for p in packages), encoding="utf-8")
         print(json.dumps(manifest, indent=2))

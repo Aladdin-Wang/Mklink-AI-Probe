@@ -70,6 +70,7 @@ export interface AxlStatus {
 }
 
 export interface DeviceStatus {
+  clock_warning?: string | null
   connected: boolean
   state: string
   mcu: string | null

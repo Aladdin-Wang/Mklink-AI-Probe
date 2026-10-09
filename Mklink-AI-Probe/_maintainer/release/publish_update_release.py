@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 try:
+    from _maintainer.release.desktop_assets import desktop_layout
+except ModuleNotFoundError:  # Direct script invocation.
+    from desktop_assets import desktop_layout
+
+try:
     import tomllib
 except ImportError:  # pragma: no cover
     import tomli as tomllib
@@ -93,7 +98,18 @@ def validate_release_preflight(
         raise RuntimeError("release version does not match project metadata")
 
     names = _release_names(version)
-    expected_files = {release_dir / name for name in names.values()}
+    manifest = json.loads((release_dir / names["manifest"]).read_text(encoding="utf-8"))
+    desktop_updates = manifest.get("desktop_updates", {})
+    desktop_names = set()
+    if desktop_updates:
+        expected_updates, desktop_names = desktop_layout(version)
+        if desktop_updates != expected_updates:
+            raise RuntimeError("release desktop updater map is incomplete or invalid")
+        for name in desktop_updates.values():
+            signature = release_dir / (name + ".sig")
+            if not signature.is_file() or not signature.read_text(encoding="ascii").strip():
+                raise RuntimeError("desktop updater signature is missing or empty")
+    expected_files = {release_dir / name for name in set(names.values()) | desktop_names}
     actual_files = {path for path in release_dir.iterdir() if path.is_file()}
     if actual_files != expected_files:
         raise RuntimeError("release directory has an unexpected public asset set")
@@ -102,15 +118,14 @@ def validate_release_preflight(
     if updater_signature.resolve() != (release_dir / names["updater_signature"]).resolve():
         raise RuntimeError("updater signature filename does not match the release version")
 
-    manifest = json.loads((release_dir / names["manifest"]).read_text(encoding="utf-8"))
     if manifest.get("release_version") != version or manifest.get("source_commit") != head:
         raise RuntimeError("release manifest version or source commit does not match HEAD")
     expected_payload_names = {
         names["setup"], names["updater_signature"], names["skill"],
         names["site_agent"], names["site_agent_manifest"],
-    }
+    } | desktop_names
     assets = manifest.get("assets")
-    if not isinstance(assets, list) or len(assets) != 5 or not all(
+    if not isinstance(assets, list) or len(assets) != len(expected_payload_names) or not all(
         isinstance(value, dict) for value in assets
     ) or {
         value.get("name") for value in assets if isinstance(value, dict)
@@ -141,14 +156,17 @@ def validate_release_preflight(
     return [release_dir / names[key] for key in (
         "setup", "updater_signature", "skill", "site_agent",
         "site_agent_manifest", "checksums", "manifest"
-    )]
+    )] + [release_dir / name for name in sorted(desktop_names)]
 
 
 def build_latest_document(
     *, version: str, notes: str, published_at: str, signature: str,
     updater_url: str, updater_sha256: str, updater_size: int,
     skill_url: str, skill_sha256: str, skill_size: int, source_commit: str,
+    desktop_platforms: Mapping[str, dict] | None = None,
 ) -> dict[str, object]:
+    if desktop_platforms is not None and set(desktop_platforms) != set(desktop_layout(version)[0]):
+        raise ValueError("all native updater platforms are required")
     return {
         "version": version,
         "notes": notes,
@@ -159,7 +177,8 @@ def build_latest_document(
                 "url": updater_url,
                 "sha256": updater_sha256,
                 "size": updater_size,
-            }
+            },
+            **(desktop_platforms or {}),
         },
         "skill": {
             "version": version,
@@ -532,6 +551,8 @@ def publish_update_release(
     signature = updater_signature.read_text(encoding="ascii").strip()
     if not signature:
         raise ValueError("updater signature is empty")
+    manifest = json.loads((release_dir / "release-manifest.json").read_text(encoding="utf-8"))
+    desktop_updates = manifest.get("desktop_updates", {})
 
     push_version_tag(
         repository=repository, tag=tag, github_repo=github_repo,
@@ -552,6 +573,7 @@ def publish_update_release(
         required_urls=(
             updater_installer.name,
             f"Mklink-AI-Probe-v{version}-Skill.zip",
+            *desktop_updates.values(),
         ),
     )
     asset_urls = gitee["asset_urls"]
@@ -571,6 +593,15 @@ def publish_update_release(
         expected_size=skill_archive.stat().st_size,
     )
     source_commit = git_output(repository, "rev-parse", "HEAD")
+    desktop_platforms = {}
+    for platform, name in desktop_updates.items():
+        asset = release_dir / name
+        url = str(asset_urls[name])
+        verify_public_asset(url=url, expected_sha256=sha256(asset), expected_size=asset.stat().st_size)
+        desktop_platforms[platform] = {
+            "signature": (release_dir / (name + ".sig")).read_text(encoding="ascii").strip(),
+            "url": url, "sha256": sha256(asset), "size": asset.stat().st_size,
+        }
     document = build_latest_document(
         version=version,
         notes=notes,
@@ -583,12 +614,15 @@ def publish_update_release(
         skill_sha256=sha256(skill_archive),
         skill_size=skill_archive.stat().st_size,
         source_commit=source_commit,
+        desktop_platforms=desktop_platforms or None,
     )
     github_document = json.loads(json.dumps(document))
     github_document["platforms"]["windows-x86_64"]["url"] = (
         f"https://github.com/{github_repo}/releases/download/{tag}/{updater_installer.name}"
     )
     github_document["skill"]["url"] = f"https://github.com/{github_repo}/releases/download/{tag}/{skill_archive.name}"
+    for platform, name in desktop_updates.items():
+        github_document["platforms"][platform]["url"] = f"https://github.com/{github_repo}/releases/download/{tag}/{name}"
     publish_updates_branch(
         document=document, github_repo=github_repo, gitee_repo=gitee_repo,
         gitee_token=gitee_token, github_document=github_document,

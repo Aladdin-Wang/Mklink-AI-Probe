@@ -326,6 +326,33 @@ def test_github_existing_assets_must_match_digest(publisher, tmp_path):
         )
 
 
+def test_native_preflight_requires_complete_hashed_assets_and_signatures(publisher, monkeypatch, tmp_path):
+    repository, directory, installer, signature = release_fixture(publisher, tmp_path)
+    def git(_repository, *args):
+        if args[0] == 'branch': return 'main'
+        if args[0] == 'status': return ''
+        if args[0] == 'ls-remote': return 'a' * 40 + '\trefs/heads/main'
+        return 'a' * 40
+    monkeypatch.setattr(publisher, 'git_output', git)
+    manifest_path = directory / 'release-manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    updates, names = publisher.desktop_layout('0.1.0')
+    manifest['desktop_updates'] = updates
+    for name in names:
+        path = directory / name
+        path.write_bytes(name.encode())
+        manifest['assets'].append({'name': name, 'size': path.stat().st_size, 'sha256': publisher.sha256(path)})
+    manifest_path.write_text(json.dumps(manifest))
+    (directory / 'SHA256SUMS.txt').write_text(''.join(f'{asset["sha256"]}  {asset["name"]}\n'
+        for asset in sorted(manifest['assets'], key=lambda item: item['name'].casefold())))
+    kwargs = dict(repository=repository, release_dir=directory, version='0.1.0',
+                  updater_installer=installer, updater_signature=signature)
+    assert len(publisher.validate_release_preflight(**kwargs)) == 17
+    (directory / (updates['darwin-aarch64'] + '.sig')).write_text('')
+    with pytest.raises(RuntimeError, match='signature'):
+        publisher.validate_release_preflight(**kwargs)
+
+
 def test_gitee_git_push_uses_token_only_in_askpass_environment(
     publisher, monkeypatch, tmp_path,
 ):
@@ -359,6 +386,7 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
     installer.write_bytes(b"installer")
     signature.write_text("signature", encoding="ascii")
     skill.write_bytes(b"skill")
+    (tmp_path / "release-manifest.json").write_text("{}", encoding="utf-8")
 
     monkeypatch.setattr(
         publisher,

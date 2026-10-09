@@ -93,6 +93,17 @@ async function mountView() {
 }
 
 describe('ConfigView', () => {
+  it('displays stored Hz as MHz and saves fractional MHz without changing the API unit', async () => {
+    mocks.api.getConfig.mockResolvedValue({ swd_clock: '20000000' })
+    const wrapper = await mountView()
+    const input = wrapper.get<HTMLInputElement>('[data-testid="swd-clock"]')
+    expect(input.element.value).toBe('20')
+    await input.setValue('0.125')
+    await flushPromises()
+    expect(mocks.api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({ swd_clock: '125000' }))
+    wrapper.unmount()
+  })
+
   it.each(['TEST_PORT_B', ''])('keeps user selection %s when initial config arrives late', async selected => {
     sharedRuntime.value = true
     const pending = deferred<any>()
@@ -117,14 +128,14 @@ describe('ConfigView', () => {
     mocks.api.connectDevice.mockResolvedValueOnce({ port: 'TEST_PORT_B' })
     const wrapper = await mountView()
     const clock = wrapper.get<HTMLInputElement>('[data-testid="swd-clock"]')
-    clock.element.value = '1000000'
+    clock.element.value = '1'
     await clock.trigger('input')
     await wrapper.get('[data-testid="connect-local"]').trigger('click')
     await flushPromises()
     pending.resolve({ com_port: 'TEST_PORT_A', swd_clock: '2000000' })
     await flushPromises()
     expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('TEST_PORT_B')
-    expect(clock.element.value).toBe('1000000')
+    expect(clock.element.value).toBe('1')
     wrapper.unmount()
   })
 
@@ -412,7 +423,7 @@ describe('ConfigView', () => {
     const wrapper = await mountView()
 
     expect(wrapper.find('[data-testid="auto-port"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="swd-clock"]').setValue('4000000')
+    await wrapper.get('[data-testid="swd-clock"]').setValue('4')
     await flushPromises()
 
     expect(mocks.api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
@@ -426,7 +437,7 @@ describe('ConfigView', () => {
 
   it.each(['20000000', '30000000'])('saves calibrated high clock %s', async (hz) => {
     const wrapper = await mountView()
-    await wrapper.get('[data-testid="swd-clock"]').setValue(hz)
+    await wrapper.get('[data-testid="swd-clock"]').setValue(String(Number(hz) / 1_000_000))
     await flushPromises()
     expect(mocks.api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({ swd_clock: hz }))
   })
@@ -436,7 +447,7 @@ describe('ConfigView', () => {
     mocks.api.updateConfig.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     vi.useFakeTimers()
     try {
-      await wrapper.get('[data-testid="swd-clock"]').setValue('4000000')
+      await wrapper.get('[data-testid="swd-clock"]').setValue('4')
       await flushPromises()
       await vi.advanceTimersByTimeAsync(1500)
       await flushPromises()
@@ -446,7 +457,7 @@ describe('ConfigView', () => {
       expect(wrapper.get('[data-testid="swd-clock"]').attributes('disabled')).toBeUndefined()
 
       mocks.api.updateConfig.mockResolvedValueOnce({ swd_clock: '2000000' })
-      await wrapper.get('[data-testid="swd-clock"]').setValue('2000000')
+      await wrapper.get('[data-testid="swd-clock"]').setValue('2')
       await flushPromises()
       expect(mocks.api.updateConfig).toHaveBeenCalledTimes(2)
       expect(wrapper.get('[data-testid="local-auto-save"]').text()).toContain('已自动保存')
@@ -461,7 +472,7 @@ describe('ConfigView', () => {
     const pending = deferred<any>()
     mocks.api.updateConfig.mockReturnValueOnce(pending.promise)
     const clock = wrapper.get('[data-testid="swd-clock"]')
-    await clock.setValue('4000000')
+    await clock.setValue('4')
     expect(clock.attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="local-port"]').attributes('disabled')).toBeDefined()
     await clock.trigger('change')
@@ -477,9 +488,9 @@ describe('ConfigView', () => {
   it('rejects unnamed high clocks', async () => {
     const wrapper = await mountView()
     const input = wrapper.get('[data-testid="swd-clock"]')
-    expect(input.attributes('max')).toBe('30000000')
+    expect(input.attributes('max')).toBe('30')
 
-    await input.setValue('10000001')
+    await input.setValue('10.000001')
     await flushPromises()
 
     expect(mocks.api.updateConfig).not.toHaveBeenCalled()
