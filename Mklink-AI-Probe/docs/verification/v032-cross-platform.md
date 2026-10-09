@@ -29,7 +29,15 @@
 原生 CI 首轮两台 Mac 缺少 Go，已补工具链安装；第二轮三平台安装包构建成功，
 包内容检查暴露测试脚本漏传 JSON 参数，Linux 还发现旧测试全局修改 os.name 引起 pathlib
 异常；两项测试问题均已修正。共享后台版本未随产品版本升级的遗漏也已修复。
-继续对最终源码重建和验证。回归 fixture 证明解析和身份边界，不等同用户 Mac USB 真机测试。
+最终候选来自 `d8b083045a96f87ed5c21053ba814d41ee288efa`，后续提交仅维护报告/交接。
+[原生构建 37895715688](https://github.com/MicroKeen/Mklink-AI-Probe/actions/runs/37895715688)
+三个 job 全部成功，每平台 USB/MSC 回归 47 通过、1 项 Windows 专用测试跳过。
+冻结 CLI/MCP、后端健康、生产 Web 资源和正常退出全部通过；启动用时 ARM Mac 3.651 秒、
+Intel Mac 7.993 秒、Linux 4.391 秒，仅代表本次云机测量。
+Mac 从 DMG 挂载并复制应用后检查；Linux 从 DEB 提取后运行后端，另检查 AppImage 提取内容。
+共享后台 CI 2754 项、GUI 契约 328 项及反馈契约通过，见 PR35 检查记录。
+产物包含 build-manifest.json、SHA256SUMS.txt、qualification.json，分别记录精确源码、
+包哈希和未验证项目。回归 fixture 证明解析和身份边界，不等同用户 Mac USB 真机测试。
 客户另行报告通过 IOKit 精确节点读取 bInterfaceNumber/bInterfaceClass 并转换已知 CDC
 数据/控制配对后，三个端口分别识别为 2/4/6，probes list 可列出设备。
 这是客户补丁的实测结果，未取得原始设备树或在本候选包复测，不继承为候选包 HIL 通过。

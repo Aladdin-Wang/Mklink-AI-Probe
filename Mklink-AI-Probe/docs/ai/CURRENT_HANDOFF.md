@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T14:51:09.8769321+08:00`
+- 更新时间：`2026-10-09T16:10:40.4787568+08:00`
 - 分支：`codex/0.3.2-fixes`
 - HEAD：`Based on microkeen/main 078663fe; inspect Git for current 0.3.2 fix head.`
 - 远端 HEAD：`microkeen/main 078663fe; task changes pushed only to codex/0.3.2-fixes.`
 - 工作树：Isolated desktop-platforms worktree; original main checkout and released artifacts preserved.
-- 当前任务：0.3.2修复分支与PR35：macOS/Linux USB接口枚举和同USB身份的已挂载MSC自动识别已实现；本地48+160+57项回归通过。按用户要求构建ARM64/Intel Mac DMG与Linux x64 DEB/AppImage候选，原生构建及冻结后端资格检查进行中。客户愿意在Mac复测，云机无探针；未合并/发布。详情docs/verification/v032-cross-platform.md。
+- 当前任务：0.3.2候选源d8b08304：Mac/Linux USB枚举与同身份挂载盘自动识别修复完成。原生run37895715688三平台构建、各47通过/1跳过、包内CLI/MCP/Web/退出全部通过；共享后台2754、GUI328及反馈CI通过。ARM64/Intel DMG与Linux DEB/AppImage已生成，正在下载并核对本地产物；客户已同意Mac实测，不能把云机检查当作USB/安装验收。PR35保留草稿、未合并发布。详见v032-cross-platform.md。
 - 状态：`in_progress`
 
 ## 里程碑
