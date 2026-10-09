@@ -176,6 +176,50 @@ def test_periodic_capture_duration_reports_only_complete_samples_and_partial_tai
     assert result['sample_count']==1 and result['incomplete_tail'] and result['stopped_by']=='duration'
 
 
+@pytest.mark.parametrize('byte_limit_delta', [0, -1])
+def test_packed_capture_keeps_payloads_timestamps_and_exact_json_limit(monkeypatch, byte_limit_delta):
+    import json
+    from types import SimpleNamespace
+    from mklink.mux_watch import PackedWatchSample
+    expected = [{'sample_index': 0, 'timestamp_us': 2**32 + 12, 'regions': [
+        {'address': '0x20000000', 'size': 4, 'data_hex': '0001feff'},
+        {'address': '0x20000010', 'size': 4, 'data_hex': '10203040'}]}]
+    session = Mock()
+    session.parser.crc_errors = 0
+    session.stats = {'parser_dropped_bytes': 0}
+    session.read_frames.return_value = [PackedWatchSample(2**32 + 12,
+        bytes.fromhex('aabb0001feff10203040'), 2)]
+    monkeypatch.setattr(dump_memory, 'DumpMemoryStreamSession', lambda *a, **k: session)
+    exact = len(json.dumps(expected[0], separators=(',', ':')).encode()) + 1
+    monkeypatch.setattr(dump_memory, 'MAX_DUMP_RESULT_JSON_BYTES', exact + byte_limit_delta)
+    def capture():
+        return dump_memory.capture_dump_stream(SimpleNamespace(_bridge=None),
+            [{'address': 0x20000000, 'size': 4}, {'address': 0x20000010, 'size': 4}],
+            period=.000001, frames=1)
+    if byte_limit_delta:
+        with pytest.raises(ValueError, match='16 MiB'): capture()
+    else:
+        result = capture()
+        assert result['samples'] == expected
+        assert not result['incomplete_tail']
+    assert session.packed_frames is True
+    session.stop.assert_called_once()
+
+
+def test_periodic_capture_rejects_queue_loss_after_confirmed_stop(monkeypatch):
+    from types import SimpleNamespace
+    from mklink.mux_watch import PackedWatchSample
+    session = Mock()
+    session.parser.crc_errors = 0
+    session.stats = {'parser_dropped_bytes': 1024}
+    session.read_frames.return_value = [PackedWatchSample(1, b'abcd', 0)]
+    monkeypatch.setattr(dump_memory, 'DumpMemoryStreamSession', lambda *a, **k: session)
+    with pytest.raises(RuntimeError, match='integrity failure'):
+        dump_memory.capture_dump_stream(SimpleNamespace(_bridge=None),
+            [{'address': 0x20000000, 'size': 4}], period=.000001, frames=1)
+    session.stop.assert_called_once()
+
+
 @pytest.mark.parametrize('before_start', [False, True])
 def test_capture_session_cancel_stops_without_returning_partial_result(before_start):
     from types import SimpleNamespace

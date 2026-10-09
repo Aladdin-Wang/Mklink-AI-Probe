@@ -1014,12 +1014,21 @@ def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, 
     by 16 MiB; overflow fails instead of returning or saving an incomplete result.
     """
     import json
+    from mklink.mux_watch import PackedWatchSample
     pairs = validate_dump_stream(regions, period, frames, duration, speed_profile)
     check_capture_cancelled(cancelled)
     if speed_profile is not None:
         device.set_debug_speed(speed_profile)
     session = DumpMemoryStreamSession(device._bridge, pairs, period, allow_legacy_bulk=True)
+    session.packed_frames = True
     assembler = DumpSampleAssembler([size for _, size in pairs], ordered=True)
+    region_metadata = [{'address': f'0x{address:08X}', 'size': size} for address, size in pairs]
+    # Every field has a fixed ASCII representation except the two integers and
+    # hex payloads. Bound the same JSON without serializing it while sampling.
+    template = {'sample_index': 0, 'timestamp_us': 0,
+                'regions': [{**region, 'data_hex': ''} for region in region_metadata]}
+    sample_fixed_bytes = (len(json.dumps(template, separators=(',', ':'))) - 2
+                          + 2 * sum(size for _, size in pairs) + 1)
     samples, result_bytes = [], 0
     deadline = time.monotonic() + 2.0
     stopped_by = 'duration'
@@ -1032,33 +1041,57 @@ def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, 
                 raise DumpMemoryReadError('dump_memory frame CRC validation failed', gap_fact='crc_error_count')
             for frame in batch:
                 check_capture_cancelled(cancelled)
-                payloads = assembler.feed(frame)
-                if payloads is None:
-                    continue
+                if isinstance(frame, PackedWatchSample):
+                    timestamp = frame.timestamp_us
+                    sample = frame
+                else:
+                    payloads = assembler.feed(frame)
+                    if payloads is None:
+                        continue
+                    timestamp = assembler.timestamp_us
+                    sample = (timestamp, payloads)
+                    assembler = DumpSampleAssembler([size for _, size in pairs], ordered=True)
                 if not samples:
                     deadline = time.monotonic() + (duration or 300)
-                sample = {'sample_index': len(samples), 'timestamp_us': assembler.timestamp_us,
-                          'regions': [{'address': f'0x{address:08X}', 'size': len(data), 'data_hex': data.hex()}
-                                      for (address, _), data in zip(pairs, payloads)]}
-                result_bytes += len(json.dumps(sample, separators=(',', ':')).encode('utf-8')) + 1
+                result_bytes += sample_fixed_bytes + len(str(len(samples))) + len(str(timestamp))
                 if result_bytes > MAX_DUMP_RESULT_JSON_BYTES:
                     raise ValueError('Dump result exceeds 16 MiB JSON limit; reduce frames, duration or regions')
                 samples.append(sample)
-                assembler = DumpSampleAssembler([size for _, size in pairs], ordered=True)
                 if period == 0 or (frames and len(samples) >= frames):
                     stopped_by = 'frames'
                     break
             if stopped_by == 'frames':
                 break
-            time.sleep(.001)
+            if not batch:
+                time.sleep(.001)
     finally:
         session.stop()
     if not samples:
         raise TimeoutError('No complete dump sample received')
+    stats = session.stats
+    if any(stats.get(k, 0) for k in ('parser_crc_errors', 'parser_dropped_frames',
+                                   'parser_dropped_bytes', 'firmware_flagged_frames')):
+        raise DumpMemoryReadError(f'mem_dump integrity failure: {stats}')
+    # Construct API objects after the confirmed stop, so JSON/hex allocation
+    # cannot hold up the live bounded RX queue.
+    for index, sample in enumerate(samples):
+        check_capture_cancelled(cancelled)
+        if isinstance(sample, PackedWatchSample):
+            timestamp = sample.timestamp_us
+            cursor = sample.offset
+            payloads = []
+            for _, size in pairs:
+                payloads.append(sample.payload[cursor:cursor+size])
+                cursor += size
+        else:
+            timestamp, payloads = sample
+        samples[index] = {'sample_index': index, 'timestamp_us': timestamp,
+                          'regions': [{**region, 'data_hex': data.hex()}
+                                      for region, data in zip(region_metadata, payloads)]}
     return {'sample_count': len(samples), 'region_count': len(pairs),
             'total_bytes': sum(size for _, size in pairs) * len(samples), 'samples': samples,
             'stopped_by': stopped_by, 'incomplete_tail': bool(assembler.blocks or assembler.incomplete_region_count),
-            'stats': session.stats}
+            'stats': stats}
 
 
 class DumpMemoryStreamSession:
@@ -1097,6 +1130,7 @@ class DumpMemoryStreamSession:
         self.parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
         self.started = False
         self._mux_watch = None
+        self._mux_dropped_bytes_start = 0
         self._write_pending = None
         self._protocol_frames = 0
         self._complete_samples = 0
@@ -1119,6 +1153,7 @@ class DumpMemoryStreamSession:
             else:
                 watch.transport = self.bridge.enable_multiplex()
                 self._mux_watch = watch
+                self._mux_dropped_bytes_start = watch.transport.stats()['watch_dropped_bytes']
                 watch.start()
                 self.started = True
                 return
@@ -1218,7 +1253,8 @@ class DumpMemoryStreamSession:
     def stats(self) -> dict[str, int]:
         if self._mux_watch is not None:
             return {'protocol_frames': self._mux_watch.samples, 'complete_samples': self._mux_watch.samples,
-                    'parser_dropped_bytes': self._mux_watch.transport.stats()['watch_dropped_bytes'],
+                    'parser_dropped_bytes': (self._mux_watch.transport.stats()['watch_dropped_bytes']
+                                             - self._mux_dropped_bytes_start),
                     'parser_dropped_frames': self._mux_watch.gaps,
                     'parser_crc_errors': 0, 'firmware_flagged_frames': 0, 'firmware_sample_drop_flags': 0}
         return {

@@ -520,6 +520,25 @@ def test_packed_watch_reuses_validated_payload_and_unwraps_clock():
     assert watch.samples == 2 and watch.gaps == 0
 
 
+def test_dump_queue_loss_is_relative_to_current_capture():
+    from types import SimpleNamespace
+    from mklink.dump_memory import DumpMemoryStreamSession
+    transport, _ = peer()
+    transport.handshake()
+    transport.dropped_bytes[(0x41, 255)] = 4096
+    bridge = SimpleNamespace(supports_multiplex=lambda: True, enable_multiplex=lambda: transport)
+    session = DumpMemoryStreamSession(bridge, [(0x20000000, 4)], .001)
+    session.start()
+    assert session.stats['parser_dropped_bytes'] == 0
+    transport.dropped_bytes[(0x41, 255)] += 512
+    assert session.stats['parser_dropped_bytes'] == 512
+    session.stop()
+    following = DumpMemoryStreamSession(bridge, [(0x20000000, 4)], .001)
+    following.start()
+    assert following.stats['parser_dropped_bytes'] == 0
+    following.stop()
+
+
 def test_watch_burst_budget_is_bounded_and_does_not_enlarge_rtt_queues():
     transport, _ = peer()
     transport.handshake()
