@@ -14,10 +14,12 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
     summaryEn: 'Cross-platform USB fixes and desktop package preview',
     changes: [
       '修复 macOS USB 拓扑被误读为接口号，以及 Linux 接口名称导致的命令口识别失败。',
+      'macOS/Linux 按下载器 USB 身份自动识别脱机烧录磁盘，支持已挂载的数据盘和 UF2 盘。',
       '补充 macOS Apple Silicon / Intel 和 Linux x64 桌面构建，平台验证进行中。',
     ],
     changesEn: [
       'Fix command-port discovery when macOS topology is mistaken for an interface or Linux interface names obscure metadata.',
+      'Identify mounted offline-programming and UF2 volumes by probe USB identity on macOS and Linux.',
       'Add macOS Apple Silicon / Intel and Linux x64 desktop builds; platform qualification is in progress.',
     ],
   },
