@@ -64,7 +64,7 @@ MUX raw Watch没有帧CRC；宿主对应CRC/firmware_flagged计数有固定0，�
 复测结束已停止采集、清除本轮增加的Watch项、恢复1ms间隔和30MHz临时时钟，
 断开本轮连接，恢复最初的未连接状态；保留用户打开的桌面，不操作其IDE或供电。
 本轮仅验收/定位，未修改产品代码、未构建新包、未合并或发布。
-待修：dump measure在队列丢弃时仍成功返回的完整性判断及积压；低/中速100ms读取合批；
+待修：dump measure在队列丢弃时仍成功返回的完整性判断及积压；
 30MHz Flash连续读的间歇性target error交固件会话，不能仅凭源码盲改相位。
 
 本地证据位于主工作区.build/artifacts/v031-installed-30m：before/prepare.json、
@@ -72,3 +72,21 @@ dump-results.json、dump-max-repeat.json、dump-capture-*.json、watch-results.j
 watch-native-results.json、watch-*-batches-*.json、native-superwatch.jpg/txt、cleanup.json。
 临时脚本首次缺numpy、首次WS缺认证头均在采样开始前失败；改为标准库解析、补齐
 已声明的认证头后完成全部测量，不把环境失败计为设备丢失。设备标识和原始数据不提交。
+
+## 用户澄清后的计数归属与批次结论修正
+
+用户确认带时间戳的批次传输是正常设计。再次核对V4源码：fast_watch按count收集，
+pack_watch_increment给每条记录写入采样时间戳，ml_mux_event_commit提交整批。
+因此采样间隔、固件事件批次、主机WS批次是不同层次；本轮未直接测USB线上各批发送
+时间，也没有做Windows超时参数对照，不能把观察到100ms到达直接定性为故障。
+保留实测时间及100ms主机等待上限这一事实，撤回把100ms合批列为待修缺陷的结论。
+
+三轮287976/57798/309270字节来自上位机MuxTransport.feed：解析收到的0x41事件后，
+当Python deque超过WATCH_QUEUE_BYTES=262144时，popleft移除旧事件并累计
+dropped_bytes；stats.watch_dropped_bytes随后被DumpMemoryStreamSession.stats
+映射为parser_dropped_bytes。这是已经到达上位机的数据被主机接收队列丢弃，
+不是固件队列上报的丢弃，也不是WebSocket/绘图循环缓冲的计数。统计长度使用
+len(removed)-6，包含协议相关布局，不能直接换算为目标有效字节或样本个数。
+这个计数不能排除其他层另有丢失，但不能拿它证明固件丢包。
+measure最终成功检查遗漏parser_dropped_bytes，所以队列非零仍HTTP200，仍是主机侧
+完整性判断问题。此次仅纠正归属/结论，未改代码、硬件或批次发送策略。

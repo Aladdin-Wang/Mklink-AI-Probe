@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T09:47:40.759762+08:00`
+- 更新时间：`2026-10-09T10:39:49.868334+08:00`
 - 分支：`codex/0.3.1-fixes`
 - HEAD：`Product acdcc997; production assets d89c0827 (build acdcc997), three CI checks passed. Later documentation only; inspect Git for current tip.`
 - 远端 HEAD：`microkeen/codex/0.3.1-fixes / PR #33; verify Git for latest documentation tip.`
 - 工作树：Isolated host fix worktree; acdcc997 installed payloads verified. Current turn adds hardware verification documentation only.
-- 当前任务：用户覆盖acdcc997后要求30MHz dumpmem/SuperWatch丢失及批次间隔复测，已在实际安装后台完成，详见v031-installed-30mhz.md。SuperWatch原生前台1/3变量各20秒未观察到丢弃，最大约263351点/秒及50343组/秒；1kHz源间隔1ms但WS批次约100ms，与Windows读取总超时吻合。最大速率RAM dump measure三轮均队列丢字节却HTTP200；30MHz Flash连续capture偶发status5，10MHz2000帧相同。新发现仍待修复，不宣称发布门槛完成。测试无供电/目标写入，恢复未连接，保留桌面。
+- 当前任务：用户覆盖acdcc997后要求30MHz dumpmem/SuperWatch丢失及批次间隔复测，已在实际安装后台完成，详见v031-installed-30mhz.md。SuperWatch原生前台1/3变量各20秒未观察到丢弃，最大约263351点/秒及50343组/秒；1kHz源间隔1ms但WS批次约100ms，用户确认时间戳批次发送正常，撤回100ms合批故障判断；主机超时只是未经对照验证的影响因素。最大速率RAM dump measure三轮均队列丢字节却HTTP200；30MHz Flash连续capture偶发status5，10MHz2000帧相同。新发现仍待修复，不宣称发布门槛完成。测试无供电/目标写入，恢复未连接，保留桌面。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -41,13 +41,13 @@
 
 ## 真机环境
 
-- **state**：实际安装版30MHz专项复测结束，未改供电或写目标程序。停止采集、移除本轮Watch项、恢复初始1ms和30MHz并断开本轮连接，桌面保留。存在dump measure队列丢弃及100ms低速合批，30MHzFlash连续读取间歇性status5仍待查。
+- **state**：实际安装版30MHz专项复测结束，未改供电或写目标程序。停止采集、移除本轮Watch项、恢复初始1ms和30MHz并断开本轮连接，桌面保留。dump measure的256KiB主机Python队列出现丢弃（非固件计数），100ms合批按用户澄清不列故障；30MHzFlash连续读取间歇性status5仍待查。
 - **installer**：用户已实际覆盖acdcc997；桌面/sidecar/stcp三负载SHA与修复NSIS一致，实际安装版和原生页脚已验证。30MHz专项在此安装后台完成，不再是提取包测试。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 修复本轮实测的dump measure接收队列丢弃/错误成功判断及Windows低速100ms合批；先按v031-installed-30mhz.md保留安装态基线，再源码测试和新冻结包真机对照，不能用模拟替代。
+1. 修复dump measure的主机256KiB接收队列丢弃/错误成功判断，区分采集窗和终止积压；100ms时间戳合批是正常设计，不列待修。先保留v031-installed-30mhz.md安装态基线再回归。
 2. 固件侧30MHz Flash连续dump capture间歇性status5继续协调原会话；10MHz固定数据2000样本逐值相同。源采样空窗、MUX传输丢弃、WS批次间隔、界面历史覆盖分别解释，CRC固定0不是无误证明。
 3. 正式发布仍需审核及合并授权，精确最终tip重跑全套门槛，构建一致NSIS/Skill/SiteAgent、签名和三端哈希；旧Skill/SiteAgent候选未包含本次修复。不得直接发布旧冻结候选。
 4. 发布组合需V4.6.3或后续UART饥饿修复固件；公开固件渠道仍V4.6.0，本会话未改渠道。旧型号升级/缺失夹具限制见硬件报告，UAC人工确认豁免。
