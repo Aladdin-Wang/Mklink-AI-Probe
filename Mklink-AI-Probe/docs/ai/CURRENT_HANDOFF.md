@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-09T12:17:21.076359+08:00`
+- 更新时间：`2026-10-09T12:30:12.7995501+08:00`
 - 分支：`codex/0.3.1-fixes`
 - HEAD：`Product 77d4849c; production assets f586fd94 (build 77d4849c). Full regression and three CI checks passed on f586fd94791093d49d8aec105d87e2718776f37f. Later documentation only; inspect Git for current tip.`
 - 远端 HEAD：`microkeen/codex/0.3.1-fixes / PR #33; verify Git for latest documentation tip.`
 - 工作树：Isolated host fix worktree; queue fix, production assets and verification committed separately. New local NSIS/Skill/SiteAgent frozen; installed directory remains acdcc997.
-- 当前任务：用户授权队列修复及正式发布前回归已执行：77d4849c消除dumpmem热路径重复组装/JSON积压，增加字节丢弃失败判断和会话增量统计；没有诊断代码或固件批次改动。f586fd94完整Python4576通过/2可选hil_core跳过、GUI912、Rust21+6、三个CI全通过。冻结原生包30MHz capture三轮最大98/89/82µs且丢弃0，修复前84.113ms；measure5/15/30秒丢弃0，SuperWatch三个20秒场景无丢弃。GUI退出AI继续读、最后MCP真正退出后释放通过；首轮测试keep_alive设置问题保留记录。新NSIS/Skill/SiteAgent已准备，未覆盖安装、未合并签名发布。30MHz Flash连续读status5仍是独立已知限制，不能宣称全档全功能通过。详见v031-dump-queue.md及发布准备报告。
+- 当前任务：用户授权队列修复及正式发布前回归已执行：77d4849c消除dumpmem热路径重复组装/JSON积压，增加字节丢弃失败判断和会话增量统计；没有诊断代码或固件批次改动。f586fd94完整Python4576通过/2可选hil_core跳过、GUI912、Rust21+6、三个CI全通过。冻结原生包30MHz capture三轮最大98/89/82µs且丢弃0，修复前84.113ms；measure5/15/30秒丢弃0，SuperWatch三个20秒场景无丢弃。GUI退出AI继续读、最后MCP真正退出后释放通过；首轮测试keep_alive设置问题保留记录。新NSIS/Skill/SiteAgent已准备，未覆盖安装、未合并签名发布。30MHz Flash连续读status5仍是独立已知限制，不能宣称全档全功能通过。详见v031-dump-queue.md及发布准备报告。 用户现已明确授权正式发布0.3.1和指定MicroLink V4.6.3 UF2；发布进行中，尚未宣称完成。按最新要求status5不列入正式发布说明，完整证据保留交接/验证报告，下一版本处理。
 - 状态：`in_progress`
 
 ## 里程碑
