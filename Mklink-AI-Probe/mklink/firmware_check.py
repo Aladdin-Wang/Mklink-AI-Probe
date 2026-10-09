@@ -450,6 +450,10 @@ def _wait_for_bootloader_drive(previous: str | None, timeout: float, finder=None
     disappeared = False
     while time.monotonic() < deadline:
         current = (finder or _find_bootloader_disk)()
+        if finder is not None and current and Path(current).is_dir():
+            # The shared finder has already checked the dedicated UF2 label,
+            # mount and candidate uniqueness. Legacy CHERRYUF2 may omit markers.
+            return current
         if current is None or (previous and current.rstrip("\\/").casefold() != previous.rstrip("\\/").casefold() and not Path(current).exists()):
             disappeared = True
         elif current and Path(current).is_dir() and (disappeared or _looks_like_bootloader(current)):
@@ -534,7 +538,7 @@ def upgrade_probe_firmware(
         if not boot_disk:
             return {
                 "status": "manual_required",
-                "message": "未检测到 Bootloader U 盘，请按住升级键手动升级",
+                "message": "未找到唯一新出现的 CHERRYUF2 升级盘；请断开其他升级盘，或按住升级键后手动选择升级盘复制固件。",
                 **manual_details,
             }
         # Recheck identity immediately before writing; never follow a reused letter.

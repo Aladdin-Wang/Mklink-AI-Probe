@@ -25,6 +25,21 @@ def test_macos_media_binds_partition_to_physical_device_and_rejects_collision():
     assert posix.macos_media_identities([usb('', {'BSD Name': 'disk6'})]) == {}
 
 
+def test_macos_firmware_disk_without_serial_uses_real_volume_label(monkeypatch):
+    tree = [usb('', {'BSD Name': 'disk4s1'}), {'BSD Name': 'disk0'}]
+    monkeypatch.setattr('mklink.usb_platform.macos_registry', lambda: tree)
+    monkeypatch.setattr(posix, '_command', lambda _: plistlib.dumps({
+        'DeviceIdentifier': 'disk4s1', 'MountPoint': '/Volumes/CHERRYUF2 1', 'VolumeName': 'CHERRYUF2'}))
+    monkeypatch.setattr(posix, '_mount_signature', lambda _: (17, 2))
+    assert posix.macos_volume_inventory() == []
+    rows = posix.macos_volume_inventory(firmware=True)
+    assert len(rows) == 1 and rows[0]['label'] == 'CHERRYUF2'
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda **kw: rows)
+    def missing(*a, **kw): raise FileNotFoundError()
+    monkeypatch.setattr(Path, 'read_text', missing)
+    assert volumes.FirmwareVolumes({'identity_stable': False}).find(bootloader=True) == '/Volumes/CHERRYUF2 1'
+
+
 @pytest.mark.parametrize('changed', [False, True])
 def test_macos_inventory_uses_diskutil_plist_and_rechecks_usb_identity(monkeypatch, changed):
     tree = [usb('FIRST', {'BSD Name': 'disk4s1'}), usb('SECOND', {'BSD Name': 'disk5'})]
@@ -76,7 +91,27 @@ def test_linux_sysfs_follows_usb_ancestry_and_requires_serial(tmp_path):
     assert posix.linux_usb_identity('8:17', sysfs=sysfs) == (0xd28, 0x202, 'first')
     (device.parent / 'serial').unlink()
     assert posix.linux_usb_identity('8:17', sysfs=sysfs) is None
+    assert posix.linux_usb_identity('8:17', sysfs=sysfs, require_serial=False) == (0xd28, 0x202, '')
     assert posix.linux_usb_identity('../usb', sysfs=sysfs) is None
+
+
+def test_linux_firmware_disk_without_serial_uses_mountinfo_and_label(monkeypatch):
+    monkeypatch.setattr(posix, '_command', lambda _: json.dumps({'blockdevices': [
+        {'name': '/dev/sdb1', 'maj:min': '8:17', 'label': 'CHERRYUF2'}]}).encode())
+    def read_text(path, **kw):
+        if path.as_posix() == '/proc/self/mountinfo':
+            return '41 30 8:17 / /run/media/user/CHERRYUF2 rw - vfat /dev/sdb1 rw'
+        raise FileNotFoundError()
+    monkeypatch.setattr(Path, 'read_text', read_text)
+    monkeypatch.setattr(posix, 'linux_usb_identity', lambda _, require_serial=True: None if require_serial else (0xd28, 0x202, ''))
+    monkeypatch.setattr(posix, '_mount_signature', lambda _: (123, 2))
+    monkeypatch.setattr(posix.os, 'major', lambda _: 8, raising=False)
+    monkeypatch.setattr(posix.os, 'minor', lambda _: 17, raising=False)
+    assert posix.linux_volume_inventory() == []
+    rows = posix.linux_volume_inventory(firmware=True)
+    assert len(rows) == 1 and rows[0]['label'] == 'CHERRYUF2'
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda **kw: rows)
+    assert volumes.FirmwareVolumes({'identity_stable': False}).find(bootloader=True) == '/run/media/user/CHERRYUF2'
 
 
 @pytest.mark.parametrize('stale', [False, True])
@@ -100,7 +135,7 @@ def test_posix_mount_replacement_rejected_before_resolution_or_uf2(monkeypatch):
     row = {'usb_identity': (0xd28, 0x202, 'first'), 'root': '/media/probe', 'drive': '/media/probe',
            'platform': 'linux', 'mount_signature': (1, 2), 'label': 'MICROKEEN'}
     probe = {'identity_stable': True, 'vid': 0xd28, 'pid': 0x202, 'serial_number': 'FIRST'}
-    monkeypatch.setattr(volumes, 'volume_inventory', lambda: [row])
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda **kw: [row])
     monkeypatch.setattr('mklink.probes.select_probe', lambda _: probe)
     monkeypatch.setattr(posix, '_mount_signature', lambda _: (9, 2))
     with pytest.raises(RuntimeError, match='no longer mounted'):

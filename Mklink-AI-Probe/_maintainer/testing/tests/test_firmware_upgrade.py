@@ -105,6 +105,10 @@ def test_find_bootloader_disk_uses_uf2_marker(monkeypatch, tmp_path):
     assert fc._find_bootloader_disk() == str(tmp_path).rstrip("\\/") + ("\\" if os.name == "nt" else "/")
 
 
+def test_shared_finder_accepts_verified_cherryuf2_without_marker(tmp_path):
+    assert fc._wait_for_bootloader_drive(None, .1, lambda: str(tmp_path)) == str(tmp_path)
+
+
 def test_upgrade_probe_firmware_returns_up_to_date_without_reboot(monkeypatch, tmp_path):
     disk = tmp_path / "disk"
     disk.mkdir()

@@ -82,6 +82,7 @@ def upgrade_firmware(state, firmware_root):
             try:
                 # Selection may have changed while the firmware was downloading.
                 current = select_probe(state['shared_probe_id'])
+                volumes.begin_update()
                 if device is not None and device.connected:
                     if device.port.casefold() != current['port'].casefold():
                         raise RuntimeError('Probe port changed')
