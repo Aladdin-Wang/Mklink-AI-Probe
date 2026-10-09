@@ -96,6 +96,9 @@ class FirmwareVolumes:
 
     V3/V4 application descriptors expose OTP words 88/89 (16 hex chars);
     MicroLink/HPMLink UF2 descriptors expose words 88..91 (32 hex chars).
+    Older UF2 descriptors wrote the UUID five UTF-16 characters too late:
+    five initial zero characters followed by the first 27 UUID characters.
+    The complete application identity remains at the fixed offset 5.
     Never identify the bootloader by label, drive letter or enumeration order.
     """
     def __init__(self, probe):
@@ -113,7 +116,9 @@ class FirmwareVolumes:
             return (bootloader and identity[:2] == self.identity[:2] == (0x0d28, 0x0202)
                     and re.fullmatch('[0-9a-f]{16}', self.identity[2]) is not None
                     and re.fullmatch('[0-9a-f]{32}', identity[2]) is not None
-                    and identity[2][:16] == self.identity[2])
+                    and (identity[2][:16] == self.identity[2]
+                         or (identity[2].startswith('00000')
+                             and identity[2][5:21] == self.identity[2])))
         rows = [row for row in volume_inventory() if matches(row)]
         if len(rows) != 1:
             return None

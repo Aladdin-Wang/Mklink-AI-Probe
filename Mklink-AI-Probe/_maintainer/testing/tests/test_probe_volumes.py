@@ -5,6 +5,11 @@ from mklink import probe_volumes as volumes
 @pytest.mark.parametrize('serial,expected', [
     ('0123456789abcdef', True), ('0123456789abcdef1111222233334444', True),
     ('0123456789abcdee1111222233334444', False), ('0123456789abcdef12', False),
+    ('000000123456789abcdef11112222333', True),
+    ('000000123456789abcdee11112222333', False),
+    ('100000123456789abcdef11112222333', False),
+    ('00000123456789abcdef111122223333', False),
+    ('000000123456789abcdef1111222233', False),
 ])
 def test_firmware_bootloader_uses_exact_or_documented_uid_mapping(monkeypatch, serial, expected):
     from pathlib import Path
@@ -18,10 +23,12 @@ def test_firmware_bootloader_uses_exact_or_documented_uid_mapping(monkeypatch, s
     assert binding.find() is None
 
 
-def test_firmware_bootloader_never_uses_another_or_ambiguous_disk(monkeypatch):
+@pytest.mark.parametrize('serial', ['0123456789abcdef1111222233334444',
+                                   '000000123456789abcdef11112222333'])
+def test_firmware_bootloader_never_uses_another_or_ambiguous_disk(monkeypatch, serial):
     from pathlib import Path
     root = '\\\\?\\Volume{11111111-1111-1111-1111-111111111111}\\'
-    row = {'usb_identity': (0xd28, 0x202, '0123456789abcdef1111222233334444'), 'root': root}
+    row = {'usb_identity': (0xd28, 0x202, serial), 'root': root}
     rows = [row, dict(row)]
     monkeypatch.setattr(volumes, 'volume_inventory', lambda: rows)
     monkeypatch.setattr(Path, 'read_text', lambda self, **kw: 'Board-ID: MicroKeenLink\n')
@@ -29,6 +36,9 @@ def test_firmware_bootloader_never_uses_another_or_ambiguous_disk(monkeypatch):
                                       'serial_number': '0123456789abcdef'})
     assert binding.find(bootloader=True) is None
     rows.pop()
+    row['usb_identity'] = (0xd28, 0x203, serial)
+    assert binding.find(bootloader=True) is None
+    row['usb_identity'] = (0xd28, 0x202, serial)
     row['root'] = 'G:\\'  # reused drive letters are never accepted
     assert binding.find(bootloader=True) is None
     row['root'] = root
