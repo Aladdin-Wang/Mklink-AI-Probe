@@ -211,8 +211,8 @@ watch(() => props.deviceConnected, loadSpeed)
 .focused { position:fixed; inset:0; z-index:900; background:var(--bg); height:100dvh !important; padding:8px; box-sizing:border-box; }
 .workspace-actions { display:flex; gap:6px; padding:4px; flex-shrink:0; }
 .workspace-actions button { background:var(--surface);color:var(--text);border:1px solid var(--border);padding:5px 8px;border-radius:4px; }
-.catalog-hidden :deep(.symbol-panel > :not(.selected-workspace)) { display:none !important; }
-.catalog-hidden :deep(.selected-workspace) { max-height:100%; flex:1; }
+.catalog-hidden :deep(.symbol-panel > :not(.signal-section)) { display:none !important; }
+.catalog-hidden :deep(.signal-section:not(.collapsed)) { max-height:100%; flex:1; }
 .catalog-hidden .watch-source-tabs { display:none; }
 .compact :deep(#control-toolbar > label), .compact :deep(.buffer-unit), .compact :deep(#interval-group), .compact :deep(#control-toolbar .ctrl-sep), .compact :deep(#trigger-toolbar), .compact :deep(#buffer-input), .compact :deep(#btn-apply-buffer), .compact :deep(#buffer-memory-estimate), .compact :deep(#interval-input), .compact :deep(#btn-apply-interval) { display:none; }
 
