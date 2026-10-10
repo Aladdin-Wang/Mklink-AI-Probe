@@ -929,7 +929,7 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.get('[data-testid="target-BUILTIN"]').text()).toContain('内置可用')
     expect(wrapper.get('[data-testid="target-LOCAL"]').text()).toContain('本地 Pack')
     expect(wrapper.get('[data-testid="target-ONLINE"]').text()).toContain('可导入或联网下载')
-    expect(wrapper.text()).toContain('联网更新')
+    expect(wrapper.text()).toContain('联网下载')
     wrapper.unmount()
   })
 
@@ -2667,5 +2667,61 @@ describe('online flash component quality', () => {
   it('keeps the BIN base-address label and input on one stable line', () => {
     expect(firmwareWorkspaceSource).toMatch(/\.base-field\{[^}]*flex:0 0 auto[^}]*white-space:nowrap/s)
     expect(firmwareWorkspaceSource).toMatch(/\.base-field input\{[^}]*flex:0 0 92px[^}]*min-width:92px/s)
+  })
+})
+
+describe('online flash explicit algorithm mapping', () => {
+  beforeEach(() => {
+    FakeEventSource.instances = []
+    vi.stubGlobal('isTauri', false)
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn(), removeItem: vi.fn() })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    vi.stubGlobal('confirm', vi.fn(() => true))
+  })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+  it('combines separate ranges, replaces same-range choices, and returns to automatic', async () => {
+    const base = { target_part: 'DEVICE_A', default: false, flash_size: 0x1000, source_name: 'Local' }
+    const choices = [
+      { ...base, algorithm_id: 'internal', file_name: 'internal.flm', flash_start: 0x08000000, source_kind: 'installed-pack' },
+      { ...base, algorithm_id: 'alternate', file_name: 'alternate.flm', flash_start: 0x08000000, source_kind: 'custom-flm' },
+      { ...base, algorithm_id: 'external', file_name: 'external.flm', flash_start: 0x90000000, source_kind: 'custom-flm' },
+    ]
+    const wrapper = mount(TargetPackPanel, { props: {
+      targets: [], query: 'DEVICE_A', selectedPart: 'DEVICE_A', selectedInstalled: true,
+      selectedAlgorithmIds: ['internal'], status: null, busy: false, cancelPending: false,
+      progress: 0, phase: '', error: '', algorithms: [], flashAlgorithms: choices,
+      algorithmBusy: false, algorithmError: '', canManageAlgorithms: true, algorithmNotRequired: false,
+      algorithmPlan: [{ ...choices[0], ranges: [{ start: 0x08000000, end: 0x08000004 }] }],
+    } })
+    await wrapper.get('[data-testid="custom-flm-external"] input').setValue(true)
+    expect(wrapper.emitted('selectAlgorithms')?.at(-1)).toEqual([['internal', 'external']])
+    await wrapper.setProps({ selectedAlgorithmIds: ['internal', 'external'] })
+    await wrapper.get('[data-testid="custom-flm-alternate"] input').setValue(true)
+    expect(wrapper.emitted('selectAlgorithms')?.at(-1)).toEqual([['external', 'alternate']])
+    expect(wrapper.get('[data-testid="algorithm-plan"]').text()).toContain('0x08000000–0x08000004')
+    await wrapper.get('[data-testid="algorithm-auto"]').trigger('click')
+    expect(wrapper.emitted('selectAlgorithms')?.at(-1)).toEqual([[]])
+    await wrapper.setProps({ selectionLocked: true })
+    expect(wrapper.get('[data-testid="custom-flm-external"] input').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('sends the same multi-algorithm set for inspection and job creation', async () => {
+    const fetch = viewFetch()
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    await chooseCustomFlm(wrapper)
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="custom-flm-external-1"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="flash-algorithm-pack-1"] input').setValue(true)
+    await wrapper.get('[data-testid="custom-flm-external-1"] input').setValue(true)
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    const inspections = fetch.mock.calls.filter(([url]) => String(url).endsWith('/images/inspect'))
+    expect((inspections.at(-1)![1]!.body as FormData).getAll('algorithm_ids')).toEqual(['pack-1', 'external-1'])
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await vi.waitFor(() => expect(fetch.mock.calls.some(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toBe(true))
+    const job = fetch.mock.calls.find(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')!
+    expect(JSON.parse(String(job[1]!.body)).algorithm_ids).toEqual(['pack-1', 'external-1'])
+    wrapper.unmount()
   })
 })

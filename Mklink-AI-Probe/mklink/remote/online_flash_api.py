@@ -13,7 +13,7 @@ import os
 import re
 import secrets
 import threading
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import replace, dataclass, field, fields, is_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
@@ -69,7 +69,8 @@ class OnlineFlashServices:
     configuration_lock: object = field(default_factory=threading.RLock)
     image_targets: Dict[str, object] = field(default_factory=dict)
     image_flash_overrides: Dict[str, object] = field(default_factory=dict)
-    image_algorithm_selections: Dict[str, str] = field(default_factory=dict)
+    image_algorithm_selections: Dict[str, object] = field(default_factory=dict)
+    image_algorithm_plans: Dict[str, tuple] = field(default_factory=dict)
     upload_limit: int = _DEFAULT_UPLOAD_LIMIT
     pack_index_updater: Optional[Callable[[Callable[[Dict[str, object]], None]], object]] = None
     heartbeat_interval: float = 15.0
@@ -151,6 +152,7 @@ class LocalImageBody(BaseModel):
     part_number: str = ""
     base_address: Optional[Union[str, int]] = None
     algorithm_id: Optional[str] = None
+    algorithm_ids: List[str] = Field(default_factory=list, max_length=32)
 
 
 class ClockBody(BaseModel):
@@ -166,6 +168,7 @@ class JobBody(ClockBody):
     actions: List[str]
     image_id: Optional[str] = None
     algorithm_id: Optional[str] = None
+    algorithm_ids: List[str] = Field(default_factory=list, max_length=32)
     preempt_ai: bool = True
     probe_id: Optional[str] = None
     target_part: Optional[str] = None
@@ -690,20 +693,86 @@ def _builtin_geometry_is_ambiguous(part_number: str) -> bool:
     return False
 
 
+def _selected_flash_algorithms(services, part_number, algorithm_ids):
+    """Resolve an explicit, non-overlapping algorithm set without fallback."""
+    from mklink.cmsis_dap.algorithm_catalog import discover_flash_algorithms
+    ids = tuple(algorithm_ids or ())
+    if len(ids) != len(set(ids)):
+        raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "duplicate Flash algorithm selection")
+    records = {item.algorithm_id: item for item in discover_flash_algorithms(part_number, paths=services.paths)}
+    target = _exact_installed_target(services.catalog, part_number)
+    if target.source == "builtin":
+        from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+        for region in services.target_memory_provider(part_number):
+            if not region.is_flash or region.length <= 0:
+                continue
+            key = "pyocd-builtin:{}:{:08x}".format(part_number.casefold(), region.start)
+            records[key] = FlashAlgorithm(key, part_number, part_number + " · " + region.name,
+                region.start, region.length, 0, 0, False, "pyocd-builtin", "pyOCD", key,
+                sector_sizes=((0, region.sector_size),) if region.sector_size else ())
+    if any(item not in records for item in ids):
+        raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "selected Flash algorithm is unavailable; inspect again")
+    selected = [records[item] for item in ids]
+    for index, item in enumerate(selected):
+        if item.flash_start < 0 or item.flash_size <= 0 or item.flash_start + item.flash_size > 0x1_0000_0000:
+            raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "selected Flash algorithm has no valid range")
+        if any(item.flash_start < other.flash_start + other.flash_size and other.flash_start < item.flash_start + item.flash_size for other in selected[:index]):
+            raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "selected Flash algorithms overlap; choose one algorithm per address range")
+    return selected
+
+
+def _algorithm_plan_identity(algorithm):
+    return (algorithm.algorithm_id, algorithm.pack_sha256, algorithm.custom_sha256,
+            algorithm.builtin_blob_sha256, algorithm.flash_start, algorithm.flash_size,
+            tuple(algorithm.sector_sizes))
+
+
+def _algorithm_selection_key(algorithm_id, algorithm_ids):
+    if algorithm_id and algorithm_ids:
+        raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "use algorithm_id or algorithm_ids, not both")
+    return tuple(sorted(algorithm_ids)) if algorithm_ids else algorithm_id
+
+
+def _algorithm_asset(services, algorithm):
+    from mklink.cmsis_dap.algorithm_catalog import extract_algorithm
+    path = extract_algorithm(algorithm, Path(services.paths.root) / "online-algorithms")
+    return str(path), hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 def _target_flash_configuration(
     services: OnlineFlashServices,
     part_number: str,
     algorithm_id: Optional[str] = None,
+    algorithm_ids: Sequence[str] = (),
 ) -> tuple[tuple[MemoryRegion, ...], tuple[str, ...], tuple[str, ...]]:
     from mklink.hpm_config import is_hpm_target
 
+    _algorithm_selection_key(algorithm_id, algorithm_ids)
     if is_hpm_target(part_number):
+        if algorithm_ids or algorithm_id:
+            raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "HPM uses ROM API, not FLM")
         return (
             (MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None),),
             (),
             (),
         )
     target = _exact_installed_target(services.catalog, part_number)
+    if algorithm_ids:
+        chosen = _selected_flash_algorithms(services, part_number, algorithm_ids)
+        regions, fingerprints, paths = [], [], []
+        for item in chosen:
+            if item.source_kind == "pyocd-builtin":
+                fingerprints.append(repr(_algorithm_plan_identity(item)))
+            else:
+                path, digest = _algorithm_asset(services, item)
+                paths.append(path)
+                fingerprints.append(digest)
+                if item.pack_path and not item.sector_sizes:
+                    from mklink.cmsis_dap.custom_flm import _parse_flm, CustomFlmCatalog
+                    _, _, page_size, sectors = CustomFlmCatalog._metadata(_parse_flm(Path(path)))
+                    item = replace(item, page_size=page_size, sector_sizes=sectors)
+            regions.extend(algorithm_regions(item, item.file_name))
+        return tuple(regions), tuple(fingerprints), tuple(paths)
     base_regions = tuple(services.target_memory_provider(part_number))
     selected_range = None
     if algorithm_id:
@@ -911,6 +980,7 @@ def _add_custom_flm_configuration(
             file_name,
             target.part_number if target else "__flm_preview__",
             (),
+            allow_alternatives=True,
         )
 
 
@@ -955,7 +1025,7 @@ def _job_flash_algorithms(
             for selection in resolve_firmware_algorithms(
                 algorithms,
                 ranges,
-                allow_uncovered=target.source == "builtin",
+                allow_uncovered=target.source == "builtin" and not body.algorithm_ids,
                 preferred_algorithm_ids=preferred_algorithm_ids,
             )
         ]
@@ -966,10 +1036,15 @@ def _job_flash_algorithms(
             for selection in resolve_firmware_algorithms(
                 algorithms,
                 tuple((int(address), int(address) + 1) for address in body.sector_addresses),
-                allow_uncovered=target.source == "builtin",
+                allow_uncovered=target.source == "builtin" and not body.algorithm_ids,
                 preferred_algorithm_ids=preferred_algorithm_ids,
             )
         ]
+
+    if "erase" in body.actions and body.algorithm_ids:
+        if len(algorithms) != 1:
+            raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "multiple algorithms require image-covered or selected-sector erase")
+        return list(algorithms)
 
     if "erase" in body.actions:
         has_custom = any(
@@ -1112,7 +1187,7 @@ def _start_job_with_configuration(
         if (
             target.source == "daplink-builtin"
             and "erase" in body.actions
-            and not body.algorithm_id
+            and not body.algorithm_id and not body.algorithm_ids
             and _builtin_geometry_is_ambiguous(target.part_number)
         ):
             raise FlashError(
@@ -1126,7 +1201,7 @@ def _start_job_with_configuration(
                 target.part_number, board=board, flash_cfg=hpm_flash_cfg
             )
         regions, fingerprint, configured_flm_paths = _target_flash_configuration(
-            services, target.part_number, body.algorithm_id
+            services, target.part_number, body.algorithm_id, body.algorithm_ids
         )
         custom_flm_paths = ()
         custom_flm_digests = ()
@@ -1211,7 +1286,7 @@ def _start_job_with_configuration(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "image inspection does not match the selected target",
                 )
-            if services.image_algorithm_selections.get(body.image_id) != body.algorithm_id:
+            if services.image_algorithm_selections.get(body.image_id) != _algorithm_selection_key(body.algorithm_id, body.algorithm_ids):
                 raise FlashError(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "Flash algorithm selection changed after image inspection",
@@ -1236,6 +1311,8 @@ def _start_job_with_configuration(
                     discover_flash_algorithms(target.part_number, paths=services.paths)
                     if needs_catalog else []
                 )
+                if body.algorithm_ids:
+                    catalog = _selected_flash_algorithms(services, target.part_number, body.algorithm_ids)
                 configured_paths = {str(path) for path in configured_flm_paths}
                 preferred_algorithm_ids = (
                     (body.algorithm_id,) if body.algorithm_id else tuple(
@@ -1257,10 +1334,18 @@ def _start_job_with_configuration(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     str(error),
                 ) from error
+            expected_plan = services.image_algorithm_plans.get(body.image_id)
+            if expected_plan is not None and tuple(_algorithm_plan_identity(item) for item in selected) != expected_plan:
+                raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "Flash algorithm plan changed after inspection; inspect again")
+            for index, algorithm in enumerate(selected):
+                if any(algorithm.flash_start < other.flash_start + other.flash_size and other.flash_start < algorithm.flash_start + algorithm.flash_size for other in selected[:index]):
+                    raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "resolved Flash algorithms overlap; select non-overlapping algorithms and inspect again")
             source_records = []
             for algorithm in selected:
                 path = algorithm.custom_path or algorithm.builtin_blob_path
                 digest = algorithm.custom_sha256 or algorithm.builtin_blob_sha256
+                if (body.algorithm_ids or algorithm.pack_path) and algorithm.source_kind != "pyocd-builtin":
+                    path, digest = _algorithm_asset(services, algorithm)
                 if path and digest:
                     source_records.append((
                         str(path),
@@ -1352,6 +1437,45 @@ def wait_online_job(services: OnlineFlashServices, job_id: str) -> dict:
     }
 
 
+def _image_algorithm_plan(services, target, inspection, regions, algorithm_id, algorithm_ids):
+    """Resolve the preview in a worker; catalog discovery can read large Packs."""
+    from mklink.hpm_config import is_hpm_target
+    from mklink.cmsis_dap.models import ImageSegment
+    segments = inspection.segments or (ImageSegment(inspection.start, inspection.end),)
+    plan, identity = [], ()
+    if target and not is_hpm_target(target.part_number):
+        from mklink.cmsis_dap.algorithm_catalog import discover_flash_algorithms, resolve_firmware_algorithms, FlashAlgorithmError
+        try:
+            candidates = (_selected_flash_algorithms(services, target.part_number, algorithm_ids)
+                          if algorithm_ids else discover_flash_algorithms(target.part_number, paths=services.paths))
+            preferred = (algorithm_id,) if algorithm_id else tuple(item.algorithm_id for item in candidates if item.source_kind == "custom-flm")
+            selections = resolve_firmware_algorithms(candidates, [(segment.start, segment.end) for segment in segments],
+                allow_uncovered=True, preferred_algorithm_ids=preferred)
+            identity = tuple(_algorithm_plan_identity(item.algorithm) for item in selections)
+            plan = [dict(_flash_algorithm_payload(item.algorithm), ranges=[{"start": start, "end": end} for start, end in item.ranges]) for item in selections]
+            if target.source == "builtin" and not algorithm_ids:
+                covered = [pair for item in selections for pair in item.ranges]
+                for region in regions:
+                    if not region.is_flash:
+                        continue
+                    native_ranges = []
+                    for segment in segments:
+                        start, end = max(region.start, segment.start), min(region.end, segment.end)
+                        if start >= end:
+                            continue
+                        points = sorted({start, end} | {point for pair in covered for point in pair if start < point < end})
+                        for left, right in zip(points, points[1:]):
+                            if left < right and not any(lo <= left and right <= hi for lo, hi in covered):
+                                native_ranges.append({"start": left, "end": right})
+                    if native_ranges:
+                        plan.append({"algorithm_id": "pyocd-builtin:{}:{:08x}".format(target.part_number.casefold(), region.start), "file_name": target.part_number + " · " + region.name, "source_kind": "pyocd-builtin", "source_name": "pyOCD", "flash_start": region.start, "flash_size": region.length, "ranges": native_ranges})
+        except FlashAlgorithmError as error:
+            raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, str(error)) from error
+    elif target:
+        plan = [{"algorithm_id": "hpm-rom-api", "file_name": "HPM ROM API", "source_kind": "hpm-rom-api", "source_name": "HPM ROM API", "flash_start": 0x80000000, "flash_size": 0x10000000, "ranges": [{"start": item.start, "end": item.end} for item in segments]}]
+    return plan, identity
+
+
 def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     router = APIRouter(prefix="/api/online-flash", tags=["online-flash"])
 
@@ -1361,6 +1485,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         base_address: Optional[Union[str, int]],
         captured_from_target: bool = False,
         algorithm_id: Optional[str] = None,
+        algorithm_ids: Sequence[str] = (),
     ) -> object:
         from mklink.hpm_config import is_hpm_target
 
@@ -1372,7 +1497,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             ))
         if target:
             regions, fingerprint, _paths = await _blocking(
-                _target_flash_configuration, services, target.part_number, algorithm_id
+                _target_flash_configuration, services, target.part_number, algorithm_id, algorithm_ids
             )
         else:
             regions = await _blocking(services.custom_flms.regions, "__flm_preview__") if services.custom_flms else ()
@@ -1413,8 +1538,9 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             services.image_targets[inspection.image_id] = (
                 target.part_number.casefold(), fingerprint
             )
-            if algorithm_id:
-                services.image_algorithm_selections[inspection.image_id] = algorithm_id
+            selection_key = _algorithm_selection_key(algorithm_id, algorithm_ids)
+            if selection_key:
+                services.image_algorithm_selections[inspection.image_id] = selection_key
             else:
                 services.image_algorithm_selections.pop(inspection.image_id, None)
         if pack_flm_regions:
@@ -1422,6 +1548,12 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 tuple(regions), pack_flm_regions
             )
         payload = _json_primitive(inspection, hide_paths=True)
+        plan, plan_identity = await _blocking(
+            _image_algorithm_plan, services, target, inspection, regions, algorithm_id, algorithm_ids,
+        )
+        payload["algorithm_plan"] = plan
+        if target and not is_hpm_target(target.part_number):
+            services.image_algorithm_plans[inspection.image_id] = plan_identity
         payload["sector_operations_available"] = coverage.sector_operations_available
         payload["sectors"] = _json_primitive(coverage.sectors)
         payload["preview_only"] = preview_only
@@ -1434,7 +1566,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         if target and not preview_only and not is_hpm_target(target.part_number) and not coverage.sector_operations_available:
             payload["validation_message"] = (
                 "该器件有多套覆盖相同地址的 FLM 扇区布局，请选择与目标 Bank 模式一致的烧录算法后重新检查。"
-                if target.source == "daplink-builtin" and not algorithm_id
+                if target.source == "daplink-builtin" and not algorithm_id and not algorithm_ids
                 and _builtin_geometry_is_ambiguous(target.part_number)
                 else "当前 FLM 未提供可验证的完整扇区布局；请检查算法或安装包含扇区信息的 Pack。"
             )
@@ -1465,14 +1597,14 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         return _json_primitive(result, hide_paths=True)
 
     @router.get("/targets/{part_number}/memory-map")
-    async def target_memory_map(part_number: str, algorithm_id: Optional[str] = None) -> object:
+    async def target_memory_map(part_number: str, algorithm_id: Optional[str] = None, algorithm_ids: List[str] = Query(default=[], max_length=32)) -> object:
         target = await _blocking(_resolved_target, services.catalog, part_number)
-        if target.source == "daplink-builtin" and not algorithm_id and await _blocking(
+        if target.source == "daplink-builtin" and not algorithm_id and not algorithm_ids and await _blocking(
             _builtin_geometry_is_ambiguous, target.part_number
         ):
             return []
         regions, _fingerprint, _paths = await _blocking(
-            _target_flash_configuration, services, target.part_number, algorithm_id
+            _target_flash_configuration, services, target.part_number, algorithm_id, algorithm_ids
         )
         return [
             {
@@ -1844,6 +1976,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         base_address: Optional[str] = Form(None),
         captured_from_target: bool = Form(False),
         algorithm_id: Optional[str] = Form(None),
+        algorithm_ids: List[str] = Form(default=[], max_length=32),
     ) -> object:
         temporary = None  # type: Optional[Path]
         try:
@@ -1856,6 +1989,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 base_address,
                 captured_from_target,
                 algorithm_id,
+                algorithm_ids,
             )
         finally:
             await run_in_threadpool(_unlink, temporary)
@@ -1869,7 +2003,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             )
         except (OSError, ValueError) as error:
             raise HTTPException(status_code=422, detail=str(error))
-        return await inspect_source(source, body.part_number, body.base_address, algorithm_id=body.algorithm_id)
+        return await inspect_source(source, body.part_number, body.base_address, algorithm_id=body.algorithm_id, algorithm_ids=body.algorithm_ids)
 
     @router.get("/images/source-status")
     async def image_source_status(path: str = Query(...)) -> object:

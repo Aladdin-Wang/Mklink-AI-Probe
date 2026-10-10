@@ -68,6 +68,7 @@ class CustomFlmCatalog:
         file_name: str,
         part_number: str,
         existing_regions: Sequence[MemoryRegion],
+        *, allow_alternatives: bool = False,
     ) -> CustomFlmRecord:
         source_path = Path(source)
         if not source_path.is_file():
@@ -108,10 +109,11 @@ class CustomFlmCatalog:
                     and record.algorithm_id == digest
                 ):
                     return record
-            self._reject_overlap(candidate, self._regions_for_records(
-                record for record in records
-                if record.target_part.casefold() == target_part.casefold()
-            ))
+            if not allow_alternatives:
+                self._reject_overlap(candidate, self._regions_for_records(
+                    record for record in records
+                    if record.target_part.casefold() == target_part.casefold()
+                ))
             self._directory.mkdir(parents=True, exist_ok=True)
             created_payload = not destination.exists()
             if created_payload:

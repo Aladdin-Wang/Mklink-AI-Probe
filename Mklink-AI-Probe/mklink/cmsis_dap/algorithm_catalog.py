@@ -401,32 +401,48 @@ def resolve_firmware_algorithms(
         source_key = (algorithm.source_kind, algorithm.source_name)
         source_order.setdefault(source_key, len(source_order))
     selected = {}  # type: dict[str, tuple[FlashAlgorithm, list[Tuple[int, int]]]]
-    for start, end in ranges:
-        if start < 0 or end <= start:
+    for range_start, range_end in ranges:
+        if range_start < 0 or range_end <= range_start:
             raise FlashAlgorithmError("firmware range is invalid")
-        candidates = [
-            algorithm for algorithm in algorithms
-            if algorithm.flash_size > 0
-            and algorithm.flash_start <= start
-            and end <= algorithm.flash_start + algorithm.flash_size
-        ]
-        if not candidates:
-            if allow_uncovered:
-                continue
-            raise FlashAlgorithmError(
-                "no Flash algorithm covers 0x{:08X}-0x{:08X}".format(start, end)
-            )
-        candidates.sort(key=lambda algorithm: (
-            0 if algorithm.algorithm_id in preferred else 1,
-            _AUTOMATIC_SOURCE_PRIORITY.get(algorithm.source_kind, 4),
-            source_order[(algorithm.source_kind, algorithm.source_name)],
-            0 if algorithm.default else 1,
-            algorithm.flash_size,
-            algorithm.algorithm_id,
-        ))
-        algorithm = candidates[0]
-        entry = selected.setdefault(algorithm.algorithm_id, (algorithm, []))
-        entry[1].append((start, end))
+        # Preserve the existing whole-segment choice when possible. Split only
+        # when no single algorithm covers the segment (e.g. adjacent banks).
+        whole_segment = any(
+            algorithm.flash_start <= range_start
+            and range_end <= algorithm.flash_start + algorithm.flash_size
+            for algorithm in algorithms
+        )
+        boundaries = [range_start, range_end] if whole_segment else sorted({range_start, range_end} | {
+            point for algorithm in algorithms
+            for point in (algorithm.flash_start, algorithm.flash_start + algorithm.flash_size)
+            if range_start < point < range_end
+        })
+        for start, end in zip(boundaries, boundaries[1:]):
+            candidates = [
+                algorithm for algorithm in algorithms
+                if algorithm.flash_size > 0
+                and algorithm.flash_start <= start
+                and end <= algorithm.flash_start + algorithm.flash_size
+            ]
+            if not candidates:
+                if allow_uncovered:
+                    continue
+                raise FlashAlgorithmError(
+                    "no Flash algorithm covers 0x{:08X}-0x{:08X}".format(start, end)
+                )
+            candidates.sort(key=lambda algorithm: (
+                0 if algorithm.algorithm_id in preferred else 1,
+                _AUTOMATIC_SOURCE_PRIORITY.get(algorithm.source_kind, 4),
+                source_order[(algorithm.source_kind, algorithm.source_name)],
+                0 if algorithm.default else 1,
+                algorithm.flash_size,
+                algorithm.algorithm_id,
+            ))
+            algorithm = candidates[0]
+            entry = selected.setdefault(algorithm.algorithm_id, (algorithm, []))
+            if entry[1] and entry[1][-1][1] == start:
+                entry[1][-1] = (entry[1][-1][0], end)
+            else:
+                entry[1].append((start, end))
     return [
         FirmwareAlgorithmSelection(algorithm, tuple(grouped_ranges))
         for algorithm, grouped_ranges in selected.values()

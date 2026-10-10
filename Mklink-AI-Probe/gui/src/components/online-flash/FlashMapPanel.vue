@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ImageSegment, SectorRecord } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
-defineProps<{ segments: ImageSegment[]; sectors: SectorRecord[]; selectedAddresses: number[]; inspectionReady: boolean; geometryReliable: boolean; geometryMessage?: string; canErase: boolean }>()
+defineProps<{ segments: ImageSegment[]; sectors: SectorRecord[]; selectedAddresses: number[]; inspectionReady: boolean; geometryReliable: boolean; geometryMessage?: string; canErase: boolean; multipleAlgorithms?: boolean }>()
 defineEmits<{ chipErase: []; selectedErase: []; rangeErase: []; selectAll: []; clearSelection: []; toggleSector: [address: number] }>()
 const hex = (value: number) => `0x${value.toString(16).toUpperCase().padStart(8, '0')}`
 </script>
@@ -16,7 +16,8 @@ const hex = (value: number) => `0x${value.toString(16).toUpperCase().padStart(8,
     <div class="sector-actions"><button data-testid="select-all-sectors" :disabled="!geometryReliable" @click="$emit('selectAll')">{{ tr('全选', 'Select All') }}</button><button :disabled="!geometryReliable" @click="$emit('clearSelection')">{{ tr('清空', 'Clear') }}</button></div>
     <div v-if="geometryReliable" class="sector-list"><label v-for="sector in sectors" :key="sector.address" class="sector-row"><input type="checkbox" :checked="selectedAddresses.includes(sector.address)" @change="$emit('toggleSector', sector.address)"><span>{{ hex(sector.address) }}</span><span>{{ sector.size }} B</span></label></div>
     <div v-else class="sector-empty">{{ inspectionReady ? tr('服务端未提供可靠扇区表', 'No reliable sector table is available') : tr('加载固件后显示扇区表', 'Load firmware to display sectors') }}</div>
-    <button :disabled="!geometryReliable || !canErase || !selectedAddresses.length" @click="$emit('selectedErase')">{{ tr('擦除所选', 'Erase Selected') }}</button><button data-testid="range-erase" :disabled="!geometryReliable || !canErase" @click="$emit('rangeErase')">{{ tr('范围擦除', 'Erase Range') }}</button><button data-testid="chip-erase" :disabled="!canErase" class="danger" @click="$emit('chipErase')">{{ tr('全片擦除', 'Chip Erase') }}</button>
+    <p v-if="multipleAlgorithms" class="warning">{{ tr('多算法组合请使用镜像范围或所选扇区擦除。', 'For multiple algorithms, erase the image range or selected sectors.') }}</p>
+    <button :disabled="!geometryReliable || !canErase || !selectedAddresses.length" @click="$emit('selectedErase')">{{ tr('擦除所选', 'Erase Selected') }}</button><button data-testid="range-erase" :disabled="!geometryReliable || !canErase" @click="$emit('rangeErase')">{{ tr('范围擦除', 'Erase Range') }}</button><button data-testid="chip-erase" :disabled="!canErase || multipleAlgorithms" class="danger" @click="$emit('chipErase')">{{ tr('全片擦除', 'Chip Erase') }}</button>
   </div>
 </template>
 <style scoped>

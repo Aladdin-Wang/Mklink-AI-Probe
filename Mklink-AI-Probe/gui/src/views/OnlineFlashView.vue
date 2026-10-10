@@ -80,6 +80,7 @@ const packError = ref('')
 const customFlms = ref<CustomFlmRecord[]>([])
 const flashAlgorithms = ref<FlashAlgorithmRecord[]>([])
 const selectedAlgorithmId = ref('')
+const selectedAlgorithmIds = ref<string[]>([])
 const customFlmBusy = ref(false)
 const customFlmError = ref('')
 const firmware = ref<File | null>(null)
@@ -330,8 +331,8 @@ function setActions(values: JobAction[]): void {
   }
   actions.value = next
 }
-const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !inspection.value.preview_only && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !recoveryBlocked.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || !!hpmBoard.value) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value) && (!actions.value.includes('erase') || !algorithmChoices.value.length || !!selectedAlgorithmId.value))
-const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value && !recoveryBlocked.value && (!algorithmChoices.value.length || !!selectedAlgorithmId.value))
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !inspection.value.preview_only && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !recoveryBlocked.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || !!hpmBoard.value) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value) && (!actions.value.includes('erase') || !algorithmChoices.value.length || (!!selectedAlgorithmId.value || !!selectedAlgorithmIds.value.length)))
+const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value && !recoveryBlocked.value && (!algorithmChoices.value.length || (!!selectedAlgorithmId.value || !!selectedAlgorithmIds.value.length)))
 const hpmAlgorithmNotRequired = computed(() => (
   selectedTarget.value?.part_number.toLowerCase().startsWith('hpm') ?? false
 ))
@@ -572,6 +573,11 @@ async function loadFlashAlgorithms(partNumber = selectedTarget.value?.part_numbe
     const records = await api.listTargetAlgorithms(partNumber)
     if (token === flashAlgorithmToken && !disposed) {
       flashAlgorithms.value = records
+      // Keep missing selections visible as a blocked configuration, never silently fall back.
+      if (selectedAlgorithmIds.value.some(id => !records.some(item => item.algorithm_id === id))) {
+        customFlmError.value = tr('所选算法已不可用，请重新选择并检查镜像。', 'A selected algorithm is unavailable. Select again and inspect the image.')
+        resetInspection()
+      }
       if (selectedAlgorithmId.value && !records.some(item => item.algorithm_id === selectedAlgorithmId.value)) selectedAlgorithmId.value = ''
     }
   } catch (error) {
@@ -591,7 +597,7 @@ async function loadTargetMemoryMap(partNumber = selectedTarget.value?.part_numbe
   }
   targetMemoryMapBusy.value = true
   try {
-    const regions = await api.getTargetMemoryMap(partNumber, selectedAlgorithmId.value)
+    const regions = await api.getTargetMemoryMap(partNumber, selectedAlgorithmId.value, selectedAlgorithmIds.value)
     if (token === targetMemoryMapToken && !disposed) targetMemoryRegions.value = regions
   } catch {
     if (token === targetMemoryMapToken) targetMemoryRegions.value = []
@@ -614,6 +620,7 @@ async function loadSecurityCapability(partNumber = selectedTarget.value?.part_nu
 
 watch(() => selectedTarget.value?.part_number || '', partNumber => {
   selectedAlgorithmId.value = ''
+  selectedAlgorithmIds.value = []
   actions.value = canonicalActions(actions.value.filter(action => action !== 'unlock' && action !== 'lock'))
   void loadCustomFlms(partNumber)
   void loadFlashAlgorithms(partNumber)
@@ -624,6 +631,17 @@ watch(() => selectedTarget.value?.part_number || '', partNumber => {
 function selectAlgorithm(algorithmId: string): void {
   if (active.value || (algorithmId && !algorithmChoices.value.some(item => item.algorithm_id === algorithmId))) return
   selectedAlgorithmId.value = algorithmId
+  selectedAlgorithmIds.value = []
+  resetInspection()
+  void loadTargetMemoryMap()
+  scheduleAutoInspection()
+}
+
+function selectAlgorithms(ids: string[]): void {
+  if (active.value || creatingJob.value || ids.some(id => !flashAlgorithms.value.some(item => item.algorithm_id === id))) return
+  selectedAlgorithmId.value = ''
+  selectedAlgorithmIds.value = ids
+  customFlmError.value = ''
   resetInspection()
   void loadTargetMemoryMap()
   scheduleAutoInspection()
@@ -871,7 +889,7 @@ async function inspectImage(): Promise<void> {
   inspectionController = controller
   try {
     const result = firmwarePath.value
-      ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value?.part_number || '', isBin.value ? parsedBase.value : null, controller.signal, selectedAlgorithmId.value)
+      ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value?.part_number || '', isBin.value ? parsedBase.value : null, controller.signal, selectedAlgorithmId.value, selectedAlgorithmIds.value)
       : await api.inspectImage(
           firmware.value!,
           selectedTarget.value?.part_number || '',
@@ -879,6 +897,7 @@ async function inspectImage(): Promise<void> {
           controller.signal,
           capturedReadSource,
           selectedAlgorithmId.value,
+          selectedAlgorithmIds.value,
         )
     if (disposed || generation !== inspectionGeneration || controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
     if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error(tr('服务端返回的镜像地址范围无效', 'The server returned an invalid image address range'))
@@ -999,7 +1018,7 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
       : []
   )
   if (sectorAddresses === undefined && orderedActions.includes('erase') && !geometryReliable.value && !hpmMode.value) return
-  if (orderedActions.includes('erase') && algorithmChoices.value.length && !selectedAlgorithmId.value) return
+  if (orderedActions.includes('erase') && algorithmChoices.value.length && !selectedAlgorithmId.value && !selectedAlgorithmIds.value.length) return
   const usesReset = orderedActions.includes('reset')
   const selectedResetMode = usesReset ? resetMode.value : 'default'
   const selectedResetVoltage = selectedResetMode === 'power-cycle' ? resetVoltageMv.value : null
@@ -1023,7 +1042,7 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
     pendingRequest.value = requestId
     progressOwner.value = 'flash'
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0
-    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, algorithm_id: selectedAlgorithmId.value || null, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null }, requestId)
+    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, algorithm_id: selectedAlgorithmId.value || null, algorithm_ids: [...selectedAlgorithmIds.value], probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null }, requestId)
     if (!current() || pendingRequest.value !== requestId) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(tr(`[JOB] 已创建 ${result.job_id}`, `[JOB] Created ${result.job_id}`)); subscribe(0)
@@ -1105,7 +1124,7 @@ onBeforeUnmount(() => {
   <div class="online-flash-grid" :inert="confirmationMessage !== null">
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :reset-voltage-mv="resetVoltageMv" :busy="probeBusy || active || creatingJob || recoveryBusy" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" @update:reset-voltage-mv="resetVoltageMv = $event" />
-      <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :selected-algorithm-id="selectedAlgorithmId" :algorithm-choices="algorithmChoices" :selection-locked="active" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="updateTargetQuery" @select="selectTarget" @select-algorithm="selectAlgorithm" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
+      <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :selected-algorithm-ids="selectedAlgorithmIds" :algorithm-plan="inspection?.algorithm_plan || []" :selected-algorithm-id="selectedAlgorithmId" :algorithm-choices="algorithmChoices" :selection-locked="active || creatingJob || recoveryBlocked" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="updateTargetQuery" @select="selectTarget" @select-algorithms="selectAlgorithms" @select-algorithm="selectAlgorithm" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
       <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
@@ -1120,7 +1139,7 @@ onBeforeUnmount(() => {
       </section>
       <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" :unlock-enabled="security.unlock_supported" :lock-enabled="security.lock_supported" :security-reason="security.reason" :security-family="security.family" :unlock-erases-eeprom="security.unlock_erases_eeprom" :unlock-erases-backup-registers="security.unlock_erases_backup_registers" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
-    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :geometry-message="hpmMode ? tr('HPM 由设备端 ROM 查询容量并擦写，支持 BIN / HEX；此处不提供独立扇区擦除。', 'HPM ROM queries capacity and programs BIN / HEX. Separate sector erase is unavailable.') : algorithmChoices.length && !selectedAlgorithmId ? tr('该器件有多套扇区布局，请先在左侧选择与目标 Bank 模式一致的 FLM。', 'This target has multiple sector layouts. Select the FLM matching its bank mode on the left.') : inspection?.validation_message" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
+    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :geometry-message="hpmMode ? tr('HPM 由设备端 ROM 查询容量并擦写，支持 BIN / HEX；此处不提供独立扇区擦除。', 'HPM ROM queries capacity and programs BIN / HEX. Separate sector erase is unavailable.') : algorithmChoices.length && !selectedAlgorithmId && !selectedAlgorithmIds.length ? tr('该器件有多套扇区布局，请先在左侧选择与目标 Bank 模式一致的 FLM。', 'This target has multiple sector layouts. Select the FLM matching its bank mode on the left.') : inspection?.validation_message" :can-erase="canErase" :multiple-algorithms="selectedAlgorithmIds.length > 1" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
     <div v-if="binAddressOpen" class="bin-address-backdrop" data-testid="bin-address-dialog" @click.self="cancelBinAddress">
       <section class="bin-address-dialog" role="dialog" aria-modal="true" aria-labelledby="bin-address-title">
