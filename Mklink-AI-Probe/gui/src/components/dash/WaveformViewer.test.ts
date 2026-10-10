@@ -122,9 +122,9 @@ function wheelEvent(init: WheelEventInit) {
 }
 
 async function loadRttViewerRuntime(
-  mode: 'VOFA' | 'SuperWatch' = 'VOFA', capacity = 4,
+  mode: 'VOFA' | 'SuperWatch' = 'VOFA', capacity = 4, request?: typeof fetch,
 ) {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+  vi.stubGlobal('fetch', request ?? vi.fn().mockResolvedValue({
     ok: true, json: async () => ({ running: false, channels: [] }),
   }))
   // These are DOM substitutes, not assertions: recording every call retains
@@ -2818,45 +2818,87 @@ describe('VOFA viewer hot path source guard', () => {
       search.dispatchEvent(event)
 
       expect(event.defaultPrevented).toBe(false)
-      expect(document.getElementById('raw-log-panel')?.dataset.open).toBe('false')
+      expect(document.getElementById('raw-log-panel')).toBeNull()
     } finally {
       search.remove()
       runtime.cleanup()
     }
   })
 
-  it('records selected SuperWatch values with timestamps and saves the raw log', async () => {
+  it('removes SuperWatch raw logs and manual configuration controls', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch')
-    const createObjectURL = vi.fn(() => 'blob:superwatch-log')
-    const revokeObjectURL = vi.fn()
-    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     try {
-      runtime.viewer.configureBinaryChannels([{ name: 'gain' }, { name: 'target' }])
       runtime.probe.setRawLogOpen(true)
-      runtime.viewer.acceptBinaryBatch({
-        sequence: 1n, timestampNs: 1_700_000_000_100_000_000n,
-        itemCount: 2, channelCount: 2, layout: 'sample-major-float32',
-        values: Float32Array.of(1, 10, 1.25, 20).buffer,
-        times: Float64Array.of(1_700_000_000_000, 1_700_000_000_100).buffer,
-      })
+      runtime.probe.appendRawLog('unused')
+      expect(runtime.probe.rawLogState().count).toBe(0)
+      for (const id of ['raw-log-panel', 'btn-save-project', 'btn-load-project', 'project-load-input']) {
+        expect(document.getElementById(id)).toBeNull()
+      }
+      expect(document.querySelector('.watch-log-menu #btn-export-csv')).not.toBeNull()
+      expect(document.querySelector('.watch-trigger-dialog #trigger-toolbar')).not.toBeNull()
+    } finally { runtime.cleanup() }
+  })
 
-      const lines = runtime.probe.rawLogState().lines
-      expect(lines).toHaveLength(2)
-      expect(lines[0]).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] gain=1, target=10$/)
-      expect(lines[1]).toContain('gain=1.25, target=20')
-      runtime.probe.saveRawLog()
-      expect(createObjectURL).toHaveBeenCalledOnce()
-      expect(click).toHaveBeenCalledOnce()
-      expect(document.getElementById('raw-log-save')).not.toBeNull()
+  it('restores local display settings without replaying shared workspace or target metadata', async () => {
+    const storage = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+    })
+    const first = await loadRttViewerRuntime('SuperWatch')
+    first.viewer.configureBinaryChannels([{ name: 'gain', addr: 0x20000000 }])
+    first.probe.fields().gain.color = '#123456'
+    first.probe.fields().gain.thresholds = { warnLow: -2, warnHigh: 2, alarmLow: -3, alarmHigh: 3 }
+    first.probe.trigger.level = 12
+    first.probe.setBufferCapacity(100000)
+    first.cleanup()
+    const saved = JSON.parse(storage.get('mklink.desktop.settings.v1.waveform.SuperWatch')!)
+    expect(saved.workspace).toBeUndefined()
+    expect(saved.channels[0].address).toBeUndefined()
+    const imported = vi.fn()
+    window.addEventListener('mklink:workspace-import', imported)
+    const second = await loadRttViewerRuntime('SuperWatch')
+    try {
+      second.viewer.configureBinaryChannels([{ name: 'gain', addr: 0x20001000 }])
+      expect(second.probe.fields().gain.color).toBe('#123456')
+      expect(second.probe.metadata().gain.address).toBe(0x20001000)
+      expect(second.probe.trigger.level).toBe(12)
+      expect(second.probe.serializeState().bufferPoints).toBe(100000)
+      expect(imported).not.toHaveBeenCalled()
     } finally {
-      click.mockRestore()
+      second.cleanup()
+      window.removeEventListener('mklink:workspace-import', imported)
       vi.unstubAllGlobals()
-      runtime.cleanup()
     }
   })
 
-  it('routes SuperWatch CSV and raw-log exports through the desktop save bridge', async () => {
+  it.each([false, true])('restores interval without changing a live shared acquisition (running=%s)', async running => {
+    const saved = JSON.stringify({ channels: [null], interval: 0.00001 })
+    vi.stubGlobal('localStorage', { getItem: () => saved, setItem: vi.fn() })
+    const requests = vi.fn(async (url: any, options?: RequestInit) => ({
+      ok: !String(url).endsWith('/start'),
+      json: async () => String(url).endsWith('/start')
+        ? { detail: 'Interval rejected' }
+        : { state: running ? 'running' : 'stopped', interval: 0.002, items: [] },
+    }))
+    const runtime = await loadRttViewerRuntime('SuperWatch', 4, requests as typeof fetch)
+    try {
+      await flushPromises()
+      expect(requests.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+      expect((document.getElementById('interval-input') as HTMLInputElement).value).toBe(running ? '0.002' : '0.00001')
+      if (!running) {
+        document.getElementById('btn-start')!.click()
+        await flushPromises()
+        expect(requests.mock.calls.some(([url]) => String(url).endsWith('/start'))).toBe(true)
+        expect(requests.mock.calls.some(([url]) => String(url).endsWith('/interval'))).toBe(false)
+        const start = requests.mock.calls.find(([url]) => String(url).endsWith('/start'))!
+        expect(JSON.parse(start[1]!.body as string)).toEqual({ interval: 0.00001 })
+        expect(document.getElementById('conn-status')!.textContent).toContain('Interval rejected')
+      }
+    } finally { runtime.cleanup(); vi.unstubAllGlobals() }
+  })
+
+  it('routes SuperWatch sample-log export through the desktop save bridge', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch')
     const nativeSave = vi.fn().mockResolvedValue(true)
     ;(window as any).__MKLINK_SAVE_FILE__ = nativeSave
@@ -2870,15 +2912,12 @@ describe('VOFA viewer hot path source guard', () => {
         times: Float64Array.of(1_000, 2_000).buffer,
       })
 
-      runtime.probe.saveRawLog()
       runtime.probe.exportCSV()
       await Promise.resolve()
 
-      expect(nativeSave).toHaveBeenCalledTimes(2)
-      expect(nativeSave.mock.calls[0][0]).toMatch(/^superwatch-raw-\d{8}-\d{6}\.txt$/)
-      expect(nativeSave.mock.calls[0][1]).toContain('gain=1.25')
-      expect(nativeSave.mock.calls[1][0]).toBe('jscope_export.csv')
-      expect(nativeSave.mock.calls[1][1]).toContain('timestamp,gain')
+      expect(nativeSave).toHaveBeenCalledOnce()
+      expect(nativeSave.mock.calls[0][0]).toBe('jscope_export.csv')
+      expect(nativeSave.mock.calls[0][1]).toContain('timestamp,gain')
     } finally {
       runtime.cleanup()
     }

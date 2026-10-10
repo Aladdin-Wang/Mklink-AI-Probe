@@ -1489,3 +1489,20 @@ tr.watch-child-row td[data-col="value"] {
 
 .workspace-divider { position:absolute; left:64px; right:16px; height:8px; cursor:row-resize; z-index:7; border-top:1px solid var(--border); }
 .workspace-divider:hover,.workspace-divider:focus { background:var(--accent);opacity:.5; }
+
+/* SuperWatch: one acquisition row below the workspace/clock row. */
+.waveform-viewer.superwatch-desktop > header { display: none; }
+.watch-toolbar-row { display:flex; align-items:center; flex:0 0 42px; gap:8px; overflow-x:auto; white-space:nowrap; border-bottom:1px solid var(--border); }
+.watch-toolbar-row #control-toolbar { border:0; padding:4px; flex:0 0 auto; gap:6px; }
+.watch-toolbar-row .header-actions { display:flex; flex:0 0 auto; flex-wrap:nowrap; gap:5px; padding-right:8px; }
+.watch-toolbar-row .buffer-unit, .watch-toolbar-row #buffer-memory-estimate, .watch-toolbar-row .ctrl-sep { display:none; }
+.watch-toolbar-row #buffer-input { width:82px; }
+.watch-toolbar-row #interval-input { width:94px; }
+.watch-toolbar-row #conn-status:not(.badge-err), .watch-toolbar-row #transport-state-badge:not(.badge-err):not(.badge-warn), .watch-toolbar-row #transport-health-badge:not(.badge-warn) { display:none; }
+.watch-toolbar-row .badge { max-width:240px; overflow:hidden; text-overflow:ellipsis; }
+.watch-log-controls summary { cursor:pointer; padding:5px 9px; border:1px solid var(--border); border-radius:6px; font-size:12px; }
+.watch-log-menu { position:absolute; z-index:950; right:12px; display:flex; gap:8px; padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 6px 24px #0005; }
+.watch-trigger-dialog { margin:auto; padding:16px; color:var(--fg); background:var(--surface); border:1px solid var(--border); border-radius:12px; max-width:calc(100vw - 32px); }
+.watch-trigger-dialog::backdrop { background:#0007; }
+.waveform-viewer.superwatch-desktop .watch-trigger-dialog header { display:flex; justify-content:space-between; gap:24px; height:auto; max-height:none; padding:0 0 12px; }
+.waveform-viewer.superwatch-desktop .watch-trigger-dialog #trigger-toolbar { flex-wrap:wrap; max-height:none; padding:0; border:0; overflow:visible; }

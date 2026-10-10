@@ -91,7 +91,7 @@ describe('SuperWatchTab', () => {
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/device/debug-speed'), expect.objectContaining({
       method: 'POST', body: JSON.stringify({ profile: 'high' }),
     }))
-    expect(wrapper.get('[role="status"]').text()).toContain('已应用')
+    expect(wrapper.get('[role="status"]').text()).toBe('')
     wrapper.unmount()
     vi.unstubAllGlobals()
   })

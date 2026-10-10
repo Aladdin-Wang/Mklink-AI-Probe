@@ -24,21 +24,23 @@
       :title="tr('拖动或使用方向键调整目录宽度', 'Drag or use arrow keys to resize catalog')"
       @mousedown.prevent="startResize" @keydown="resizeByKey"></div>
     <div class="waveform-pane">
-      <div class="workspace-actions">
-        <button @click="focusMode = !focusMode">{{ focusMode ? tr('退出专注', 'Exit focus') : tr('展开工作区', 'Focus workspace') }}</button>
-        <button @click="hideCatalog = !hideCatalog">{{ hideCatalog ? tr('显示目录','Show catalog') : tr('只看已选','Selected only') }}</button>
-        <button @click="hideSettings = !hideSettings">{{ hideSettings ? tr('显示配置','Show settings') : tr('隐藏配置','Hide settings') }}</button>
-      </div>
-      <div class="speed-controls" v-show="!hideSettings">
-        <label for="superwatch-speed">{{ tr('采样调试速率', 'Memory sampling clock') }}</label>
-        <select id="superwatch-speed" v-model="speedProfile" @change="speedDirty = true" data-testid="superwatch-speed" class="form-select" :disabled="applyingSpeed">
-          <option value="low">{{ tr('低速 · 4 MHz', 'Low · 4 MHz') }}</option>
-          <option value="medium">{{ tr('中速 · 10 MHz（默认）', 'Medium · 10 MHz (default)') }}</option>
-          <option value="high">{{ tr('高速 · 20 MHz', 'High · 20 MHz') }}</option>
-          <option value="ultra">{{ tr('超高速 · 30 MHz', 'Ultra · 30 MHz') }}</option>
-        </select>
-        <button class="btn btn-sm" data-testid="apply-superwatch-speed" :disabled="!deviceConnected || applyingSpeed" @click="applySpeed">{{ tr('应用档位', 'Apply speed') }}</button>
-        <span role="status">{{ speedMessage }}</span>
+      <div class="watch-topbar">
+        <div class="workspace-actions">
+          <button @click="focusMode = !focusMode">{{ focusMode ? tr('退出专注', 'Exit focus') : tr('展开工作区', 'Focus workspace') }}</button>
+          <button @click="hideCatalog = !hideCatalog">{{ hideCatalog ? tr('显示目录','Show catalog') : tr('只看已选','Selected only') }}</button>
+          <button @click="hideSettings = !hideSettings">{{ hideSettings ? tr('显示配置','Show settings') : tr('隐藏配置','Hide settings') }}</button>
+        </div>
+        <div class="speed-controls" v-show="!hideSettings">
+          <label for="superwatch-speed">{{ tr('调试速率', 'Debug clock') }}</label>
+          <select id="superwatch-speed" v-model="speedProfile" @change="speedDirty = true" data-testid="superwatch-speed" class="form-select" :disabled="applyingSpeed">
+            <option value="low">{{ tr('低速 · 4 MHz', 'Low · 4 MHz') }}</option>
+            <option value="medium">{{ tr('中速 · 10 MHz（默认）', 'Medium · 10 MHz (default)') }}</option>
+            <option value="high">{{ tr('高速 · 20 MHz', 'High · 20 MHz') }}</option>
+            <option value="ultra">{{ tr('超高速 · 30 MHz', 'Ultra · 30 MHz') }}</option>
+          </select>
+          <button class="btn btn-sm" data-testid="apply-superwatch-speed" :disabled="!deviceConnected || applyingSpeed" @click="applySpeed">{{ tr('应用档位', 'Apply speed') }}</button>
+          <span role="status">{{ speedMessage }}</span>
+        </div>
       </div>
       <WaveformViewer
         mode="SuperWatch"
@@ -58,6 +60,7 @@ import PeripheralWatchPanel from './PeripheralWatchPanel.vue'
 import WaveformViewer from './WaveformViewer.vue'
 import { tr } from '../../composables/useLanguage'
 import { API_BASE } from '../../lib/runtimeEndpoint'
+import { DESKTOP_SETTINGS_STORAGE_KEY } from '../../lib/desktopSettings'
 
 const props = withDefaults(defineProps<{
   deviceConnected: boolean
@@ -78,6 +81,22 @@ let workspaceObserver: ResizeObserver | undefined
 const source = ref('variables')
 const latestValues = shallowRef<Record<string, number | boolean>>({})
 const hiddenChannels = shallowRef(new Set<string>())
+const layoutStorageKey = DESKTOP_SETTINGS_STORAGE_KEY + '.superwatch-layout'
+try {
+  const saved = JSON.parse(localStorage.getItem(layoutStorageKey) || '{}')
+  if (Number.isFinite(saved?.panelWidth)) panelWidth.value = Math.max(280, saved.panelWidth)
+  if (typeof saved?.hideSettings === 'boolean') hideSettings.value = saved.hideSettings
+  if (typeof saved?.hideCatalog === 'boolean') hideCatalog.value = saved.hideCatalog
+  if (saved?.source === 'variables' || saved?.source === 'peripherals') source.value = saved.source
+  if (Array.isArray(saved?.hidden)) hiddenChannels.value = new Set(saved.hidden.filter((name: unknown) => typeof name === 'string').slice(0, 256))
+} catch { /* Local preferences are optional. */ }
+watch([panelWidth, hideSettings, hideCatalog, source, hiddenChannels], () => {
+  try {
+    localStorage.setItem(layoutStorageKey, JSON.stringify({ panelWidth: panelWidth.value,
+      hideSettings: hideSettings.value, hideCatalog: hideCatalog.value, source: source.value,
+      hidden: [...hiddenChannels.value] }))
+  } catch { /* Do not block the shared viewer when storage is unavailable. */ }
+})
 const snapshotPath = ref<string | null>(null)
 const speedProfile = ref('medium')
 const applyingSpeed = ref(false)
@@ -118,7 +137,7 @@ async function applySpeed(): Promise<void> {
       throw new Error(typeof detail === 'string' ? detail : detail?.message || response.statusText)
     }
     speedDirty.value = false
-    speedMessage.value = tr('已应用；可开始采样', 'Applied; ready to sample')
+    speedMessage.value = ''
   } catch (error: any) {
     speedMessage.value = error.message
   } finally {
@@ -209,12 +228,13 @@ watch(() => props.deviceConnected, loadSpeed)
 
 <style scoped>
 .focused { position:fixed; inset:0; z-index:900; background:var(--bg); height:100dvh !important; padding:8px; box-sizing:border-box; }
+.watch-topbar { display:flex; align-items:center; flex:0 0 44px; gap:8px; overflow-x:auto; overflow-y:hidden; white-space:nowrap; }
 .workspace-actions { display:flex; gap:6px; padding:4px; flex-shrink:0; }
 .workspace-actions button { background:var(--surface);color:var(--text);border:1px solid var(--border);padding:5px 8px;border-radius:4px; }
 .catalog-hidden :deep(.symbol-panel > :not(.signal-section)) { display:none !important; }
 .catalog-hidden :deep(.signal-section:not(.collapsed)) { max-height:100%; flex:1; }
 .catalog-hidden .watch-source-tabs { display:none; }
-.compact :deep(#control-toolbar > label), .compact :deep(.buffer-unit), .compact :deep(#interval-group), .compact :deep(#control-toolbar .ctrl-sep), .compact :deep(#trigger-toolbar), .compact :deep(#buffer-input), .compact :deep(#btn-apply-buffer), .compact :deep(#buffer-memory-estimate), .compact :deep(#interval-input), .compact :deep(#btn-apply-interval) { display:none; }
+.compact :deep(#control-toolbar > label), .compact :deep(.buffer-unit), .compact :deep(#interval-group), .compact :deep(#control-toolbar .ctrl-sep), .compact :deep(#buffer-input), .compact :deep(#btn-apply-buffer), .compact :deep(#buffer-memory-estimate), .compact :deep(#interval-input), .compact :deep(#btn-apply-interval) { display:none; }
 
 .watch-catalog-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .watch-catalog-pane :deep(.symbol-panel) { flex: 1; min-height: 0; }
@@ -242,8 +262,8 @@ watch(() => props.deviceConnected, loadSpeed)
   overflow: hidden;
 }
 .waveform-pane > :last-child { flex: 1; min-height: 0; }
-.speed-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; flex: 0 0 auto; font-size: 12px; }
-.speed-controls select { width: auto; }
+.speed-controls { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; padding: 6px 12px; flex: 0 0 auto; font-size: 12px; }
+.speed-controls select { flex:none; width:180px; }
 .speed-controls [role="status"] { color: var(--muted); }
 
 @media (max-width: 760px) {

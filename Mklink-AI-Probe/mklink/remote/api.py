@@ -2707,18 +2707,33 @@ def create_app(
         )
 
     @app.post("/api/dash/superwatch/start")
-    async def superwatch_start():
+    async def superwatch_start(
+        interval: float | None = Body(None, embed=True, ge=0.000001, le=60),
+    ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         managers = get_managers()
         sw = managers["superwatch"]
+        # Consume the optional preference inside the existing start transaction.
+        # An already-running producer must never be reconfigured by a new view.
+        # This callback is also retained for exclusive-operation resume, so the
+        # initial preference must be applied only once, not on later resumes.
+        pending_interval = interval
+
+        def start_requested():
+            nonlocal pending_interval
+            if pending_interval is not None:
+                sw.set_interval(pending_interval)
+                pending_interval = None
+            sw.start(_state["device"])
+
         status, stopped = await start_dashboard_manager(
-            _state,
-            "superwatch",
-            sw,
-            lambda: sw.start(_state["device"]),
+            _state, "superwatch", sw, start_requested,
         )
-        return {"status": status, "stopped": stopped}
+        response = {"status": status, "stopped": stopped}
+        if interval is not None:
+            response["interval"] = sw.get_status()["interval"]
+        return response
 
     @app.post("/api/dash/superwatch/stop")
     async def superwatch_stop():
