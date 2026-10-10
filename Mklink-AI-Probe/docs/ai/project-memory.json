@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-10T21:02:38+08:00",
+  "updated_at": "2026-10-10T21:37:52+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "0.3.3修复分支",
-    "head": "Probe-only source ac542173 / Web 871b496f; includes earlier startup/CDC source 2d033e77. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.",
+    "head": "Worker/Windows volume/MCP setup source 350c3c18; probe-only source ac542173 / Web 871b496f; startup/CDC source 2d033e77. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.",
     "remote_head": "microkeen/main; verify exact current tip with Git.",
     "working_tree": "Original workspace remains main; active isolated worktree Mklink-AI-Probe-startup-cdc holds user-named branch 0.3.3修复分支. Preserve it while diagnosis continues."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "0.3.3修复分支/草稿PR38：按用户纠正，下载器连接和设置速率均不依赖目标板。已在仅USB的V3.6.4复现旧20/30MHz拒绝，并完成修复后SDK四档、真实MCP stdio/CLI、重连恢复、浏览器30MHz验证。撤销先接目标板提示，统一各入口保存/恢复时钟。源码ac542173/Web871b496f。前两项原始故障未闭环；新截图Internal Server Error缺异常栈，未单独复现。此会话仅修应用，若需V3/V4固件另开会话。"
+    "current_task": "0.3.3修复分支/草稿PR38：新增客户COM8报告中的worker清缓冲等待、WMI权限失败、MCP解释器/缓存配置修复，源码350c3c18。保留共享后台唯一串口所有权；锁修复必须结合整体架构审查，不为局部通过破坏会话、数据代际、资源寿命和未知结果不重放。1521扩展回归、最终97针对性/包边界检查通过；最终USB-only V3冷开关100次、后台冷启动10次、共享附着100次、实际MCP/CLI及原生卷枚举通过，后台已释放。此前USB-only速率修复保留。客户原环境和原始高速停采/首次离线仍待复测；仅修应用，固件需求另开会话。"
   },
   "milestones": [
     {
@@ -40,16 +40,16 @@
   ],
   "verification": [
     {
+      "area": "0.3.3 worker/卷枚举/MCP环境",
+      "result": "源码350c3c18；1521共享架构扩展回归通过，最后背压调整及包边界97通过。V3.6.4仅USB最终重跑100次worker/串口冷开关、10次共享后台冷启动/释放、100次共享附着、实际生成配置在最小PATH下MCP stdio与CLI设速率、原生卷发现/WMI失败注入回退均通过。无目标/磁盘写入，后台已释放。报告v033-worker-volume-mcp.md。客户Python3.12/权限原环境及有目标高速采集未重跑；旧NSIS不含本轮修复。"
+    },
+    {
       "area": "0.3.3 USB-only连接和时钟",
       "result": "源码ac542173/Web871b496f；Python十组316通过，后补USB断开用例所在文件10通过；GUI59与生产构建通过。用户确认断开目标板，本机V3.6.4/IDCODE0旧20/30MHz拒绝复现，修复后SDK4/10/20/30、实际MCP stdio30、CLI20保存、断开重连恢复20和实际浏览器30均通过。无固件/供电/目标修改，已释放后台。见v033-probe-only-connection.md，取代上一轮要求目标先识别的建议。旧NSIS不含本轮修复。"
     },
     {
       "area": "0.3.3 启动/CDC第一轮修复",
       "result": "源码2d033e77/Web92415bb3；Python177、GUI917、Rust22及标准NSIS构建通过。冻结CLI/MCP Windows-only PATH通过；默认环境原生启动、代理退出换端口恢复、真实Web状态通过。V3.6.4/STM32F103 30MHz/1µs候选90秒约2371万样本错误/丢弃0，接收worker退出注入停采断连及显式重连恢复通过。此前695秒源码诊断出现接收队列丢弃11754288字节，无CDC错误；不能称无损。实际安装获用户暂缓。见v033-startup-cdc-recovery.md。"
-    },
-    {
-      "area": "0.3.2 发布后故障初查（历史）",
-      "result": "代码确认Windows GetOverlappedResult失败经worker E帧、Bridge ERROR到SuperWatch stopped；现有日志无底层Win32码，不能确认根因。仅只读检查，未做新的真机测试；按用户要求移交下一会话。"
     },
     {
       "area": "0.3.2正式安装和渠道",
@@ -80,15 +80,16 @@
     "用户接受30MHz并行目标读错留待下版，不写公开发布说明；Mac/Linux实机后验，Windows本轮已实际覆盖安装通过。",
     "原空间是唯一维护入口。正式包/证据已回原.build/artifacts/v032-official和v032-handoff，F盘仅构建缓存；清理实录见cleanup.json。固件原V3/V4 main已核对，V4-fixes已清理，用户子模块改动保留。",
     "mklink及既有长期跟进维持暂停；不得因旧交接自动接管硬件或重复发布。",
-    "用户指定0.3.3修复分支；此会话仅修改应用分支，需要V3/V4固件修复时另开会话。连接下载器及设置时钟属于探针操作，不要求目标板；精确set clock回包可确认设置，profile_confirmed单列，不冒充目标稳定性验证。安装继续暂缓；保留草稿PR。"
+    "用户指定0.3.3修复分支；此会话仅修改应用分支，需要V3/V4固件修复时另开会话。连接下载器及设置时钟属于探针操作，不要求目标板；精确set clock回包可确认设置，profile_confirmed单列，不冒充目标稳定性验证。安装继续暂缓；保留草稿PR。",
+    "用户特别要求：锁相关修复必须结合整体共享架构，不能仅消除当前卡点。保留唯一串口所有权、USB身份绑定、会话/操作锁及未知结果不重放；审查读写控制顺序、epoch隔离、取消完成前缓冲寿命、背压错误传播和端口释放，再以跨客户端与真实进程/硬件验证。"
   ],
   "hardware": {
-    "state": "用户确认V3目标板已拔除，只保留USB。V3.6.4/IDCODE0下完成SDK、MCP stdio、CLI、GUI与重连配置验证，自有后台/代理已释放；未烧录、写变量、复位或改供电。前轮有目标30MHz/1µs及故障注入证据留报告，本轮不冒称重跑。设备身份与路径仅本地证据。",
+    "state": "用户确认目标板已断开，仅USB的V3.6.4。本轮最终源码100次worker/串口冷开关、10次后台冷启动/释放、100次共享附着、真实MCP stdio/CLI及20/30MHz设速率、原生MSC只读发现均通过。自有后台已退出、串口释放；未烧录、写目标、复位、改供电或写下载器磁盘。客户GD32板及有目标高速采集未重跑。身份和路径只留本地证据。",
     "installer": "正式main3d511e94 NSIS SHA3e72fae43380f7b060aac2c44b2f7e813259c7dd2e33f3ea59b78d41d46a2498；Windows实际覆盖安装通过，已观察0.3.2/2026-10-10。三平台原生38028928283通过及五份更新验签；Mac/Linux物理安装USB/MSC/原地更新仍客户后验。 0.3.3修复候选为本地未签名NSIS；UAC返回取消，用户允许暂缓安装，现有官方0.3.2安装未改变。 时钟修复仅源码及生产Web已更新，先前NSIS不含该修复。",
     "backups": "原Git根.build/artifacts/v032-official保存正式包、清单、安装/CI/签名/渠道证据，v032-handoff保存阶段HIL和旧用户备份；索引逐项SHA核验。固件原工程CURRENT_HANDOFF.md与firmware-releases保留必要记录。 本轮候选、哈希和诊断证据在原Git根.build/artifacts/v033-fixes；F盘复用构建缓存。"
   },
   "known_limits": [
-    "本轮USB-only配置已实际通过，未认证物理频率或目标通信；新截图Internal Server Error缺栈且未在本机复现。前两项原始30MHz/1µs CDC queued read failed和首次启动离线仍未复现；新增诊断与恢复已有回归证据。客户日志/截图身份不同。旧NSIS不含本轮修复，用户继续暂缓安装。",
+    "USB-only配置与本轮worker/卷枚举/MCP修复已通过本机V3.6.4/Python3.14验证，客户Python3.12及受限AI原环境待复测；不能用100次冷开关等价客户所有故障闭环。原始30MHz/1µs CDC失败和首次启动离线仍未复现；目标仍断开，本轮未重测吞吐/目标烧录。新截图Internal Server Error缺栈，客户日志身份不同；历史unknown任务不得改判或重放。旧NSIS不含最新修复，用户继续暂缓安装。",
     "V4.6.8 30MHz RTT8/Watch4/UART并行目标读错1kHz +1、最大+273；10MHz0。旧V4.6.6原始+1/+224，报告此前漏记已更正。采集不停止、不误断、UART完整；用户明确继续发布，限制交接下版处理，不写公开发布说明。",
     "HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4/V4.6.8仿真中新启采集及负载读回通过，V4.6.8已完成Keil及相关矩阵。详见release handoff；长期目标暂停。",
     "性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。",
@@ -98,7 +99,7 @@
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。"
   ],
   "next_actions": [
-    "保留0.3.3修复分支和草稿PR38，后续可构建包含USB-only修复的新候选供客户复测。连接/设速率不再要求接目标板；仅当目标操作需要时再检查目标通信。如确认需改V3/V4固件，按用户要求另开专门会话，本会话不改固件。",
+    "保留0.3.3修复分支和草稿PR38；以350c3c18及后续文档为本轮源码，后续可构建包含worker/卷枚举/MCP与USB-only修复的新候选交客户复测，重点客户Python3.12及受限AI权限。读v033-worker-volume-mcp.md；连接/设速率不要求目标板，目标操作仍须目标通信。固件修复需求另开会话。",
     "继续0.3.3修复分支：优先复现30MHz/1µs CDC底层失败和首次冷启动离线，读取候选新增Win32码/启动日志。保留草稿PR；实际覆盖安装暂缓，不宣称两个根因彻底修复。",
     "保留Mklink-AI-Probe-startup-cdc工作树；原工作区仍为主入口，候选与日志已在原.build/artifacts/v033-fixes归档。不得覆盖0.3.2正式包、标签、渠道或擅自合并。",
     "下一版排查30MHz并行目标读错/Flash偶发status5，区分固件目标访问与主机队列；保持偶发错误不断采、不误断的行为。",
