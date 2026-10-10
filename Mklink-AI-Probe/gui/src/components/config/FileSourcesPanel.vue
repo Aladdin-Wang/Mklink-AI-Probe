@@ -5,6 +5,7 @@ import { isSameFileSourcePath, isSymbolFilePath } from '../../lib/desktopSetting
 import type { AxlStatus } from '../../types/mklink'
 import { tr } from '../../composables/useLanguage'
 import { trackedSymbolPath, trackedSymbolError } from '../../lib/trackedSymbolSource'
+import SymbolPathHistoryInput from './SymbolPathHistoryInput.vue'
 
 const props = defineProps<{
   symbolPath: string
@@ -20,10 +21,6 @@ const emit = defineEmits<{
   (event: 'browse-symbol'): void
   (event: 'parse'): void
 }>()
-
-function inputValue(event: Event): string {
-  return (event.target as HTMLInputElement).value
-}
 
 const sourceMatches = computed(() => isSameFileSourcePath(
   props.symbolPath,
@@ -82,14 +79,11 @@ const parserBackend = computed(() => {
     <div class="source-row">
       <label for="symbol-path">AXF / ELF</label>
       <div class="path-control">
-        <input
-          id="symbol-path"
-          class="form-input path-input"
-          data-testid="symbol-path"
-          :value="displayedSymbolPath"
-          :placeholder="tr('.axf 或 .elf 文件路径', '.axf or .elf file path')"
+        <SymbolPathHistoryInput
+          :path="symbolPath"
+          :display-path="symbolDisplayPath"
           :disabled="browsing || parsing"
-          @input="emit('update:symbolPath', inputValue($event))"
+          @update:path="emit('update:symbolPath', $event)"
         />
         <button
           class="btn icon-command"
@@ -209,12 +203,6 @@ const parserBackend = computed(() => {
   display: flex;
   gap: 8px;
   min-width: 0;
-}
-
-.path-input {
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
 }
 
 .icon-command,

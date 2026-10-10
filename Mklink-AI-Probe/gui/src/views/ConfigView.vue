@@ -17,6 +17,7 @@ import { pickSymbolFile, type PickedFile } from '../lib/filePicker'
 import { saveBlobFile } from '../lib/downloadTextFile'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
 import { IS_TAURI } from '../lib/runtimeEndpoint'
+import { rememberSymbolPath } from '../lib/symbolPathHistory'
 import { sharedRuntime } from '../composables/useBackendHealth'
 import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProbeFirmwareUpgrade, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
@@ -274,7 +275,10 @@ async function browseSymbolFile() {
   browsingFiles.value = true
   try {
     const source = await selectedFilePath('symbol', await pickSymbolFile())
-    if (source) updateFilePath(source.path, source.displayPath)
+    if (source) {
+      updateFilePath(source.path, source.displayPath)
+      rememberSymbolPath(window.localStorage, source.path, source.displayPath)
+    }
   } catch (error: any) {
     toast.error(tr('加载 AXF / ELF 文件失败: ', 'Failed to load AXF / ELF file: ') + error.message)
   } finally {
@@ -317,6 +321,7 @@ async function refreshRttForSymbols(sourcePath: string) {
 async function parseSymbols() {
   if (!deviceStatus.value.connected || !isSymbolFilePath(settings.value.symbolPath)) return
   const requestedPath = settings.value.symbolPath.trim()
+  rememberSymbolPath(window.localStorage, requestedPath, settings.value.symbolDisplayPath)
   const generation = ++symbolParseGeneration
   parsingSymbols.value = true
   try {
