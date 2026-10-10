@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-10T12:10:41+08:00",
+  "updated_at": "2026-10-10T12:26:24+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "0.3.2发布收敛。b06冻结包及全量Python4647/GUI914通过，三平台候选核验完成。V3.6.3复现Keil先Run后新启RTT/Watch被status6拒绝；固件对称修复V3.6.4/V4.6.8。V3.6.4后台自动升级成功，Keil先Run再搜索RTT8+Watch4、暂停新启/单步/恢复/退出已通过，正做新精确固件负载与烧录收尾；V4换机尚待。用户授权后台自主升级、验收后合并发布并归档清理；仍未发布。"
+    "current_task": "0.3.2发布收敛。b06产品全量Python4647/GUI914、三平台候选核验通过。V3.6.4实际后台升级、Keil先Run后RTT8/Watch4新启及暂停/单步/继续/退出、负载/在线脱机共享烧录/失败停止恢复/OpenOCD/完整512KiB保全/重连与6.03秒退出全部通过。V3已释放，等待用户换接V4后后台升级V4.6.8完成最后验收。用户授权验收后合并发布归档清理；尚未合并、发布或删除工作空间。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "0.3.2 Keil先仿真再新启采集",
-      "result": "见v032-keil-capture-start.md。b06冻结+V3.6.3复现status6，退出Keil无需重连即恢复。后台11.868秒升级V3.6.4；Keil先Run后RTT RAM搜索及Watch4新启11.896秒通过，Watch+10954且RTT8都有数据；暂停新启、单步、继续、退出连续性通过。新固件负载/烧录/最终读回仍在执行，V4.6.8待实体换机。"
+      "result": "见v032-keil-capture-start.md。b06冻结+V3.6.3复现Keil先Run后新启采集status6；V3.6.4后台升级11.868秒通过。Keil先Run后RAM搜索RTT8/Watch4、暂停新启、单步/继续/退出连续性通过。新30MHz两档30秒最大样本间隔1046/219us，完整性0；并行UART及4路文件检查通过。在线后并行512KiB回读425.864秒、脱机/共享/失败停止恢复62.761秒、OpenOCD/GUI退出AI接续/最终保全/重连59.787秒通过；最后6.03秒释放。V3已收敛，V4.6.8待实体换机。"
     },
     {
       "area": "0.3.2 V3.6.2补验与首发失败",
@@ -78,14 +78,14 @@
     "2026-10-10用户授权本轮验收完成后合并主分支、正式发布0.3.2；Mac/Linux实际安装USB/MSC及原地升级由客户后验，不再阻塞发布，Windows人工UAC项豁免。随后清理新建修复工作空间，保留用户改动。正式包/交接/必要证据回归原工作空间；F:/MKLink-Build仅临时构建。详见v032-archive-handoff.md。"
   ],
   "hardware": {
-    "state": "本会话独占V3，当前实际V3.6.4 SHA06e7a6b9；Keil已正常退出。新验收进程仍活动，未释放硬件。VCC未改。V3.6.3最后完整512KiB SHA c1e51c22一致且6.005秒释放；新364最终读回待完成。V4.6.8 SHA9e97abd8候选已交接，尚未刷测。",
+    "state": "V3.6.4 SHA06e7a6b9本轮可用硬件验收完成，Keil和测试后台均退出；命令口与UART口释放。VCC未改。最终512KiB SHA c1e51c22ae9530ee4afea9042ff6e710421bc24b6d8bf8ddd6e0992794a18bf8与原备份一致。已请求用户换接V4，保持目标与接线；V4.6.8 SHA9e97abd8尚未刷测，不自行假定已换机。",
     "installer": "Windows b06bd1d7 NSIS SHA4200f0adea862b392fb19fa626e7c51720ce00246fed3082f2c952cdb6a120e6；冻结入口/生产Web实测，非覆盖安装。原生三平台b06构建38013387325载荷核验通过；正式main仍须同源重建和签名。Mac/Linux实机和Windows人工UAC项用户豁免，不记为通过。",
     "backups": "原工作空间Git根.build/artifacts保留既有完整HIL与目标备份；v032-handoff为统一阶段归档入口，最终v032-official保存正式包和清单。新增构建暂在F:/MKLink-Build，删除前须回原目录逐项SHA核验。固件原MicroLinkV3、MicroLink_Plus各有根CURRENT_HANDOFF.md及firmware-releases归档。"
   },
   "known_limits": [
-    "HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。最终无诊断固件完整SES矩阵、已在仿真时新开采集、RTT下行及负载下烧录回读仍需后续验证。详见release handoff；长期目标暂停。",
+    "HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4仿真中新启采集及负载读回通过，V4.6.8待测。详见release handoff；长期目标暂停。",
     "性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。",
-    "V3无屏幕、不支持HPM；V3原生Keil暂停/单步尚未完成，OpenOCD对应流程通过。V4最终无诊断固件完整SES矩阵未完成。",
+    "V3无屏幕、不支持HPM；V3.6.4原生Keil先运行再采集、暂停/单步/继续/退出和OpenOCD均通过。V4最终无诊断固件完整SES矩阵未完成。",
     "后台最后会话释放约5秒租约，加排空和退出开销；实测约5.2~6.1秒，不保证硬实时5秒。界面端口可以不同，物理探针仍由同一后台唯一拥有。",
     "长期验证按用户要求暂停；跨物理主机Agent、Mac/Linux、真实Modbus从站及全部芯片组合未完整认证。模拟测试不得替代实体边界。",
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。",
@@ -93,10 +93,10 @@
     "Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。"
   ],
   "next_actions": [
-    "完成V3.6.4负载、在线/脱机/共享及失败停止恢复、OpenOCD/退出、512KiB保全和端口释放。",
-    "V3释放后请用户换接V4，后台自主升级V4.6.8，复测Keil先Run后新启RTT/Watch及相关矩阵；不需网页人工确认。",
-    "全部真实失败收敛后按用户授权走PR合并main，统一源码构建三平台签名包/Skill/SiteAgent，发布及核验下载索引。",
-    "正式包、交接和必要证据归档原工作空间并逐项校验；保全用户文件后再移除新增修复工作空间。"
+    "等待用户换接V4并确认仍为同一STM32F103RE目标/接线；后台自动升级精确V4.6.8候选，复测Keil先Run后新启RTT/Watch及相关矩阵。",
+    "V3证据已在原工作空间阶段归档；Mac/Linux实机与Windows人工UAC项用户豁免，仍须明确未实测边界。",
+    "V4及实际失败全部收敛后，按授权走PR合并main、统一源构建签名三平台/Skill/SiteAgent并正式发布，核验渠道下载哈希。",
+    "将正式包、最后证据和交接归档原工作空间，核对本地/远端main；保全用户文件后移除新增修复工作空间。"
   ],
   "continuation_protocol": [
     "交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。"
