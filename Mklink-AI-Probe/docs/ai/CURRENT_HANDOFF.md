@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-10T22:04:54+08:00`
+- 更新时间：`2026-10-10T22:20:08+08:00`
 - 分支：`0.3.3修复分支`
-- HEAD：`File-source history source 132cb364 / Web 9f013b65; worker/volume/MCP source 350c3c18 + b5ef7c5f; probe-only source ac542173. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.`
+- HEAD：`SuperWatch sections source 0ed75a71 / Web b764ede3; file-source history 132cb364 / Web 9f013b65; worker/volume/MCP 350c3c18 + b5ef7c5f; probe-only ac542173. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.`
 - 远端 HEAD：`microkeen/main; verify exact current tip with Git.`
 - 工作树：Original workspace remains main; active isolated worktree Mklink-AI-Probe-startup-cdc holds user-named branch 0.3.3修复分支. Preserve it while diagnosis continues.
-- 当前任务：0.3.3修复分支/草稿PR38：新增文件来源AXF/ELF最近10条历史下拉，支持筛选、鼠标/键盘选择、移除及本地持久化，排除上传快照。源码132cb364，生产Web已更新；57项现有测试、生产构建和实际浏览器刷新/选择/删除通过，见v033-symbol-path-history.md。先前USB-only时钟、worker/卷枚举/MCP修复保留，锁修复必须服从整体共享架构。客户原环境及原始高速停采/首次离线待复测；安装继续暂缓，固件修复另开会话。
+- 当前任务：0.3.3修复分支/草稿PR38：SuperWatch目录拆为信号分组、常用变量、搜索变量三个独立可折叠区，记住本地状态，限制上方高度并优化行密度；搜索包含置顶变量。源码0ed75a71/Web b764ede3；36项相关GUI测试、生产构建和实际浏览器模拟目录验证通过，见v033-superwatch-sections.md。文件来源历史及USB-only、worker/卷枚举/MCP修复保留。锁修复必须服从整体共享架构；客户原环境及原始高速停采/首次离线待复测，安装继续暂缓，固件修复另开会话。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -21,6 +21,7 @@
 
 ## 验证证据
 
+- **0.3.3 SuperWatch目录分区**：源码0ed75a71/Web b764ede3：三块独立折叠并本地记忆；搜索保留常用变量。四个GUI测试文件36项及TypeScript/生产构建通过。实际浏览器运行生产组件/样式加模拟API：三组信号、三个常用、80普通变量；500px目录/720px高收起上方后完整显示12行，滚动到80并勾选、常用搜索、刷新及键盘展开通过；280px/540px窄矮窗口可操作。无硬件、无锁或固件修改，未更新NSIS。见v033-superwatch-sections.md。
 - **0.3.3 文件来源历史**：源码132cb364/Web9f013b65：ConfigView/desktopSettings/filePicker 57通过，TypeScript/生产构建通过；实际浏览器无硬件lobby验证三条录入、最近排序、鼠标/键盘选择、筛选、删除和刷新保留。历史仅客户端本地保存，上传快照不混入；不自动解析/连接。见v033-symbol-path-history.md。未重建NSIS。
 - **0.3.3 worker/卷枚举/MCP环境**：源码350c3c18及b5ef7c5f；1521共享架构扩展回归通过，最后背压调整及包边界97通过。V3.6.4仅USB最终重跑100次worker/串口冷开关、10次共享后台冷启动/释放、100次共享附着、实际生成配置在最小PATH下MCP stdio与CLI设速率、原生卷发现/WMI失败注入回退均通过。无目标/磁盘写入，后台已释放。报告v033-worker-volume-mcp.md。客户Python3.12/权限原环境及有目标高速采集未重跑；旧NSIS不含本轮修复。 最后关闭状态发布/端口所有权70项通过；最终真机整组在b5ef7c5f重跑。
 - **0.3.3 USB-only连接和时钟**：源码ac542173/Web871b496f；Python十组316通过，后补USB断开用例所在文件10通过；GUI59与生产构建通过。用户确认断开目标板，本机V3.6.4/IDCODE0旧20/30MHz拒绝复现，修复后SDK4/10/20/30、实际MCP stdio30、CLI20保存、断开重连恢复20和实际浏览器30均通过。无固件/供电/目标修改，已释放后台。见v033-probe-only-connection.md，取代上一轮要求目标先识别的建议。旧NSIS不含本轮修复。
@@ -28,7 +29,6 @@
 - **0.3.2正式安装和渠道**：v032-release-handoff.md：NSIS真实覆盖0.3.1至0.3.2、注册及载荷哈希一致；安装态CLI/MCP、36项Web字节/MIME、3.420秒lobby、8.605秒原生启动、版本日期/说明界面及正常退出通过。最终GUI914，既有Python4647/2skip，Rust21+6。五份更新签名实际验签，17个公开文件及三个渠道核对，原空间v032-official归档。Mac/Linux物理安装USB/MSC/原地更新后验，不称通过。
 - **0.3.2 V4.6.8最终收尾**：见v032-v4-final-closure.md。冻结b06 + V4.6.8后台升级13.148秒；Keil新启/暂停/单步/继续/退出、四路并发检查、在线并行512KiB保全427.25秒、脱机共享失败停止恢复57.842秒及OpenOCD/退出/重连完成。30MHz并行1kHz/最大目标读错+1/+273，10MHz0，旧V4.6.6原始+1/+224已更正。用户接受限制继续发布。
 - **0.3.2 V3最终矩阵**：v032-keil-capture-start.md：V3.6.4后台升级、Keil先Run新启RTT8/Watch4、暂停单步继续退出、UART并行、在线脱机共享失败停止恢复、OpenOCD、512KiB保全及6.03秒释放通过。已收敛，不再等待V4换机；V4最终矩阵另列。
-- **0.3.2最终候选与既有修复回归**：见v032-final-candidate.md。86cfdff4冻结候选实际GUI升级V4.6.6；30MHz Flash128B在1kHz/请求1µs两档完整性指标均0，最大样本间隔1049/233µs；RTT8/Watch4/UART并行、文件检查、在线/脱机/共享烧录成功/失败/停止恢复、Keil下载断点单步退出及OpenOCD、GUI退出AI接续、旧端点重发现、最后6.299秒释放通过；512KiB逐字不变，未改VCC。真实收发毫秒/RX/TX、独立RTT拖动及20/30MHz保存通过。旧155次status5不冒作新固件故障注入证据。914 GUI/生产构建通过；原生3e39e1ef构建37949511991全部成功；完整Python/Rust和交付状态以发布准备报告为准。 全量Python4634通过/2跳过，Rust21+6通过；三平台下载CRC和载荷SHA256均核验，当前候选可交客户复测。 2026-10-10更正：旧并行load实际有+1/+224目标读错；passed不代表零读错，见V4最终收尾。
 
 ## 架构决策
 
