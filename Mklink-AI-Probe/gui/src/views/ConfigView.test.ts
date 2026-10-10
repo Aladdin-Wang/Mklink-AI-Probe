@@ -120,11 +120,11 @@ describe('ConfigView', () => {
     wrapper.unmount()
   })
 
-  it.each(['0x0', '0xffffffff'])('explains an unidentified target with clock fallback (%s)', async idcode => {
+  it.each(['0x0', '0xffffffff'])('never requires a target board for probe configuration (%s)', async idcode => {
     Object.assign(mocks.deviceStatus, { connected: true, idcode, clock_hz: 1_000_000, clock_warning: 'SWD profile unavailable; restored 1 MHz' })
     const wrapper = await mountView()
-    expect(wrapper.get('[data-testid="clock-target-warning"]').text()).toContain('尚未识别到目标芯片')
-    expect(wrapper.get('[data-testid="clock-warning"]').text()).toContain('先确认目标连接')
+    expect(wrapper.find('[data-testid="clock-target-warning"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="clock-warning"]').text()).toContain('均无需连接目标板')
     wrapper.unmount()
   })
 

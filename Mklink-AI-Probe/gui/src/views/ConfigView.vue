@@ -475,11 +475,10 @@ onUnmounted(() => {
           {{ tr('当前串口：', 'Connected port: ') }}{{ deviceStatus.port }}
         </div>
         <div v-if="deviceStatus.connected" class="connection-detail" data-testid="confirmed-clock">
-          {{ tr('当前确认速率：', 'Confirmed clock: ') }}{{ confirmedClockMhz ? `${confirmedClockMhz} MHz` : tr('未确认', 'Unconfirmed') }}
+          {{ tr('下载器设置速率：', 'Probe clock setting: ') }}{{ confirmedClockMhz ? `${confirmedClockMhz} MHz` : tr('未确认', 'Unconfirmed') }}
         </div>
         <div v-if="deviceStatus.connected && deviceStatus.clock_warning" role="status" data-testid="clock-warning">
-          <p>{{ tr('所选速率未获下载器确认，保存的设置不代表已生效。请先确认目标连接，再重新应用；若仍失败，请核对固件版本，或选择 1–10 MHz。', 'The probe did not confirm the requested clock; a saved setting does not mean it is active. Check the target connection before retrying. If it still fails, check the firmware version or select 1–10 MHz.') }}</p>
-          <p v-if="deviceStatus.idcode != null && [0, 0xffffffff].includes(Number(deviceStatus.idcode))" data-testid="clock-target-warning">{{ tr('尚未识别到目标芯片。请检查目标供电、共地和调试接线后重新连接；下载器已连接不代表目标通信正常。', 'The target chip has not been identified. Check target power, common ground and debug wiring, then reconnect. A connected probe does not establish target communication.') }}</p>
+          <p>{{ tr('下载器已连接，但所选速率设置未获确认。可重新应用所选速率；连接下载器和设置速率均无需连接目标板。', 'The probe is connected, but the requested clock setting was not acknowledged. Retry applying it. Connecting and configuring the probe do not require a target board.') }}</p>
           <p>{{ deviceStatus.clock_warning }}</p>
           <button class="btn btn-sm" data-testid="retry-clock" :disabled="savingLocal || connecting || disconnecting" @click="saveLocalConfig">{{ tr('重新应用所选速率', 'Reapply requested clock') }}</button>
         </div>

@@ -250,6 +250,7 @@ def build_server():
         """Attach to the shared backend: target (default) or independent UART scope.
 
         Explicit conflicting project/probe/symbol settings fail without replacing the GUI session.
+        The default scope connects the USB probe without requiring a target MCU.
         scope='uart' attaches without MCU/CDC initialization, including the unselected lobby.
         Use gui_call for uart_ports, serial/modbus start/status/stop, serial_send, modbus_transaction
         and modbus_probe (one read-only address probe through the existing worker).
@@ -280,6 +281,7 @@ def build_server():
 
         Changes this probe's debug clock and saves the project profile after success.
         All attached clients share it. Inspect gui_call('debug_speed') for cached status.
+        No target MCU is required; profile_confirmed reports the optional timing-profile ACK.
         """
         return client().call('set_debug_speed', {'profile': profile})
 

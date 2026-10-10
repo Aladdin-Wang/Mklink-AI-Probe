@@ -1635,9 +1635,9 @@ def build_server() -> Any:
         """Set low=4 MHz, medium=10 MHz, high=20 MHz, ultra=30 MHz. Stop streams first.
 
         HPM JTAG and ARM SWD use the same named profiles with matching probe
-        firmware. High/ultra require an exact interface/profile acknowledgement;
-        legacy firmware cannot silently claim high-speed timing. Acknowledgement
-        identifies the selected kernel, not the exact target or wiring stability.
+        firmware. No target MCU is required to configure the probe. An exact
+        setting ACK is sufficient; profile_confirmed separately reports the
+        optional interface/profile ACK, not target or wiring stability.
         """
         return _connected_device().set_debug_speed(profile)
 

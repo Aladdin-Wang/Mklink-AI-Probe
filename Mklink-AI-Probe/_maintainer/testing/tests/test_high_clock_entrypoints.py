@@ -22,14 +22,17 @@ def test_online_entrypoints_reject_unsupported_clocks(hz):
 
 @pytest.mark.parametrize('hz', [20_000_000, 30_000_000])
 @pytest.mark.parametrize('hpm', [False, True])
-def test_flash_requires_exact_high_profile_ack(hz, hpm):
+def test_flash_accepts_probe_setting_ack_with_or_without_profile(hz, hpm):
     interface = 'JTAG' if hpm else 'SWD'
     bridge = SimpleNamespace(state=DeviceState.READY, idcode=0x1000563D if hpm else 0x1BA01477,
         send_command=Mock(return_value=f'set clock {hz}\n{interface} profile={hz}\n'),
         _ctx=SimpleNamespace(swd_clock_hz=1_000_000))
     MKLinkFlash(bridge).set_swd_clock(hz)
     assert bridge._ctx.swd_clock_hz == hz
-    bridge.send_command.side_effect = [f'set clock {hz}\n', 'set clock 1000000']
+    bridge.send_command.side_effect = [f'set clock {hz}\n']
+    MKLinkFlash(bridge).set_swd_clock(hz)
+    assert bridge._ctx.swd_clock_hz == hz
+    bridge.send_command.side_effect = [f'set clock {hz}\n{interface} profile=0\n', 'set clock 1000000']
     with pytest.raises(FlashError, match='restored 1 MHz'):
         MKLinkFlash(bridge).set_swd_clock(hz)
     assert bridge._ctx.swd_clock_hz == 1_000_000

@@ -1350,7 +1350,7 @@ def create_app(
                     status_code=422,
                     detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
                 )
-            from mklink.debug_speed import validate_clock_hz
+            from mklink.debug_speed import validate_clock_hz, PROFILES
             try:
                 validate_clock_hz(parsed_swd_clock)
             except ValueError as error:
@@ -1359,6 +1359,11 @@ def create_app(
                     detail=str(error),
                 ) from error
             config["swd_clock"] = swd_clock
+            matching_profile = next((name for name, hz in PROFILES.items() if hz == parsed_swd_clock), None)
+            if matching_profile:
+                config["debug_speed"] = matching_profile
+            else:
+                config.pop("debug_speed", None)
             device = _state.get("device")
             if device is not None and device.connected:
                 from mklink.flash import FlashError
@@ -2137,6 +2142,7 @@ def create_app(
         if save:
             config = load_config(_state["project_root"]) or {}
             config["debug_speed"] = profile
+            config["swd_clock"] = str(profile_clock(profile))
             save_config(_state["project_root"], config)
         return {**result, "stopped": stopped, "saved": save}
 
