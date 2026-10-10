@@ -1,5 +1,7 @@
 # 0.3.2 正式发布交接
 
+> 发布后用户报告普通启动后台离线及 SuperWatch CDC 读取失败停采/断连。按用户最新要求，本轮仅初查、归档，留下一会话修复；详见 [发布后故障交接](v032-postrelease-incidents.md)。既有验收不代表这两项已通过。
+
 2026-10-10：已授权完成正式发布。不可变标签 `v0.3.2` 对应 `3d511e94742ac95ccd93c30e60349e1b560ee7a4`；PR [35](https://github.com/MicroKeen/Mklink-AI-Probe/pull/35) 整合功能与固件，PR [36](https://github.com/MicroKeen/Mklink-AI-Probe/pull/36) 修正最新版本说明和日期。后续交接/生成 Web 资源提交不改变正式标签或已发布载荷。
 
 ## 维护和下载入口
