@@ -58,8 +58,9 @@
 - 实际覆盖安装完成，主程序、sidecar、STCP 与 NSIS 提取文件 SHA-256 一致，注册为 0.3.3。仅 Windows 系统 PATH 启动后健康状态正常，内置 pyelftools 0.32 可用，外部 ELF 工具不可用；进程链为安装目录的 GUI/sidecar，无 Python 子进程。验证结束后正常关闭浏览器和客户端，8765/8766 监听均已释放。
 - 最终安装文件再次通过冻结 CLI、真实 stdio MCP、空外部 Pack 环境下的 STM32F407VE 目录查询。完整寄存器解析在前一候选验证为 11601 条目，最终未重复修改外设选择。
 - 最终安装态 STM32F103RC、10 MHz、指定工程有效载荷 113304 字节，connect/erase/program/verify/reset/disconnect 全部成功，总耗时约 10.25 秒；仅擦除镜像覆盖的扇区，没有供电或探针固件变更。
-- 安装态浏览器确认已删除两个旧顶栏按钮，拖动分区并刷新后保持 165/76px，未连接提示位于各分区之前，没有覆盖；模拟浏览器另覆盖有数据的拖动、折叠、默认恢复和小窗口情形。
-- 上一行为源码 `791eef39` 的 [macOS Intel / Apple Silicon / Linux 原生构建与包检查](https://github.com/MicroKeen/Mklink-AI-Probe/actions/runs/38066138171) 全部成功。最终行为源码 `77f56f20` 的 [新原生构建](https://github.com/MicroKeen/Mklink-AI-Probe/actions/runs/38067335470) 已触发，结果待核对；原生 CI 不代表真实桌面安装、USB 硬件或签名更新验收。
+- 安装态浏览器确认已删除两个旧顶栏按钮，拖动分区并刷新后保持 165/76px，未连接提示位于各分区之前，没有覆盖。再连接 F103、解析指定 AXF 得到 5909 个变量、124 个结构体类型和 115 个枚举类型，三个常用变量恢复；常用区调至 196px 后三项完整显示，折叠上方区域后搜索 `vofa_test` 的三项结果完整显示。模拟浏览器另覆盖拖动、折叠、默认恢复和小窗口情形。
+- 最终行为源码 `77f56f20` 的 [macOS Intel / Apple Silicon / Linux 原生构建与包检查](https://github.com/MicroKeen/Mklink-AI-Probe/actions/runs/38067335470) 全部成功，包含冻结后端、包内容及 USB 回归用例。原生 CI 不代表真实桌面安装、USB 硬件或签名更新验收。
+- PR Windows CI 曾发现 12 项波形测试失败：测试没有隔离自动保存的本地偏好，Node 原生 localStorage 可用时会串入前一用例的容量、缩放和触发参数。在本机启用原生存储后精确复现同样 12 项；`e90f6df1` 为每个测试隔离存储后，115 项波形用例及 [Windows GUI 合同 CI](https://github.com/MicroKeen/Mklink-AI-Probe/actions/runs/38068369545) 通过。扩展本机持久存储全量回归时另发现后台管理测试受已保存英文语言影响，现明确设置其中文断言语言；修正后启用原生持久存储的全量 934 项通过。没有修改产品运行时代码或降低断言，自动保存的跨实例恢复用例仍保留；因此无需重新生成行为相同的安装包。PR 后台合同检查在此前文档提交已通过，最新测试/文档提交触发的新一轮仍需在合入前按精确头核对。
 
 本地产物位于专用构建盘 `artifacts/v033-final`，不提交到 Git：
 

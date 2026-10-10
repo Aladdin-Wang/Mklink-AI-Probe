@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-11T00:27:57+08:00`
+- 更新时间：`2026-10-11T00:40:33+08:00`
 - 分支：`0.3.3修复分支`
 - HEAD：`0.3.3 source 77f56f20 / Web 0c01a71b; SVD/verify 8ea29231; installer/latest-firmware 791eef39. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.`
 - 远端 HEAD：`microkeen/main; verify exact current tip with Git.`
 - 工作树：Original workspace remains main; active isolated worktree Mklink-AI-Probe-startup-cdc holds user-named branch 0.3.3修复分支. Preserve it while diagnosis continues.
-- 当前任务：0.3.3修复分支/草稿PR38：最新SuperWatch分区可拖动并记忆高度，移除隐藏配置/只看已选及旧隐藏偏好；SVD打包、校验诊断、安装文件占用保护、最新固件选择和版本说明均纳入77f56f20候选，已实际覆盖安装。GUI934通过；Python全量4746通过/2跳过/1磁盘满环境错误，该项改F盘重跑通过。安装态最小PATH、CLI/MCP/SVD、F103烧录约10.25秒通过。三平台旧候选CI成功，最新38067335470待核对。见v033-release-readiness.md。不签名、不合并、不发布。
-- 状态：`in_progress`
+- 当前任务：0.3.3修复分支/草稿PR38候选完成：SuperWatch拖动高度与记忆、删除隐藏配置/只看已选、SVD打包、校验诊断、安装文件占用保护和最新固件选择均纳入源码77f56f20/Web0c01a71b，并已覆盖安装。GUI934通过；Python合计4747通过/2跳过（磁盘满项F盘重跑）。安装态最小PATH、CLI/MCP/SVD、F103烧录约10.25秒、真实AXF5909变量及搜索通过。三平台原生CI38067335470全成功。e90f6df1仅修波形测试存储隔离，GUI CI38068369545已通过；本机同时启用原生存储全量检查，后台管理测试显式固定断言语言。详见v033-release-readiness.md；等待维护者验收，不签名、不合并、不发布。
+- 状态：`ready_for_review`
 
 ## 里程碑
 
@@ -21,7 +21,7 @@
 
 ## 验证证据
 
-- **0.3.3 最终候选与补充回归**：源码77f56f20/Web0c01a71b；GUI934通过，Python合计4747通过/2跳过（首次1项磁盘满，F盘重跑通过）。实际覆盖安装后载荷摘要一致、最小PATH内置ELF正常、冻结CLI/MCP/F407VE目录通过；安装态F103RC全流程约10.25秒。实际浏览器拖动/折叠/刷新/恢复默认/小窗口通过，两个旧顶栏按钮移除。73个SVD Packs/4800型号、7059FLM targets/2224 blobs均打包校验；Skill已生成。见v033-release-readiness.md。最新Unix CI待核对，未发布。
+- **0.3.3 最终候选与补充回归**：源码77f56f20/Web0c01a71b；GUI934通过，Python合计4747通过/2跳过（首次磁盘满项F盘重跑）。实装载荷摘要一致、最小PATH启动及冻结CLI/MCP/F407VE目录通过；F103RC全流程约10.25秒、AXF5909变量解析和实际搜索/拖动通过。三平台原生CI38067335470全成功。e90f6df1修测试本地偏好串扰，精确复现12失败后115波形用例及GUI CI38068369545通过；后台管理测试固定中文，不改产品运行时。见v033-release-readiness.md及本地v033-final证据。
 - **0.3.3 在线烧录算法选择与布局**：源码92e33221/Webee0c2024；连接折叠摘要、资源按钮、联网下载、多FLM选择及镜像地址映射。GUI120、Python530、构建通过；浏览器双分区模拟及真实内置F103RE文件解析通过。初次本地FLM目录缺失导致21项安全测试失败，基线同样失败，指定现有资产目录后全通过；未修改白名单。无物理烧录，未更新NSIS。见v033-online-flash-algorithms.md。
 - **0.3.3 SuperWatch工具栏与自动配置**：源码5444d3a5/Web32c69bb7：两行44/42px；移除原始日志及保存/加载；触发弹窗、日志导出/回放菜单、本地自动偏好。GUI180、Python283+56、TypeScript/构建通过；真实浏览器模拟1600×900/1200×720验证布局、100k/10µs/触发参数刷新恢复和日志入口。启动间隔仅在已有共享启动事务首次应用，并发/资源冲突/独占恢复测试通过；不恢复旧目标地址或覆盖共享工作区。无硬件；未重建NSIS。见v033-superwatch-toolbar.md。
 - **0.3.3 SuperWatch目录分区**：源码0ed75a71/Web b764ede3：三块独立折叠并本地记忆；搜索保留常用变量。四个GUI测试文件36项及TypeScript/生产构建通过。实际浏览器运行生产组件/样式加模拟API：三组信号、三个常用、80普通变量；500px目录/720px高收起上方后完整显示12行，滚动到80并勾选、常用搜索、刷新及键盘展开通过；280px/540px窄矮窗口可操作。无硬件、无锁或固件修改，未更新NSIS。见v033-superwatch-sections.md。
@@ -45,12 +45,12 @@
 ## 真机环境
 
 - **state**：用户已接回V3.6.4与STM32F103RC并确认未占用，授权指定工程实际烧录。源码10/30MHz及最终77f56f20安装候选10MHz connect/erase/program/verify/reset/disconnect通过，最终约10.25秒；仅镜像覆盖扇区，不改供电或探针固件。客户F405原故障未复现，F103校验约0.30秒未测得显著加速。身份和路径只留本地证据。
-- **installer**：已实际覆盖安装本地未签名0.3.3/77f56f20，NSIS SHA256 8ffd1bcf81ff57b1fd5b1f1a130a3f3c3eb37cfaed3ae89fb8b74e73a185aefd；安装文件与提取物一致，最小PATH启动/冻结CLI/MCP/SVD和F103任务通过。来源为0c01a71b的Skill SHA256 82bcbbc315f3ce76a67f5ff4f65e1d312a6e9b94b0b76d762ec44e079a0cc74f。旧791eef39三平台原生CI成功，最新38067335470待核对。0.3.2正式归档及渠道未改。
+- **installer**：已实际覆盖安装本地未签名0.3.3/77f56f20，NSIS SHA256 8ffd1bcf81ff57b1fd5b1f1a130a3f3c3eb37cfaed3ae89fb8b74e73a185aefd；安装文件与提取物一致，最小PATH启动/冻结CLI/MCP/SVD和F103任务通过。来源为0c01a71b的Skill SHA256 82bcbbc315f3ce76a67f5ff4f65e1d312a6e9b94b0b76d762ec44e079a0cc74f。最终77f56f20三平台原生CI38067335470全成功。0.3.2正式归档及渠道未改。
 - **backups**：原Git根.build/artifacts/v032-official保存正式包、清单、安装/CI/签名/渠道证据，v032-handoff保存阶段HIL和旧用户备份；索引逐项SHA核验。固件原工程CURRENT_HANDOFF.md与firmware-releases保留必要记录。 本轮候选、哈希和诊断证据在原Git根.build/artifacts/v033-fixes；F盘复用构建缓存。 最新候选和验证在F盘专用构建目录artifacts/v033-final；旧791安装包及Skill转存artifacts/v033-previous。E盘空间紧张，含联接的测试目录按规则保留；旧8ea安装器进程4936占用文件，未强制清理。
 
 ## 下一动作
 
-1. 核对最终77f56f20三平台原生CI38067335470，并记录v033-release-readiness.md；Windows/Skill候选已就绪且实际安装测试完成。PR38保留草稿，发布、签名、合并、渠道更新仍需明确授权。
+1. 维护者验收0.3.3候选与PR38：Windows/Skill已就绪并实装，77f56f20三平台原生CI38067335470全成功。e90f6df1 GUI合同已通过；最新测试/文档头的后台合同CI继续由GitHub运行，之前相同产品代码的后台合同已通过。按精确头核对PR全部检查后再决定发布；当前无合并、签名或渠道授权。
 2. 客户现场继续核实原始CDC停采、首次离线、F405读线程退出及受限AI/GD32；使用新增原因链与阶段日志，不把未复现项标为根因已修复。
 3. 保留0.3.3修复分支工作树和F盘v033-final候选；E盘空间需人工整理，含联接/被占用路径见本地cleanup-notes.txt，不强删。不得覆盖0.3.2正式包、标签、渠道或擅自合并。
 4. 下一版排查30MHz并行目标读错/Flash偶发status5，区分固件目标访问与主机队列；保持偶发错误不断采、不误断的行为。
