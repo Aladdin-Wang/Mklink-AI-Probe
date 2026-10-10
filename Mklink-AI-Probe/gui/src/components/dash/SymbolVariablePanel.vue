@@ -1,13 +1,5 @@
 <template>
-  <aside class="symbol-panel" :class="{ 'search-collapsed': collapsed.all }">
-    <section class="signal-section variable-section" :class="{ collapsed: collapsed.signals }">
-      <button type="button" class="section-heading" data-testid="toggle-signals-section"
-        :aria-expanded="!collapsed.signals" @click="collapsed.signals = !collapsed.signals">
-        <ChevronRight v-if="collapsed.signals" :size="14" /><ChevronDown v-else :size="14" />
-        <span>{{ tr('信号分组', 'Signal groups') }}</span><small>{{ tr(`已选 ${selected.size}`, `${selected.size} selected`) }}</small>
-      </button>
-      <SelectedSignals v-show="!collapsed.signals" :paths="[...selected]" :values="latestValues" :hidden="hiddenChannels" @visibility="(path, visible) => emit('visibility-change', path, visible)" />
-    </section>
+  <aside class="symbol-panel" :class="{ 'search-collapsed': collapsed.all, 'catalog-unavailable': catalogUnavailable }">
     <div v-if="pinsError" class="stale-banner" role="alert">{{ pinsError }}</div>
 
     <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
@@ -39,6 +31,14 @@
       @primary="hasSymbolSource ? parseSelectedSymbols() : loadSymbolFile()"
     />
     <div v-else-if="catalog.loading.value" class="empty-state">{{ tr('正在加载符号...', 'Loading symbols...') }}</div>
+    <section class="signal-section variable-section" :class="{ collapsed: collapsed.signals }">
+      <button type="button" class="section-heading" data-testid="toggle-signals-section"
+        :aria-expanded="!collapsed.signals" @click="collapsed.signals = !collapsed.signals">
+        <ChevronRight v-if="collapsed.signals" :size="14" /><ChevronDown v-else :size="14" />
+        <span>{{ tr('信号分组', 'Signal groups') }}</span><small>{{ tr(`已选 ${selected.size}`, `${selected.size} selected`) }}</small>
+      </button>
+      <SelectedSignals v-show="!collapsed.signals" :paths="[...selected]" :values="latestValues" :hidden="hiddenChannels" @visibility="(path, visible) => emit('visibility-change', path, visible)" />
+    </section>
     <div class="variable-groups" :class="{ 'favorites-collapsed': collapsed.pinned }">
       <section v-for="group in variableGroups" :key="group.key" class="variable-section"
         :class="{ 'pinned-section': group.key === 'pinned', collapsed: collapsed[group.key] }" :data-testid="`${group.key}-variables`">
@@ -441,6 +441,10 @@ const emit = defineEmits<{
 }>()
 
 const catalog = useSymbolCatalog()
+const catalogUnavailable = computed(() => !props.deviceConnected || !props.symbolLoaded
+  || !!props.symbolError || !!catalog.error.value
+  || (!catalog.loading.value && !catalog.items.value.length
+    && !catalog.containers.value.length && !catalog.browseRoots.value.length))
 const displayPrefs = useWatchWorkspace()
 const toast = useToast()
 const {
@@ -1023,13 +1027,20 @@ watch(tree, roots => {
 .section-content { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
 .section-content > :not(.variable-section-rows) { flex-shrink: 0; }
 .variable-section-rows { flex: 1; overflow: auto; min-height: 0; overscroll-behavior: contain; }
-.signal-section { flex: 0 1 auto; max-height: 25%; }
-.signal-section :deep(.selected-workspace) { flex: 1; min-height: 0; max-height: none; overscroll-behavior: contain; }
-.pinned-section { flex: 0 1 auto; max-height: 30%; }
+.signal-section { flex: 0 0 auto; max-height: 35%; }
+.signal-section :deep(.selected-workspace) { flex: 1 1 auto; min-height: 0; max-height: none; overscroll-behavior: contain; }
+.pinned-section { flex: 0 0 auto; max-height: 30%; }
 .pinned-section .section-heading { color: var(--accent); }
 .search-collapsed .signal-section, .search-collapsed .pinned-section { flex: 1; max-height: none; }
 .search-collapsed .variable-groups { min-height: 68px; }
 .search-collapsed .variable-groups.favorites-collapsed { flex: 0 0 auto; }
+/* Notices retain their intrinsic height; a shrinking hint used to cover groups. */
+.symbol-panel > .setup-hint, .symbol-panel > .stale-banner, .symbol-panel > .empty-state { flex: 0 0 auto; }
+/* Without a readable catalog, let group content use its natural height instead
+   of reserving an empty search viewport and clipping saved groups above it. */
+.catalog-unavailable .signal-section { max-height: none; }
+.catalog-unavailable .variable-groups { flex: 0 0 auto; min-height: 0; }
+.catalog-unavailable .variable-section, .catalog-unavailable .section-content { flex: 0 0 auto; }
 .variable-section.collapsed { flex: 0 0 34px; max-height: 34px; }
 .pin-help { padding: 8px 10px; color: var(--muted); font-size: 11px; }
 .pin-controls { display: flex; }

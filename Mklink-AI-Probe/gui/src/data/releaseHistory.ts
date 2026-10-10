@@ -9,6 +9,29 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.3.3', date: '2026-10-10',
+    summary: '共享连接、SuperWatch 布局与烧录资源修复',
+    summaryEn: 'Shared connections, SuperWatch layout and programming resources',
+    changes: [
+      '连接下载器和设置 SWD 时钟不再要求先识别目标芯片，GUI、AI、MCP 和 CLI 共用修复。',
+      '改善后台启动、串口接收进程退出及资源释放，保留共享会话与独占任务保护。',
+      '文件来源记住历史路径；SuperWatch 分组、常用变量和搜索独立折叠，配置自动保存。',
+      '压缩波形工具栏，统一日志导出与回放入口，修复未连接时分区挤压。',
+      '在线烧录支持指定多个 FLM 并显示镜像地址与算法映射，优化校验并补充 USB 失败原因。',
+      '补齐桌面和 Skill 内置 SVD 外设资源，增加打包完整性检查。',
+      '升级安装先检查文件占用；固件升级比较在线渠道，选择对应型号的最新版本。',
+    ],
+    changesEn: [
+      'Connect probes and set SWD clocks without requiring target-chip identification across GUI, AI, MCP and CLI.',
+      'Improve backend startup, receive-worker exit and resource release while preserving shared-session and exclusive-job protection.',
+      'Remember source-file paths; fold SuperWatch groups, favorites and search independently and save preferences automatically.',
+      'Compact the plot toolbar, group log export and replay, and fix compressed sections while disconnected.',
+      'Select multiple FLM algorithms, inspect image-to-algorithm mappings, improve verification and preserve USB failure details.',
+      'Include SVD peripheral resources in desktop and Skill packages with packaging integrity checks.',
+      'Check file availability before upgrades and compare firmware channels for the latest matching model.',
+    ],
+  },
+  {
     version: '0.3.2', date: '2026-10-10',
     summary: '跨平台连接、采集恢复与收发显示',
     summaryEn: 'Cross-platform connections, capture recovery and traffic views',

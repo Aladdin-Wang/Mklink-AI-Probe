@@ -383,7 +383,7 @@ async function upgradeFirmware() {
   firmwareUpgradeResult.value = null
   manualFirmwareChoice.value = ''
   firmwareDownloadStatus.value = ''
-  firmwareUpgradeStatus.value = tr('正在升级探针固件...', 'Upgrading probe firmware...')
+  firmwareUpgradeStatus.value = tr('正在检查并升级到最新固件...', 'Upgrading probe firmware...')
   try {
     const result = await upgradeProbeFirmware(true)
     firmwareUpgradeResult.value = result
@@ -607,7 +607,7 @@ onUnmounted(() => {
         <div class="firmware-upgrade-content">
           <p>{{ tr('检查最新固件，支持的下载器会自动进入升级模式并完成升级。老版本无法自动进入时，可下载固件后按键升级。', 'Check for firmware and update automatically when supported. Older probes can be updated manually using the upgrade button and a downloaded firmware file.') }}</p>
           <button class="btn" type="button" data-testid="upgrade-firmware" :disabled="firmwareUpgrading" @click="upgradeFirmware">
-            {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('检查并升级固件', 'Check and Update Firmware') }}
+            {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('升级到最新固件', 'Update to Latest Firmware') }}
           </button>
           <div v-if="manualFirmwareUpgrade" class="manual-firmware-download" data-testid="manual-firmware-download">
             <strong>{{ manualFirmwareUpgrade.status === 'copied_unverified' ? tr('请检查升级结果', 'Check the update result') : tr('手动升级', 'Manual update') }}</strong>
