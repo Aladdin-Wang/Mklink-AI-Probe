@@ -397,9 +397,21 @@ class Device:
     def set_debug_speed(self, profile: str) -> dict:
         """Apply a named 4/10/20/30 MHz profile to an idle connection."""
         from mklink.debug_speed import apply_profile
-        result = apply_profile(self, profile)
+        from mklink.debug_speed import ClockProfileUnavailable
+        try:
+            result = apply_profile(self, profile)
+        except ClockProfileUnavailable as error:
+            self.clock_warning = str(error)
+            raise
         self.clock_warning = None
         return result
+
+    @property
+    def clock_hz(self) -> int | None:
+        """Last clock acknowledged by the probe, never the saved request."""
+        context = getattr(self._bridge, '_ctx', None)
+        hz = getattr(context, 'swd_clock_hz', None)
+        return hz if self.connected and type(hz) is int and hz > 0 else None
 
     def close(self) -> None:
         if self._rtt_session and self._rtt_session._running:

@@ -1367,6 +1367,7 @@ def create_app(
                         await run_in_threadpool(device._flash.set_swd_clock, parsed_swd_clock)
                         device.clock_warning = None
                 except FlashError as error:
+                    device.clock_warning = str(error)
                     raise HTTPException(status_code=422, detail=str(error)) from error
         save_config(_state["project_root"], config)
         return config
@@ -1900,6 +1901,7 @@ def create_app(
             "elf_backend": device.axf_status.get("elf_backend"),
             "target_initializing": True,
             "clock_warning": getattr(device, "clock_warning", None),
+            "clock_hz": getattr(device, "clock_hz", None),
         }
 
     @app.post("/api/device/disconnect")
@@ -1919,6 +1921,7 @@ def create_app(
             "port": dev.port,
             "axf": dev.axf_status,
             "clock_warning": getattr(dev, "clock_warning", None),
+            "clock_hz": getattr(dev, "clock_hz", None),
         }
 
     @app.get("/api/probe/firmware-check")
@@ -2145,7 +2148,7 @@ def create_app(
         device = _state.get("device")
         hz = PROFILES.get(profile, PROFILES["medium"])
         if device and device.connected:
-            hz = device._bridge._ctx.swd_clock_hz or hz
+            hz = device._bridge._ctx.swd_clock_hz or None
             profile = next((name for name, value in PROFILES.items() if value == hz), None)
         return {"profile": profile, "clock_hz": hz, "default": "medium", "profiles": PROFILES}
 

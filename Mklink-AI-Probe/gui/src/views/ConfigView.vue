@@ -28,6 +28,7 @@ const {
   listPorts,
   getConfig,
   updateConfig,
+  refreshStatus,
   uploadFileSource,
   connectDevice,
   disconnectDevice,
@@ -51,6 +52,10 @@ const swdClockMhz = computed({
     const rounded = Math.round(hz)
     config.value.swd_clock = text ? String(Math.abs(hz - rounded) < 0.000001 ? rounded : hz) : ''
   },
+})
+const confirmedClockMhz = computed(() => {
+  const hz = deviceStatus.value.clock_hz
+  return typeof hz === 'number' && hz > 0 ? String(hz / 1_000_000) : null
 })
 const localPort = ref('')
 const portOptions = ref<{ label: string; value: string }[]>([])
@@ -153,6 +158,7 @@ async function saveLocalConfig() {
     localSaveState.value = 'unconfirmed'
     toast.error(tr('保存配置失败: ', 'Failed to save configuration: ') + error.message)
   } finally {
+    if (deviceStatus.value.connected) await refreshStatus()
     savingLocal.value = false
   }
 }
@@ -468,9 +474,15 @@ onUnmounted(() => {
         <div v-if="deviceStatus.connected && deviceStatus.port" class="connection-detail" data-testid="connected-port">
           {{ tr('当前串口：', 'Connected port: ') }}{{ deviceStatus.port }}
         </div>
-        <p v-if="deviceStatus.connected && deviceStatus.clock_warning" role="status" data-testid="clock-warning">
-          {{ tr('已连接，当前使用 1 MHz。固件未确认所选高速档位，请升级下载器固件后重新设置速率。', 'Connected at 1 MHz. The probe did not confirm the selected high-speed profile. Update its firmware before selecting the speed again.') }}
-        </p>
+        <div v-if="deviceStatus.connected" class="connection-detail" data-testid="confirmed-clock">
+          {{ tr('当前确认速率：', 'Confirmed clock: ') }}{{ confirmedClockMhz ? `${confirmedClockMhz} MHz` : tr('未确认', 'Unconfirmed') }}
+        </div>
+        <div v-if="deviceStatus.connected && deviceStatus.clock_warning" role="status" data-testid="clock-warning">
+          <p>{{ tr('所选速率未获下载器确认，保存的设置不代表已生效。请先确认目标连接，再重新应用；若仍失败，请核对固件版本，或选择 1–10 MHz。', 'The probe did not confirm the requested clock; a saved setting does not mean it is active. Check the target connection before retrying. If it still fails, check the firmware version or select 1–10 MHz.') }}</p>
+          <p v-if="deviceStatus.idcode != null && [0, 0xffffffff].includes(Number(deviceStatus.idcode))" data-testid="clock-target-warning">{{ tr('尚未识别到目标芯片。请检查目标供电、共地和调试接线后重新连接；下载器已连接不代表目标通信正常。', 'The target chip has not been identified. Check target power, common ground and debug wiring, then reconnect. A connected probe does not establish target communication.') }}</p>
+          <p>{{ deviceStatus.clock_warning }}</p>
+          <button class="btn btn-sm" data-testid="retry-clock" :disabled="savingLocal || connecting || disconnecting" @click="saveLocalConfig">{{ tr('重新应用所选速率', 'Reapply requested clock') }}</button>
+        </div>
 
         <div class="form-row">
           <label class="form-label" for="local-port">{{ tr('串口', 'Serial Port') }}</label>
@@ -497,7 +509,7 @@ onUnmounted(() => {
         </div>
 
         <div class="form-row">
-          <label class="form-label" for="swd-clock">{{ tr('SWD 时钟 (MHz)', 'SWD Clock (MHz)') }}</label>
+          <label class="form-label" for="swd-clock">{{ tr('设置时钟 (MHz)', 'Requested Clock (MHz)') }}</label>
           <input
             id="swd-clock"
             v-model="swdClockMhz"

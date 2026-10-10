@@ -66,6 +66,34 @@ def test_legacy_swd_remains_explicitly_unconfirmed():
     assert not apply_profile(d,'medium')['profile_confirmed']
 
 
+@pytest.mark.parametrize('profile,hz', [('high', 20000000), ('ultra', 30000000)])
+def test_unidentified_target_request_echo_is_not_profile_confirmation(profile, hz):
+    # An unidentified target on V3.6.4 can return a request echo and counters
+    # without a profile ACK. These counters do not confirm a timing kernel.
+    d = device(ident=0, response=(f'set clock {hz}\n'
+        f'SWD requested={hz} transfers=10 wait=0 fault=0 error=0 invalid=10 exhausted=0'))
+    with pytest.raises(ValueError, match='restored 1 MHz'):
+        apply_profile(d, profile)
+    assert d._bridge._ctx.swd_clock_hz == 1000000
+
+
+def test_device_reports_fallback_clock_and_clears_warning_after_success():
+    from mklink.device import Device
+    from mklink.debug_speed import ClockProfileUnavailable
+    dev = Device()
+    dev._connected = True
+    dev._bridge = device(ident=0x1BA01477, response='set clock 20000000')._bridge
+    with pytest.raises(ClockProfileUnavailable):
+        dev.set_debug_speed('high')
+    assert dev.clock_hz == 1_000_000
+    assert 'restored 1 MHz' in dev.clock_warning
+    dev._bridge.send_command.side_effect = lambda cmd: 'set clock 20000000\nSWD profile=20000000'
+    dev.set_debug_speed('high')
+    assert dev.clock_hz == 20_000_000 and dev.clock_warning is None
+    dev._bridge._ctx.swd_clock_hz = 0
+    assert dev.clock_hz is None
+
+
 @pytest.mark.parametrize('profile', ['high', 'ultra'])
 @pytest.mark.parametrize('ident', [0x1BA01477, 0x12345678])
 def test_other_targets_high_is_not_silently_mislabeled(profile,ident):

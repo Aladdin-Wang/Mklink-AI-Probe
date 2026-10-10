@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => {
     mcu: null,
     idcode: null,
     port: null,
+    clock_hz: null as number | null,
+    clock_warning: null as string | null,
     axf: { loaded: false },
   }
 
@@ -19,6 +21,7 @@ const mocks = vi.hoisted(() => {
       listPorts: vi.fn(),
       getConfig: vi.fn(),
       updateConfig: vi.fn(),
+      refreshStatus: vi.fn(),
       connectDevice: vi.fn(),
       disconnectDevice: vi.fn(),
       parseAxf: vi.fn(),
@@ -93,6 +96,38 @@ async function mountView() {
 }
 
 describe('ConfigView', () => {
+  it('distinguishes a saved 20 MHz request from the confirmed 1 MHz fallback and offers retry', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, clock_hz: 1_000_000, clock_warning: 'SWD profile unavailable; restored 1 MHz' })
+    mocks.api.getConfig.mockResolvedValue({ swd_clock: '20000000' })
+    mocks.api.updateConfig.mockResolvedValue({ swd_clock: '20000000' })
+    const wrapper = await mountView()
+    expect(wrapper.get<HTMLInputElement>('#swd-clock').element.value).toBe('20')
+    expect(wrapper.get('[data-testid="confirmed-clock"]').text()).toContain('1 MHz')
+    expect(wrapper.get('[data-testid="clock-warning"]').text()).toContain('SWD profile unavailable')
+    expect(wrapper.text()).not.toContain('请升级下载器固件后')
+    await wrapper.get('[data-testid="retry-clock"]').trigger('click')
+    await flushPromises()
+    expect(mocks.api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({ swd_clock: '20000000' }))
+    expect(mocks.api.refreshStatus).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not invent a 1 MHz fallback when the actual clock is unknown', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, clock_hz: null, clock_warning: 'Fallback not acknowledged' })
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-testid="confirmed-clock"]').text()).toContain('未确认')
+    expect(wrapper.text()).not.toContain('当前使用 1 MHz')
+    wrapper.unmount()
+  })
+
+  it.each(['0x0', '0xffffffff'])('explains an unidentified target with clock fallback (%s)', async idcode => {
+    Object.assign(mocks.deviceStatus, { connected: true, idcode, clock_hz: 1_000_000, clock_warning: 'SWD profile unavailable; restored 1 MHz' })
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-testid="clock-target-warning"]').text()).toContain('尚未识别到目标芯片')
+    expect(wrapper.get('[data-testid="clock-warning"]').text()).toContain('先确认目标连接')
+    wrapper.unmount()
+  })
+
   it('displays stored Hz as MHz and saves fractional MHz without changing the API unit', async () => {
     mocks.api.getConfig.mockResolvedValue({ swd_clock: '20000000' })
     const wrapper = await mountView()
@@ -165,6 +200,8 @@ describe('ConfigView', () => {
       mcu: null,
       idcode: null,
       port: null,
+      clock_hz: null,
+      clock_warning: null,
       axf: { loaded: false },
     })
     mocks.api.listPorts.mockResolvedValue([
