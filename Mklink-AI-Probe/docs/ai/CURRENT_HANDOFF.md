@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-10T19:23:09+08:00`
-- 分支：`main`
-- HEAD：`Official v0.3.2 source 3d511e94742ac95ccd93c30e60349e1b560ee7a4; later closeout PR only docs/generated Web. Inspect Git for current main.`
+- 更新时间：`2026-10-10T20:31:37+08:00`
+- 分支：`0.3.3修复分支`
+- HEAD：`Fix source 2d033e77; generated Web 92415bb3; based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.`
 - 远端 HEAD：`microkeen/main; verify exact current tip with Git.`
-- 工作树：Original Mklink-AI-Probe is the only maintenance workspace. Temporary worktrees removed after closeout PR; local cleanup.json records actual result.
-- 当前任务：0.3.2已正式发布：Windows/Mac ARM64/Mac Intel/Linux x64、五个平台更新条目、Skill/SiteAgent及三个渠道完成；Windows实际覆盖安装与正常退出通过。V3.6.4/V4.6.8/HPM4.6.8独立发布。正式包与证据已归档原空间；交接/生成Web收尾PR后按cleanup.json移除临时树。后续不重复既有真机回归。 用户新增普通启动后台离线、SuperWatch CDC queued read failed停采断连；按最新要求只初查并交接，下会话修复，本轮收尾完成不代表这两项已修复。
-- 状态：`complete`
+- 工作树：Original workspace remains main; active isolated worktree Mklink-AI-Probe-startup-cdc holds user-named branch 0.3.3修复分支. Preserve it while diagnosis continues.
+- 当前任务：按用户要求修复前两项发布后问题。已提交CDC错误保留/接收失败防护/界面状态修正、Tauri端点恢复与启动日志。自动测试及冻结候选真机/原生/Web故障注入通过；原始CDC与首次启动离线仍未复现，不能宣布根因闭环。用户允许暂时跳过UAC安装、专注修复。详见v033-startup-cdc-recovery.md。
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -21,7 +21,8 @@
 
 ## 验证证据
 
-- **发布后故障初查（未修复）**：代码确认Windows GetOverlappedResult失败经worker E帧、Bridge ERROR到SuperWatch stopped；现有日志无底层Win32码，不能确认根因。仅只读检查，未做新的真机测试；按用户要求移交下一会话。
+- **0.3.3 启动/CDC第一轮修复**：源码2d033e77/Web92415bb3；Python177、GUI917、Rust22及标准NSIS构建通过。冻结CLI/MCP Windows-only PATH通过；默认环境原生启动、代理退出换端口恢复、真实Web状态通过。V3.6.4/STM32F103 30MHz/1µs候选90秒约2371万样本错误/丢弃0，接收worker退出注入停采断连及显式重连恢复通过。此前695秒源码诊断出现接收队列丢弃11754288字节，无CDC错误；不能称无损。实际安装获用户暂缓。见v033-startup-cdc-recovery.md。
+- **0.3.2 发布后故障初查（历史）**：代码确认Windows GetOverlappedResult失败经worker E帧、Bridge ERROR到SuperWatch stopped；现有日志无底层Win32码，不能确认根因。仅只读检查，未做新的真机测试；按用户要求移交下一会话。
 - **0.3.2正式安装和渠道**：v032-release-handoff.md：NSIS真实覆盖0.3.1至0.3.2、注册及载荷哈希一致；安装态CLI/MCP、36项Web字节/MIME、3.420秒lobby、8.605秒原生启动、版本日期/说明界面及正常退出通过。最终GUI914，既有Python4647/2skip，Rust21+6。五份更新签名实际验签，17个公开文件及三个渠道核对，原空间v032-official归档。Mac/Linux物理安装USB/MSC/原地更新后验，不称通过。
 - **0.3.2 V4.6.8最终收尾**：见v032-v4-final-closure.md。冻结b06 + V4.6.8后台升级13.148秒；Keil新启/暂停/单步/继续/退出、四路并发检查、在线并行512KiB保全427.25秒、脱机共享失败停止恢复57.842秒及OpenOCD/退出/重连完成。30MHz并行1kHz/最大目标读错+1/+273，10MHz0，旧V4.6.6原始+1/+224已更正。用户接受限制继续发布。
 - **0.3.2 V3最终矩阵**：v032-keil-capture-start.md：V3.6.4后台升级、Keil先Run新启RTT8/Watch4、暂停单步继续退出、UART并行、在线脱机共享失败停止恢复、OpenOCD、512KiB保全及6.03秒释放通过。已收敛，不再等待V4换机；V4最终矩阵另列。
@@ -37,23 +38,24 @@
 - 用户接受30MHz并行目标读错留待下版，不写公开发布说明；Mac/Linux实机后验，Windows本轮已实际覆盖安装通过。
 - 原空间是唯一维护入口。正式包/证据已回原.build/artifacts/v032-official和v032-handoff，F盘仅构建缓存；清理实录见cleanup.json。固件原V3/V4 main已核对，V4-fixes已清理，用户子模块改动保留。
 - mklink及既有长期跟进维持暂停；不得因旧交接自动接管硬件或重复发布。
+- 本轮用户指定独立分支精确命名0.3.3修复分支，优先于默认codex前缀。只做前两项修复与相关验证；管理员安装暂跳过；原始问题未复现时保留草稿PR和未闭环结论。
 
 ## 真机环境
 
-- **state**：V3.6.4与V4.6.8最终后台升级、Keil先Run后新启RTT8/Watch4及暂停单步继续退出、在线脱机共享烧录失败停止恢复、OpenOCD、GUI退出AI接续、重连与最后端口释放完成。两台最终512KiB SHA c1e51c22ae9530ee4afea9042ff6e710421bc24b6d8bf8ddd6e0992794a18bf8。未改VCC，硬件已释放。V4 30MHz并行读错留待下版，不误称零错误。 发布后用户再次操作设备并报告CDC错误，当前设备身份与旧HIL不同；本轮只读日志，禁止沿用旧硬件状态。
-- **installer**：正式main3d511e94 NSIS SHA3e72fae43380f7b060aac2c44b2f7e813259c7dd2e33f3ea59b78d41d46a2498；Windows实际覆盖安装通过，已观察0.3.2/2026-10-10。三平台原生38028928283通过及五份更新验签；Mac/Linux物理安装USB/MSC/原地更新仍客户后验。
-- **backups**：原Git根.build/artifacts/v032-official保存正式包、清单、安装/CI/签名/渠道证据，v032-handoff保存阶段HIL和旧用户备份；索引逐项SHA核验。固件原工程CURRENT_HANDOFF.md与firmware-releases保留必要记录。
+- **state**：本轮用户确认V3 + STM32F103现有测试程序，查询V3.6.4。30MHz/1µs源码诊断与最终冻结候选采样、worker退出注入、显式重连恢复完成，正常停采/断开后退出候选；未烧录、写变量或改VCC。身份及路径仅本地证据。旧V4限制沿用原报告，不能用本轮V3结果覆盖。
+- **installer**：正式main3d511e94 NSIS SHA3e72fae43380f7b060aac2c44b2f7e813259c7dd2e33f3ea59b78d41d46a2498；Windows实际覆盖安装通过，已观察0.3.2/2026-10-10。三平台原生38028928283通过及五份更新验签；Mac/Linux物理安装USB/MSC/原地更新仍客户后验。 0.3.3修复候选为本地未签名NSIS；UAC返回取消，用户允许暂缓安装，现有官方0.3.2安装未改变。
+- **backups**：原Git根.build/artifacts/v032-official保存正式包、清单、安装/CI/签名/渠道证据，v032-handoff保存阶段HIL和旧用户备份；索引逐项SHA核验。固件原工程CURRENT_HANDOFF.md与firmware-releases保留必要记录。 本轮候选、哈希和诊断证据在原Git根.build/artifacts/v033-fixes；F盘复用构建缓存。
 
 ## 下一动作
 
-1. 下一会话优先读v032-postrelease-incidents.md和本地post-release-incidents证据，排查Windows队列读错误传播、状态矛盾及普通启动离线；尚未修复，不继承旧HIL设备信息，不覆盖0.3.2发布资产。
-2. 后续从原工作空间main开展新版本；先读v032-release-handoff.md和本地cleanup.json，不再回临时工作树找资料，不移动0.3.2标签。
+1. 继续0.3.3修复分支：优先复现30MHz/1µs CDC底层失败和首次冷启动离线，读取候选新增Win32码/启动日志。保留草稿PR；实际覆盖安装暂缓，不宣称两个根因彻底修复。
+2. 保留Mklink-AI-Probe-startup-cdc工作树；原工作区仍为主入口，候选与日志已在原.build/artifacts/v033-fixes归档。不得覆盖0.3.2正式包、标签、渠道或擅自合并。
 3. 下一版排查30MHz并行目标读错/Flash偶发status5，区分固件目标访问与主机队列；保持偶发错误不断采、不误断的行为。
 4. 收集Mac/Linux正式包客户实机USB/MSC和原地升级反馈；完整SES、缺失夹具和全部芯片组合保持未验证，供电仍须逐次确认具体电压。
 
 ## 已知限制
 
-- 发布后未解决：普通安装态启动后台离线；SuperWatch CDC queued read failed导致停采/断连，transport徽标状态矛盾。不同于status5；用户明确转下一会话。见v032-postrelease-incidents.md及原空间本地日志/截图。
+- 前两项第一轮修复已提交，但原始30MHz/1µs CDC queued read failed和首次启动后台离线均未复现，根因待新日志定位。状态矛盾、死接收线程控制及端点恢复有回归证据。实装由用户暂缓；见v033-startup-cdc-recovery.md。
 - V4.6.8 30MHz RTT8/Watch4/UART并行目标读错1kHz +1、最大+273；10MHz0。旧V4.6.6原始+1/+224，报告此前漏记已更正。采集不停止、不误断、UART完整；用户明确继续发布，限制交接下版处理，不写公开发布说明。
 - HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4/V4.6.8仿真中新启采集及负载读回通过，V4.6.8已完成Keil及相关矩阵。详见release handoff；长期目标暂停。
 - 性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。
