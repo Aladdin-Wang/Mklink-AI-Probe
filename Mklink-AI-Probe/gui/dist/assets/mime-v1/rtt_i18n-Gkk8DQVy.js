@@ -3,6 +3,8 @@
 // ============================================================
 var I18N = {
   zh: {
+    view_channel: '界面通道', device_disconnected: '设备未连接',
+    view_channel_tip: '显示界面与后台的数据通道状态；设备连接和采集状态单独显示。',
     // Header
     live: '在线', paused: '已暂停', stopped: '已停止', reconnecting: '重连中...',
     cursors: '光标', save: '保存', load: '加载', thresholds: '阈值',
@@ -108,6 +110,8 @@ var I18N = {
     lang_label: '中/En'
   },
   en: {
+    view_channel: 'View channel', device_disconnected: 'Device disconnected',
+    view_channel_tip: 'Data channel between this view and the backend; device connection and acquisition have separate states.',
     live: 'live', paused: 'paused', stopped: 'stopped', reconnecting: 'reconnecting...',
     cursors: 'Cursors', save: 'Save', load: 'Load', thresholds: 'Thresholds',
     cursors_tip: 'Toggle A/B Cursors (C)', cursor_mode_tip: 'Switch measurement mode (Time/Value)',
