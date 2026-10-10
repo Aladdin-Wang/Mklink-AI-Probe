@@ -36,6 +36,15 @@ ignored by Git and is the single local source for both packages. The builder
 validates every payload before packaging; a release fails when the assets are
 missing, incomplete, or changed.
 
+From 0.3.3, desktop and public Skill packages also require a verified
+`mklink/builtin_packs` payload containing PDSC, referenced SVD, FLM and license
+files. Set `MKLINK_BUILTIN_PACK_BUNDLE` to an existing checked bundle, or set
+`MKLINK_BUILTIN_PACK_ROOTS` to the digest-pinned source archives declared in
+`builtin-packs.json`. The same validator checks the frozen input and final
+Skill ZIP; missing SVD resources or missing STM32F407VE coverage fail the build.
+The native Unix builder retrieves the existing authorized, checksum-pinned
+sources when no bundle or source roots are configured.
+
 ## Commands
 
 Run from the project root:
@@ -130,6 +139,9 @@ Generate only the standard NSIS by default. MSI and WebView2-offline variants re
    with the Windows-only PATH. Complete initialization and call `inspect_mcu`
    and `security_status` without opening hardware. The source/Skill MCP process
    is a separate entry point and cannot substitute for this frozen check.
+10. With no external CMSIS Pack installation, query installed peripheral
+    targets for STM32F407VE and load its register catalog. Confirm the frozen
+    sidecar and public Skill ZIP contain the same checked SVD Pack payload.
 
 Do not use the removed `/api/dashboard/status` endpoint. Use the current `/api/dash/<name>/status` routes when a dashboard-specific check is needed.
 

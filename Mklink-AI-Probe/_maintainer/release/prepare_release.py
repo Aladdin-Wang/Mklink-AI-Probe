@@ -97,6 +97,30 @@ def _builtin_flm_assets():
     return module
 
 
+def _builtin_pack_assets():
+    import importlib.util
+    path = REPO_ROOT / "skills/tauri-gui-builder/scripts/builtin_pack_assets.py"
+    spec = importlib.util.spec_from_file_location("mklink_builtin_pack_assets", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _requires_builtin_packs(version: str) -> bool:
+    return tuple(int(part) for part in version.split(".")[:3]) >= (0, 3, 3)
+
+
+def _append_builtin_pack_assets(path: Path, root_name: str) -> None:
+    assets = _builtin_pack_assets()
+    source = assets.prepare_bundle(REPO_ROOT)
+    manifest = assets.validate_bundle(source)
+    names = ["manifest.json"] + [item["file"] for item in manifest["packs"]]
+    with zipfile.ZipFile(path, "a", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name in names:
+            archive.write(source / name, f"{root_name}/mklink/builtin_packs/{name}")
+    print(f"Included built-in peripherals: {manifest['svd_target_count']} targets")
+
+
 def _requires_builtin_flm(version: str) -> bool:
     try:
         parts = tuple(int(part) for part in version.split(".")[:3])
@@ -176,6 +200,18 @@ def _validate_skill_archive(path: Path, version: str) -> None:
                     extraction_root.joinpath(*bundle_prefix.parts)
                 )
 
+        if _requires_builtin_packs(version):
+            prefix = PurePosixPath(root, "mklink", "builtin_packs")
+            members = [info for info in archive.infolist() if not info.is_dir()
+                       and PurePosixPath(info.filename).is_relative_to(prefix)]
+            if not members:
+                raise ValueError("Skill archive requires built-in SVD Packs")
+            with TemporaryDirectory(prefix="mklink-skill-packs-") as temporary:
+                extraction_root = Path(temporary)
+                for info in members:
+                    archive.extract(info, extraction_root)
+                _builtin_pack_assets().validate_bundle(extraction_root.joinpath(*prefix.parts))
+
 
 def _build_skill_archive(
     *, version: str, source_commit: str, output: Path,
@@ -206,6 +242,8 @@ def _build_skill_archive(
         subprocess.run(command, check=True)
         if _requires_builtin_flm(version):
             _append_builtin_flm_assets(output, f"Mklink-AI-Probe-v{version}")
+        if _requires_builtin_packs(version):
+            _append_builtin_pack_assets(output, f"Mklink-AI-Probe-v{version}")
         _validate_skill_archive(output, version)
     except Exception:
         output.unlink(missing_ok=True)

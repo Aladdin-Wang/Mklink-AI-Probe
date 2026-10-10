@@ -2555,12 +2555,15 @@ def test_verify_sparse_hex_reads_only_inspected_segments(tmp_path: Path) -> None
         "hex",
         file_path=str(firmware),
         format="hex",
+        size=firmware.stat().st_size,
         segments=(ImageSegment(first, first + 2), ImageSegment(second, second + 2)),
         start=first,
         end=second + 2,
     )
 
-    backend.verify(image)
+    progress = []
+    backend.verify(image, progress_callback=progress.append)
+    assert progress == [0.0, 0.5, 1.0]
 
     assert target.read_calls == [(first, 2), (second, 2)]
     backend.disconnect()
@@ -2990,3 +2993,37 @@ def test_verify_reuses_flm_context_and_always_uninitializes(fail):
     assert events.count(("init", "verify")) == 1
     assert events.count(("uninit",)) == 1
     assert events[-1] == ("uninit",)
+
+
+@pytest.mark.parametrize("result, mismatch", [([0x64636261, 0x68676665], None), ([0x64636261], "0x1004"), ([0x64636261, 0x68670065], "0x1005")])
+def test_verify_word_path_keeps_exact_comparison_and_short_read_errors(result, mismatch):
+    calls = []
+    target = FakeTarget()
+    target.read_memory_block32 = lambda address, count: calls.append((address, count)) or result
+    target.read_memory_block8 = lambda *a: pytest.fail("aligned verification should use word reads")
+    if mismatch:
+        with pytest.raises(FlashError, match=mismatch):
+            PyOcdBackend._verify_expected_bytes(target, 0x1000, b"abcdefgh")
+    else:
+        PyOcdBackend._verify_expected_bytes(target, 0x1000, b"abcdefgh")
+    assert calls == [(0x1000, 2)]
+
+
+def test_verify_unaligned_range_never_expands_word_access():
+    calls = []
+    target = FakeTarget()
+    target.read_memory_block32 = lambda *a: pytest.fail("unaligned read must not expand range")
+    target.read_memory_block8 = lambda address, size: calls.append((address, size)) or list(b"abc")
+    PyOcdBackend._verify_expected_bytes(target, 0x1001, b"abc")
+    assert calls == [(0x1001, 3)]
+
+
+def test_dead_usb_reader_preserves_cause_and_failed_stage():
+    cause = OSError(5, "USB transfer failed")
+    cause.backend_error_code = -7
+    error = RuntimeError("Probe example read thread exited unexpectedly")
+    error.__cause__ = cause
+    mapped = PyOcdBackend._mapped_error(error, FlashErrorCode.VERIFY_FAIL)
+    assert mapped.code == FlashErrorCode.VERIFY_FAIL
+    assert "VERIFY_FAIL" in mapped.message and "USB transfer failed" in mapped.message
+    assert "errno=5" in mapped.message and "backend_error_code=-7" in mapped.message
