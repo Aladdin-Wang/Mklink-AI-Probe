@@ -9,22 +9,24 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
-    version: '0.3.2', date: '2026-10-09',
+    version: '0.3.2', date: '2026-10-10',
     summary: '跨平台连接、采集恢复与收发显示',
     summaryEn: 'Cross-platform connections, capture recovery and traffic views',
     changes: [
       '修复 macOS USB 拓扑被误读为接口号，以及 Linux 接口名称导致的命令口识别失败。',
       'macOS/Linux 按下载器 USB 身份自动识别脱机烧录磁盘，支持已挂载的数据盘和 UF2 盘。',
       '改善 SuperWatch 读取异常及 IDE 并行时的连接恢复，完善 CHERRYUF2 固件升级。',
+      '修复采集中在线烧录文件检查冲突，以及共享后台临时心跳失败后停止续租的问题。',
       'SWD 时钟改用 MHz 输入；RTT/串口收发默认显示毫秒时间及方向，RTT 窗口支持独立调整大小。',
-      '补充 macOS Apple Silicon / Intel 和 Linux x64 桌面构建，平台验证进行中。',
+      '新增 macOS Apple Silicon / Intel 和 Linux x64 安装包，支持对应安装格式的自动更新。',
     ],
     changesEn: [
       'Fix command-port discovery when macOS topology is mistaken for an interface or Linux interface names obscure metadata.',
       'Identify mounted offline-programming and UF2 volumes by probe USB identity on macOS and Linux.',
       'Improve recovery from SuperWatch read errors and concurrent IDE use, and CHERRYUF2 firmware upgrades.',
+      'Fix online image inspection conflicts during capture and shared-session renewal after temporary heartbeat failures.',
       'Enter SWD clocks in MHz; traffic views show milliseconds and direction, with independently resizable RTT panels.',
-      'Add macOS Apple Silicon / Intel and Linux x64 desktop builds; platform qualification is in progress.',
+      'Add macOS Apple Silicon / Intel and Linux x64 installers with automatic updates for each package format.',
     ],
   },
   {
