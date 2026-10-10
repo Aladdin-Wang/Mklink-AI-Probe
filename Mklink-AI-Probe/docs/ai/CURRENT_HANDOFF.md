@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-10T09:04:25+08:00`
+- 更新时间：`2026-10-10T09:29:40+08:00`
 - 分支：`codex/0.3.2-fixes`
 - HEAD：`Based on microkeen/main 078663fe; inspect Git for current 0.3.2 fix head.`
 - 远端 HEAD：`microkeen/main 078663fe; task changes pushed only to codex/0.3.2-fixes.`
 - 工作树：Isolated desktop-platforms worktree; original main checkout and released artifacts preserved.
-- 当前任务：0.3.2既有修复回归核对及V3.6.2最终补验。V4冻结86矩阵通过；V3实际GUI升级、时间戳负载和RTT8/Watch4/UART通过，但在线后并行完整回读发生串口写错，未收敛不能发布。当前源码已修复SerialException被OSError包装掩盖的问题，6项专项通过、完整Python正在重跑。用户在固件会话明确要求V3验收完再发布；保持发布门槛，见v032-v3-final-candidate.md。
+- 当前任务：0.3.2既有修复回归与V3最终补验。88源码完整Python4635通过、2跳过；V3原路径在线后RTT8/Watch4并行512KiB回读通过，但空闲82秒后会话过期。已修复单次临时心跳失败永久停止续租，109专项通过，完整Python重跑。V3.6.3/V4.6.7新固件未实测，首发串口写错仍未归因；不得发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **0.3.2 V3.6.2补验与首发失败**：见v032-v3-final-candidate.md。86冻结候选实际GUI升V3.6.2，UF2 SHA4c894405；30MHz Flash128B两档30秒完整性均0，最大间隔1049/213µs；真实RTT8/Watch4/UART两档各5次154B应答、4路inspect通过。在线任务succeeded并恢复采集，但随后完整回读Serial worker write failed；USB仍枚举，明确重连恢复。首轮只读复测512KiB与备份一致，第二轮仍在进行。尚未完成余下V3矩阵，不以V4通过替代。上位机保留原始串口异常修复6项测试通过，冻结包尚不含此改动。
+- **0.3.2 V3.6.2补验与首发失败**：见v032-v3-final-candidate.md。86冻结+V3.6.2实际GUI升级、30MHz两档时间戳、RTT8/Watch4/UART、脱机/共享/失败/停止恢复通过。在线后回读首发Serial worker write failed；两轮显式10MHz重测512KiB一致，88源码原路径复测亦一致。随后无close空闲82秒会话过期，修复SDK临时心跳失败有界重试，109专项通过；完整Python重新运行。363/467新固件待刷测，Keil/OpenOCD/退出矩阵待完成，不以V4旧通过替代。
 - **0.3.2最终候选与既有修复回归**：见v032-final-candidate.md。86cfdff4冻结候选实际GUI升级V4.6.6；30MHz Flash128B在1kHz/请求1µs两档完整性指标均0，最大样本间隔1049/233µs；RTT8/Watch4/UART并行、文件检查、在线/脱机/共享烧录成功/失败/停止恢复、Keil下载断点单步退出及OpenOCD、GUI退出AI接续、旧端点重发现、最后6.299秒释放通过；512KiB逐字不变，未改VCC。真实收发毫秒/RX/TX、独立RTT拖动及20/30MHz保存通过。旧155次status5不冒作新固件故障注入证据。914 GUI/生产构建通过；原生3e39e1ef构建37949511991全部成功；完整Python/Rust和交付状态以发布准备报告为准。 全量Python4634通过/2跳过，Rust21+6通过；三平台下载CRC和载荷SHA256均核验，当前候选可交客户复测。
 - **0.3.2冻结候选V4/Keil收敛**：详见v032-hardware-closure.md。e1eee01e frozen + UF2 2684d904：在线/脱机/共享及负向自动恢复、30MHz时间戳负载、RTT8/Watch4/UART、Keil下载断点单步、OpenOCD、Flash512KiB不变、旧端点重连和6.261秒释放。Keil期间155读错不误断，退出自动恢复；用户屏幕确认已连接。固件另有断线计时误判待修，新固件和最终自动升级仍未收敛。
 - **0.3.1正式发布**：v031-release-handoff.md：main/tag 1d61159d，clean locked GUI912、签名NSIS与SiteAgent重建通过；冻结MCP/CLI、4.825秒lobby、36项Web字节一致、10.340秒原生窗口、无Python子进程及正常退出通过；UAC安装豁免。三端资产/应用及固件索引已核对。用户原GUI保留，本次不连接目标。
@@ -41,16 +41,16 @@
 
 ## 真机环境
 
-- **state**：V3由用户换接并交接给本会话独占，已实际升级V3.6.2并保全升级前512KiB。在线后回读失败正在复现；固件会话只读协查，未授权其并发操作。VCC未改；不得宣称V3验收结束。V4原矩阵通过且已释放。
+- **state**：本会话独占V3，当前V3.6.2；全部旧测试进程已正常退出，硬件未交给其他会话。VCC未改，512KiB多次保全。363/467候选UF2哈希已核对尚未刷入；新包/新固件和原失败收敛后再发布。
 - **installer**：Windows86cfdff4 NSIS SHA256 c3463d7ad42c426f82efce986dbf3b7f413fd91b3707176019e26a28cfadce15，提取冻结后台和生产Web实测，不是覆盖安装；UAC人工项用户豁免。三平台3e39e1ef与Windows产品代码相同但打包提交不同，正式同源要求仍需整合后重建；候选未签名更新/未公证，不声称实装升级通过。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 完成当前V3只读复现并保留首发失败，定位实际底层串口错误；再完成脱机/共享/失败停止恢复、Keil/OpenOCD及程序保全/释放。
-2. 收敛源码异常透传修复，完成当前完整Python，更新冻结候选并按影响面回归；旧86包不继承新代码通过。
-3. Mac/Linux客户安装、USB/MSC和签名原地自升级仍需真实环境；现有候选/云机证据只覆盖打包和冻结入口。
-4. V3实际失败及其他发布门槛收敛前不合并、签名、发布或改渠道；全部符合后按用户发布授权统一源重建。
+1. 完成心跳修复完整回归，冻结同源三平台候选。
+2. 实际GUI升级V3.6.3，补测原在线并行回读/时钟恢复、长空闲续租、Keil/OpenOCD/GUI退出AI接续及最后端口释放。
+3. V3完成后请求换V4，验证V4.6.7；Mac/Linux客户实装USB/MSC/签名原地升级待反馈，不能用云机替代。
+4. 实际失败及发布门槛收敛前不发布；其后按用户授权统一源构建、签名及更新渠道。
 
 ## 已知限制
 

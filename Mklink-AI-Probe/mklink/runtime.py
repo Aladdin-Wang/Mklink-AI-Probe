@@ -358,12 +358,19 @@ class RuntimeClient:
             self._heartbeat.join(timeout=6)
 
     def _renew(self, stop, session_id, info):
+        failures = 0
         while not stop.wait(1):
             try:
-                request(info, "POST", "/_runtime/heartbeat", {"session_id": session_id}, timeout=5)
-            except RuntimeErrorResponse:
-                # Do not silently reconnect/replay a command after loss of ownership.
-                return
+                # Leave room for a retry within the backend's five-second lease.
+                request(info, "POST", "/_runtime/heartbeat", {"session_id": session_id}, timeout=2)
+                failures = 0
+            except RuntimeErrorResponse as exc:
+                failures += 1
+                # Only renew the same lease after a transient IPC failure. An
+                # explicit refusal (including expired/revoked ownership) ends
+                # renewal immediately; never reattach or replay hardware work.
+                if exc.status_code not in (None, 500, 502, 503, 504) or failures >= 3:
+                    return
 
     def call(self, capability: str, arguments=None):
         with self._lock:
