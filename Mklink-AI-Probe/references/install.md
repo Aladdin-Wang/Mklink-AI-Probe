@@ -31,8 +31,21 @@ python -m mklink web-entry install --quick-launch
 报告自检与文件位置，不必立即打开 GUI。双击入口会等待本地服务健康后打开页面，
 详细行为与排障见 [Web 入口](web-entry.md)。
 
-MCP 使用 `python -m mklink mcp`（stdio），客户端按其插件/MCP 配置加载包内
-`.mcp.json`。安装 Skill 文本本身不保证客户端已启用 MCP；以实际可调用工具为准。
+MCP 使用 `python -m mklink mcp`（stdio）。包内 `.mcp.json` 是依赖 PATH 的通用
+模板；AI 客户端可能使用不同的 PATH、工作目录和目录权限。安装依赖后，用同一
+Python 生成本机配置，固定解释器绝对路径、包目录和经过写入检查的缓存目录：
+
+```powershell
+# 替换成当前安装的解释器，以及当前 AI 账户可写的绝对目录。
+& 'D:\MKLink\.venv\Scripts\python.exe' -m mklink mcp-config --cache-dir 'D:\MKLinkCache'
+```
+
+将输出中的 `mcpServers.mklink` 合并到客户端的 MCP 配置；保留其他服务器配置。
+命令只输出 JSON 并检查缓存目录，不会修改客户端设置或连接设备。如果客户端不
+支持 `cwd`，先用这个解释器将完整包安装到环境中，确保从其他目录也能导入
+`mklink`。生成命令须在实际运行 AI 的账户/权限环境执行；失败时选择可写目录，
+不要求管理员权限。移动安装目录或重建虚拟环境后重新生成。重启客户端并调用
+`ping` 验证 stdio 可用。安装 Skill 文本本身不保证客户端已启用 MCP。
 DeepSeek 等客户端也应运行同一完整包的 `python -m mklink mcp` 共享入口，
 不要只安装说明文本后自行编写独占串口脚本。更新后重新加载 MCP 进程，核对
 `ping.mode`、版本以及 `runtime_status` 的后台协议；已运行的旧后台不会因为

@@ -1350,7 +1350,7 @@ def create_app(
                     status_code=422,
                     detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
                 )
-            from mklink.debug_speed import validate_clock_hz
+            from mklink.debug_speed import validate_clock_hz, PROFILES
             try:
                 validate_clock_hz(parsed_swd_clock)
             except ValueError as error:
@@ -1359,6 +1359,11 @@ def create_app(
                     detail=str(error),
                 ) from error
             config["swd_clock"] = swd_clock
+            matching_profile = next((name for name, hz in PROFILES.items() if hz == parsed_swd_clock), None)
+            if matching_profile:
+                config["debug_speed"] = matching_profile
+            else:
+                config.pop("debug_speed", None)
             device = _state.get("device")
             if device is not None and device.connected:
                 from mklink.flash import FlashError
@@ -1367,6 +1372,7 @@ def create_app(
                         await run_in_threadpool(device._flash.set_swd_clock, parsed_swd_clock)
                         device.clock_warning = None
                 except FlashError as error:
+                    device.clock_warning = str(error)
                     raise HTTPException(status_code=422, detail=str(error)) from error
         save_config(_state["project_root"], config)
         return config
@@ -1900,6 +1906,7 @@ def create_app(
             "elf_backend": device.axf_status.get("elf_backend"),
             "target_initializing": True,
             "clock_warning": getattr(device, "clock_warning", None),
+            "clock_hz": getattr(device, "clock_hz", None),
         }
 
     @app.post("/api/device/disconnect")
@@ -1919,6 +1926,7 @@ def create_app(
             "port": dev.port,
             "axf": dev.axf_status,
             "clock_warning": getattr(dev, "clock_warning", None),
+            "clock_hz": getattr(dev, "clock_hz", None),
         }
 
     @app.get("/api/probe/firmware-check")
@@ -2134,6 +2142,7 @@ def create_app(
         if save:
             config = load_config(_state["project_root"]) or {}
             config["debug_speed"] = profile
+            config["swd_clock"] = str(profile_clock(profile))
             save_config(_state["project_root"], config)
         return {**result, "stopped": stopped, "saved": save}
 
@@ -2145,7 +2154,7 @@ def create_app(
         device = _state.get("device")
         hz = PROFILES.get(profile, PROFILES["medium"])
         if device and device.connected:
-            hz = device._bridge._ctx.swd_clock_hz or hz
+            hz = device._bridge._ctx.swd_clock_hz or None
             profile = next((name for name, value in PROFILES.items() if value == hz), None)
         return {"profile": profile, "clock_hz": hz, "default": "medium", "profiles": PROFILES}
 
@@ -2698,18 +2707,33 @@ def create_app(
         )
 
     @app.post("/api/dash/superwatch/start")
-    async def superwatch_start():
+    async def superwatch_start(
+        interval: float | None = Body(None, embed=True, ge=0.000001, le=60),
+    ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         managers = get_managers()
         sw = managers["superwatch"]
+        # Consume the optional preference inside the existing start transaction.
+        # An already-running producer must never be reconfigured by a new view.
+        # This callback is also retained for exclusive-operation resume, so the
+        # initial preference must be applied only once, not on later resumes.
+        pending_interval = interval
+
+        def start_requested():
+            nonlocal pending_interval
+            if pending_interval is not None:
+                sw.set_interval(pending_interval)
+                pending_interval = None
+            sw.start(_state["device"])
+
         status, stopped = await start_dashboard_manager(
-            _state,
-            "superwatch",
-            sw,
-            lambda: sw.start(_state["device"]),
+            _state, "superwatch", sw, start_requested,
         )
-        return {"status": status, "stopped": stopped}
+        response = {"status": status, "stopped": stopped}
+        if interval is not None:
+            response["interval"] = sw.get_status()["interval"]
+        return response
 
     @app.post("/api/dash/superwatch/stop")
     async def superwatch_stop():

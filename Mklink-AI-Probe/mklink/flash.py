@@ -192,6 +192,7 @@ class MKLinkFlash:
         if not isinstance(response, str) or not any(
             line.strip() == f"set clock {parsed_clock}" for line in response.splitlines()
         ):
+            self._bridge._ctx.swd_clock_hz = 0
             raise FlashError("Probe did not acknowledge the requested SWD clock")
         self._bridge._ctx.swd_clock_hz = parsed_clock
 

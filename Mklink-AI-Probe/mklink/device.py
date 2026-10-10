@@ -346,23 +346,28 @@ class Device:
         self._port = candidate
         self._connected = True
 
-        from mklink.flash import MKLinkFlash
+        from mklink.flash import MKLinkFlash, FlashError
         self._flash = MKLinkFlash(self._bridge)
         self.clock_warning = None
 
         # The configuration page's raw SWD clock also applies to deferred GUI
         # connections. Previously it was only consumed by flash(), so a new
         # connection silently inherited whatever clock the probe last used.
-        if config.get("swd_clock"):
+        if config.get("swd_clock") or config.get("debug_speed"):
             try:
-                self._flash.set_swd_clock(config["swd_clock"])
-            except Exception as error:
-                from mklink.debug_speed import ClockProfileUnavailable
-                if isinstance(error.__cause__, ClockProfileUnavailable):
-                    self.clock_warning = str(error)
-                else:
+                from mklink.debug_speed import profile_clock
+                clock = config.get("swd_clock") or profile_clock(config["debug_speed"])
+                self._flash.set_swd_clock(clock)
+            except (FlashError, ValueError) as error:
+                # The USB command session is independent of optional saved
+                # clock settings. Keep it available for configuration/retry.
+                if not self.connected:
                     self.close()
                     raise
+                self.clock_warning = str(error)
+            except Exception:
+                self.close()
+                raise
 
         # SWD DP init + IDCODE read + MCU match. This was previously only done
         # by the remote API layer; every other connect path (MCP, SDK users,
@@ -383,23 +388,35 @@ class Device:
         if self._axf:
             self._load_dwarf_info()
 
-        if self._initialize_target_now and (config.get("debug_speed") or detected_idcode == 0x1000563D):
+        if detected_idcode == 0x1000563D and not (config.get("swd_clock") or config.get("debug_speed")):
             try:
-                self.set_debug_speed(config.get("debug_speed", "medium"))
-            except Exception as error:
-                from mklink.debug_speed import ClockProfileUnavailable
-                if isinstance(error, ClockProfileUnavailable):
-                    self.clock_warning = str(error)
-                else:
+                self.set_debug_speed("medium")
+            except ValueError as error:
+                if not self.connected:
                     self.close()
                     raise
+                self.clock_warning = str(error)
+            except Exception:
+                self.close()
+                raise
 
     def set_debug_speed(self, profile: str) -> dict:
         """Apply a named 4/10/20/30 MHz profile to an idle connection."""
         from mklink.debug_speed import apply_profile
-        result = apply_profile(self, profile)
+        try:
+            result = apply_profile(self, profile)
+        except ValueError as error:
+            self.clock_warning = str(error)
+            raise
         self.clock_warning = None
         return result
+
+    @property
+    def clock_hz(self) -> int | None:
+        """Last clock acknowledged by the probe, never the saved request."""
+        context = getattr(self._bridge, '_ctx', None)
+        hz = getattr(context, 'swd_clock_hz', None)
+        return hz if self.connected and type(hz) is int and hz > 0 else None
 
     def close(self) -> None:
         if self._rtt_session and self._rtt_session._running:

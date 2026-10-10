@@ -138,3 +138,15 @@ def test_registry_replace_failure_preserves_registered_algorithm(tmp_path, monke
     assert Path(original.file_path).read_bytes() == b"original-algorithm"
     assert list(registry.parent.glob("*.flm")) == [Path(original.file_path)]
     assert not list(registry.parent.glob("*.tmp"))
+
+
+def test_custom_flm_allows_online_alternatives_without_changing_default_overlap_guard(tmp_path):
+    source = tmp_path / 'alternative.flm'
+    catalog = CustomFlmCatalog(tmp_path / 'cache', parser=lambda _: ParsedFlm())
+    source.write_bytes(b'first')
+    first = catalog.add(source, 'first.flm', 'Target', ())
+    source.write_bytes(b'second')
+    with pytest.raises(FlashError, match='overlaps'):
+        catalog.add(source, 'second.flm', 'Target', ())
+    second = catalog.add(source, 'second.flm', 'Target', (), allow_alternatives=True)
+    assert {item.algorithm_id for item in catalog.list('Target')} == {first.algorithm_id, second.algorithm_id}

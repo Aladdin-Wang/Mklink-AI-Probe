@@ -2647,6 +2647,8 @@ def main():
         "mcp",
         help="启动 MCP (Model Context Protocol) server（stdio，供 Claude Code / 其他 MCP client 调用）",
     )
+    mcp_config_parser = subparsers.add_parser('mcp-config', help='输出本机 MCP 配置：固定解释器和可写缓存目录')
+    mcp_config_parser.add_argument('--cache-dir', required=True, help='当前 AI 账户可写的绝对缓存目录')
 
     runtime_parser = subparsers.add_parser("runtime", help="管理 0.3 共享 CDC 后台及调用 GUI 能力")
     runtime_sub = runtime_parser.add_subparsers(dest="runtime_command", required=True)
@@ -2857,6 +2859,13 @@ def main():
         _cli_web_entry(args)
     elif args.command == "mcp":
         _cli_mcp(args)
+    elif args.command == 'mcp-config':
+        import json
+        from mklink.mcp_config import configuration
+        try:
+            print(json.dumps(configuration(args.cache_dir), ensure_ascii=False, indent=2))
+        except ValueError as exc:
+            parser.error(str(exc))
     elif args.command == "security":
         return _cli_security(args)
     else:

@@ -140,6 +140,19 @@ def load_builtin_flm_assets():
     return module
 
 
+def load_builtin_pack_assets():
+    import importlib.util
+    path = Path(__file__).resolve().with_name("builtin_pack_assets.py")
+    spec = importlib.util.spec_from_file_location("mklink_builtin_pack_assets", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def require_builtin_pack_bundle():
+    return load_builtin_pack_assets().prepare_bundle(SKILL_DIR)
+
+
 def builtin_pack_roots():
     value = os.environ.get("MKLINK_BUILTIN_PACK_ROOTS", "")
     roots = [Path(item).resolve() for item in value.split(os.pathsep) if item.strip()]
@@ -221,7 +234,10 @@ def build_sidecar(force=False):
                 "{}{}mklink/builtin_packs".format(bundle_dir, os.pathsep),
             ]
         else:
-            print("[WARN] MKLINK_BUILTIN_PACK_ROOTS is not set; builtin Pack bundle omitted")
+            bundle_dir = require_builtin_pack_bundle()
+            builtin_args = ["--add-data", "{}{}mklink/builtin_packs".format(bundle_dir, os.pathsep)]
+        pack_manifest = load_builtin_pack_assets().validate_bundle(bundle_dir)
+        print("[OK] Verified built-in peripherals: {} targets".format(pack_manifest["svd_target_count"]))
         flm_dir = builtin_flm_root()
         if (flm_dir / "manifest.json").is_file():
             flm_manifest = validate_builtin_flm_bundle(flm_dir)

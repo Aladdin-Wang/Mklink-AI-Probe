@@ -3,12 +3,15 @@
 // ============================================================
 var I18N = {
   zh: {
+    logs: '日志', export_sample_log: '导出采样日志', trigger_settings: '触发设置', close: '关闭',
+    view_channel: '界面通道', device_disconnected: '设备未连接',
+    view_channel_tip: '显示界面与后台的数据通道状态；设备连接和采集状态单独显示。',
     // Header
     live: '在线', paused: '已暂停', stopped: '已停止', reconnecting: '重连中...',
     cursors: '光标', save: '保存', load: '加载', thresholds: '阈值',
     cursors_tip: '切换 A/B 测量光标 (C)', cursor_mode_tip: '切换测量模式 (时间/数值)',
     save_project_tip: '保存项目', load_project_tip: '加载项目',
-    thresholds_tip: '配置阈值', export_csv_tip: '导出 CSV (Ctrl+E)',
+    thresholds_tip: '配置阈值', export_csv_tip: '导出当前采样缓存为 CSV 日志 (Ctrl+E)',
     export_png_tip: '导出 PNG', help_tip: '使用说明',
     x_axis_tip: '横轴：滚轮缩放；按住鼠标左键拖动；双击恢复默认视图',
     x_axis_live_tip: '运行中可缩放和移动；视口保持与最新数据的时间差并继续前移；双击回到最新窗口',
@@ -82,7 +85,7 @@ var I18N = {
       '底部显示 Delta 时间差和各通道值差'
     ],
     help_export_items: [
-      '<strong>CSV</strong> — 导出当前可见数据为 CSV 文件（<span class="help-kbd">Ctrl</span>+<span class="help-kbd">E</span>）',
+      '<strong>导出采样日志</strong> — 导出当前缓存数据为 CSV 文件（<span class="help-kbd">Ctrl</span>+<span class="help-kbd">E</span>）',
       '<strong>PNG</strong> — 截取当前图表为 PNG 图片'
     ],
     help_kbd_rows: [
@@ -108,11 +111,14 @@ var I18N = {
     lang_label: '中/En'
   },
   en: {
+    logs: 'Logs', export_sample_log: 'Export sample log', trigger_settings: 'Trigger settings', close: 'Close',
+    view_channel: 'View channel', device_disconnected: 'Device disconnected',
+    view_channel_tip: 'Data channel between this view and the backend; device connection and acquisition have separate states.',
     live: 'live', paused: 'paused', stopped: 'stopped', reconnecting: 'reconnecting...',
     cursors: 'Cursors', save: 'Save', load: 'Load', thresholds: 'Thresholds',
     cursors_tip: 'Toggle A/B Cursors (C)', cursor_mode_tip: 'Switch measurement mode (Time/Value)',
     save_project_tip: 'Save Project', load_project_tip: 'Load Project',
-    thresholds_tip: 'Configure Thresholds', export_csv_tip: 'Export CSV (Ctrl+E)',
+    thresholds_tip: 'Configure Thresholds', export_csv_tip: 'Export buffered samples as a CSV log (Ctrl+E)',
     export_png_tip: 'Export PNG', help_tip: 'Help',
     x_axis_tip: 'X axis: scroll to zoom; hold the left mouse button and drag; double-click to reset',
     x_axis_live_tip: 'Zoom and pan while running; the view keeps a fixed lag from the latest data and moves forward; double-click to return live',
@@ -177,7 +183,7 @@ var I18N = {
       'Bottom shows Delta time difference and channel value differences'
     ],
     help_export_items: [
-      '<strong>CSV</strong> — Export visible data as CSV file (<span class="help-kbd">Ctrl</span>+<span class="help-kbd">E</span>)',
+      '<strong>Export sample log</strong> — Export buffered samples as a CSV file (<span class="help-kbd">Ctrl</span>+<span class="help-kbd">E</span>)',
       '<strong>PNG</strong> — Capture current chart as PNG image'
     ],
     help_kbd_rows: [
@@ -259,6 +265,9 @@ function populateHelpContent() {
   var kbdTable = document.getElementById('help-kbd-table');
   if (kbdTable) {
     var rows = I18N[currentLang].help_kbd_rows || I18N.zh.help_kbd_rows || [];
+    if (!document.getElementById('raw-log-panel')) rows = rows.filter(function(r) {
+      return r[0] !== '<span class="help-kbd">L</span>';
+    });
     kbdTable.innerHTML = rows.map(function(r) {
       return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>';
     }).join('');

@@ -122,6 +122,18 @@ def test_debug_speed_four_profiles_persist_only_after_success(tmp_path):
         assert load_config(str(tmp_path))['debug_speed']=='ultra'
 
 
+def test_unknown_live_clock_is_not_replaced_with_saved_high_profile(tmp_path):
+    from mklink.project_config import save_config
+    save_config(str(tmp_path), {'debug_speed': 'high'})
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device._bridge = SimpleNamespace(_ctx=SimpleNamespace(swd_clock_hz=0))
+    app.state.mklink_state['device'] = device
+    with TestClient(app) as client:
+        result = client.get('/api/device/debug-speed').json()
+        assert result['clock_hz'] is None and result['profile'] is None
+
+
 def test_shared_debug_speed_reuses_validation_persistence_and_capture_gate(tmp_path, monkeypatch):
     from unittest.mock import Mock
     from mklink.project_config import load_config
@@ -493,6 +505,28 @@ def test_config_clock_applies_before_persisting_and_rejection_keeps_old_value(tm
         device._flash.set_swd_clock.side_effect = FlashError('clock rejected')
         assert client.put('/api/config', json={'swd_clock': '10000000'}).status_code == 422
         assert load_config(str(tmp_path))['swd_clock'] == '4000000'
+
+
+def test_clock_fallback_is_visible_without_persisting_the_rejected_request(tmp_path):
+    from unittest.mock import Mock
+    from mklink.flash import FlashError
+    from mklink.project_config import load_config, save_config
+    save_config(str(tmp_path), {'swd_clock': '4000000'})
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device.clock_hz = 1_000_000
+    device._flash = SimpleNamespace(set_swd_clock=Mock(side_effect=FlashError('profile unavailable; restored 1 MHz')))
+    app.state.mklink_state['device'] = device
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]), TestClient(app) as client:
+        assert client.put('/api/config', json={'swd_clock': '20000000'}).status_code == 422
+        status = client.get('/api/device/status').json()
+        assert status['clock_hz'] == 1_000_000 and 'restored 1 MHz' in status['clock_warning']
+        assert load_config(str(tmp_path))['swd_clock'] == '4000000'
+        device._flash.set_swd_clock.side_effect = None
+        device.clock_hz = 20_000_000
+        assert client.put('/api/config', json={'swd_clock': '20000000'}).status_code == 200
+        status = client.get('/api/device/status').json()
+        assert status['clock_hz'] == 20_000_000 and status['clock_warning'] is None
 
 
 def test_browser_symbol_upload_persists_in_a_controlled_project_directory(tmp_path):

@@ -17,6 +17,7 @@ import { pickSymbolFile, type PickedFile } from '../lib/filePicker'
 import { saveBlobFile } from '../lib/downloadTextFile'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
 import { IS_TAURI } from '../lib/runtimeEndpoint'
+import { rememberSymbolPath } from '../lib/symbolPathHistory'
 import { sharedRuntime } from '../composables/useBackendHealth'
 import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProbeFirmwareUpgrade, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
@@ -28,6 +29,7 @@ const {
   listPorts,
   getConfig,
   updateConfig,
+  refreshStatus,
   uploadFileSource,
   connectDevice,
   disconnectDevice,
@@ -51,6 +53,10 @@ const swdClockMhz = computed({
     const rounded = Math.round(hz)
     config.value.swd_clock = text ? String(Math.abs(hz - rounded) < 0.000001 ? rounded : hz) : ''
   },
+})
+const confirmedClockMhz = computed(() => {
+  const hz = deviceStatus.value.clock_hz
+  return typeof hz === 'number' && hz > 0 ? String(hz / 1_000_000) : null
 })
 const localPort = ref('')
 const portOptions = ref<{ label: string; value: string }[]>([])
@@ -153,6 +159,7 @@ async function saveLocalConfig() {
     localSaveState.value = 'unconfirmed'
     toast.error(tr('保存配置失败: ', 'Failed to save configuration: ') + error.message)
   } finally {
+    if (deviceStatus.value.connected) await refreshStatus()
     savingLocal.value = false
   }
 }
@@ -268,7 +275,10 @@ async function browseSymbolFile() {
   browsingFiles.value = true
   try {
     const source = await selectedFilePath('symbol', await pickSymbolFile())
-    if (source) updateFilePath(source.path, source.displayPath)
+    if (source) {
+      updateFilePath(source.path, source.displayPath)
+      rememberSymbolPath(window.localStorage, source.path, source.displayPath)
+    }
   } catch (error: any) {
     toast.error(tr('加载 AXF / ELF 文件失败: ', 'Failed to load AXF / ELF file: ') + error.message)
   } finally {
@@ -311,6 +321,7 @@ async function refreshRttForSymbols(sourcePath: string) {
 async function parseSymbols() {
   if (!deviceStatus.value.connected || !isSymbolFilePath(settings.value.symbolPath)) return
   const requestedPath = settings.value.symbolPath.trim()
+  rememberSymbolPath(window.localStorage, requestedPath, settings.value.symbolDisplayPath)
   const generation = ++symbolParseGeneration
   parsingSymbols.value = true
   try {
@@ -372,7 +383,7 @@ async function upgradeFirmware() {
   firmwareUpgradeResult.value = null
   manualFirmwareChoice.value = ''
   firmwareDownloadStatus.value = ''
-  firmwareUpgradeStatus.value = tr('正在升级探针固件...', 'Upgrading probe firmware...')
+  firmwareUpgradeStatus.value = tr('正在检查并升级到最新固件...', 'Upgrading probe firmware...')
   try {
     const result = await upgradeProbeFirmware(true)
     firmwareUpgradeResult.value = result
@@ -468,9 +479,14 @@ onUnmounted(() => {
         <div v-if="deviceStatus.connected && deviceStatus.port" class="connection-detail" data-testid="connected-port">
           {{ tr('当前串口：', 'Connected port: ') }}{{ deviceStatus.port }}
         </div>
-        <p v-if="deviceStatus.connected && deviceStatus.clock_warning" role="status" data-testid="clock-warning">
-          {{ tr('已连接，当前使用 1 MHz。固件未确认所选高速档位，请升级下载器固件后重新设置速率。', 'Connected at 1 MHz. The probe did not confirm the selected high-speed profile. Update its firmware before selecting the speed again.') }}
-        </p>
+        <div v-if="deviceStatus.connected" class="connection-detail" data-testid="confirmed-clock">
+          {{ tr('下载器设置速率：', 'Probe clock setting: ') }}{{ confirmedClockMhz ? `${confirmedClockMhz} MHz` : tr('未确认', 'Unconfirmed') }}
+        </div>
+        <div v-if="deviceStatus.connected && deviceStatus.clock_warning" role="status" data-testid="clock-warning">
+          <p>{{ tr('下载器已连接，但所选速率设置未获确认。可重新应用所选速率；连接下载器和设置速率均无需连接目标板。', 'The probe is connected, but the requested clock setting was not acknowledged. Retry applying it. Connecting and configuring the probe do not require a target board.') }}</p>
+          <p>{{ deviceStatus.clock_warning }}</p>
+          <button class="btn btn-sm" data-testid="retry-clock" :disabled="savingLocal || connecting || disconnecting" @click="saveLocalConfig">{{ tr('重新应用所选速率', 'Reapply requested clock') }}</button>
+        </div>
 
         <div class="form-row">
           <label class="form-label" for="local-port">{{ tr('串口', 'Serial Port') }}</label>
@@ -497,7 +513,7 @@ onUnmounted(() => {
         </div>
 
         <div class="form-row">
-          <label class="form-label" for="swd-clock">{{ tr('SWD 时钟 (MHz)', 'SWD Clock (MHz)') }}</label>
+          <label class="form-label" for="swd-clock">{{ tr('设置时钟 (MHz)', 'Requested Clock (MHz)') }}</label>
           <input
             id="swd-clock"
             v-model="swdClockMhz"
@@ -591,7 +607,7 @@ onUnmounted(() => {
         <div class="firmware-upgrade-content">
           <p>{{ tr('检查最新固件，支持的下载器会自动进入升级模式并完成升级。老版本无法自动进入时，可下载固件后按键升级。', 'Check for firmware and update automatically when supported. Older probes can be updated manually using the upgrade button and a downloaded firmware file.') }}</p>
           <button class="btn" type="button" data-testid="upgrade-firmware" :disabled="firmwareUpgrading" @click="upgradeFirmware">
-            {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('检查并升级固件', 'Check and Update Firmware') }}
+            {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('升级到最新固件', 'Update to Latest Firmware') }}
           </button>
           <div v-if="manualFirmwareUpgrade" class="manual-firmware-download" data-testid="manual-firmware-download">
             <strong>{{ manualFirmwareUpgrade.status === 'copied_unverified' ? tr('请检查升级结果', 'Check the update result') : tr('手动升级', 'Manual update') }}</strong>

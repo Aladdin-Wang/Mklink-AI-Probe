@@ -72,7 +72,7 @@ class CustomFlms:
     def list(self, part_number):
         return tuple(record for record in self.records if record.target_part.casefold() == part_number.casefold())
 
-    def add(self, path, file_name, part_number, existing_regions):
+    def add(self, path, file_name, part_number, existing_regions, *, allow_alternatives=False):
         assert Path(path).is_file()
         assert tuple(existing_regions) == ()
         stored = self.root / "custom.flm"
@@ -1652,6 +1652,13 @@ def test_captured_image_can_use_same_pack_flm_range_for_programming(
         lambda *_args, **_kwargs: [algorithm],
     )
 
+    def extract_selected(_algorithm, destination):
+        destination.mkdir(parents=True, exist_ok=True)
+        output = destination / "selected.flm"
+        output.write_bytes(b"verified-pack-flm")
+        return output
+    monkeypatch.setattr("mklink.cmsis_dap.algorithm_catalog.extract_algorithm", extract_selected)
+
     inspected = request(
         app,
         "POST",
@@ -2494,3 +2501,135 @@ def test_request_cancellation_is_not_converted_to_http_500(monkeypatch):
 
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(_blocking(lambda: None))
+
+@pytest.fixture
+def explicit_algorithms(services, monkeypatch, tmp_path):
+    import hashlib
+    from dataclasses import replace
+    records = []
+    for name, start in [('internal', 0x1000), ('external', 0x90000000), ('alternative', 0x1000)]:
+        path = tmp_path / (name + '.flm')
+        path.write_bytes(name.encode())
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        records.append(FlashAlgorithm(name, 'DEVICE_A', name + '.flm', start, 0x1000,
+            0x20000000, 0x1000, True, 'custom-flm', 'User FLM', name,
+            custom_path=str(path), custom_sha256=digest, page_size=0x100, sector_sizes=((0, 0x100),)))
+    monkeypatch.setattr('mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms', lambda *a, **k: records)
+    services.image_inspector = ImageInspector(snapshot_root=tmp_path / 'images')
+    return records
+
+
+def _multi_hex():
+    def record(address, kind, values):
+        data = bytes([len(values), address >> 8, address & 255, kind]) + bytes(values)
+        return ':' + data.hex().upper() + f'{(-sum(data)) & 255:02X}'
+    return ('\n'.join([record(0x1000, 0, [1, 2, 3, 4]), record(0, 4, [0x90, 0]),
+                       record(0, 0, [5, 6, 7, 8]), record(0, 1, [])]) + '\n').encode()
+
+
+def _inspect_multi(app, ids):
+    return request(app, 'POST', '/api/online-flash/images/inspect',
+        data={'part_number': 'DEVICE_A', 'algorithm_ids': ids}, files={'file': ('multi.hex', _multi_hex())})
+
+
+def test_explicit_internal_external_hex_plan_and_exact_job_assets(app, services, explicit_algorithms):
+    result = _inspect_multi(app, ['internal', 'external'])
+    assert result.status_code == 200, result.text
+    image = result.json()
+    assert not image['preview_only']
+    assert [(item['algorithm_id'], item['ranges']) for item in image['algorithm_plan']] == [
+        ('internal', [{'start': 0x1000, 'end': 0x1004}]),
+        ('external', [{'start': 0x90000000, 'end': 0x90000004}])]
+    started = request(app, 'POST', '/api/online-flash/jobs', json={
+        'target_part': 'DEVICE_A', 'probe_id': 'mk', 'image_id': image['image_id'],
+        'algorithm_ids': ['internal', 'external'], 'actions': ['connect', 'erase', 'program', 'verify', 'disconnect'],
+        'sector_addresses': [item['address'] for item in image['sectors']]})
+    assert started.status_code == 200, started.text
+    job = services.job_manager.started[0]
+    assert job.custom_flm_regions == ((0x1000, 0x1000), (0x90000000, 0x1000))
+    assert [Path(item).read_bytes() for item in job.custom_flm_paths] == [b'internal', b'external']
+
+
+@pytest.mark.parametrize('ids', [['internal', 'alternative'], ['missing'], ['internal', 'internal']])
+def test_explicit_selection_rejects_overlaps_missing_and_duplicate_ids(app, services, explicit_algorithms, ids):
+    result = _inspect_multi(app, ids)
+    assert result.status_code == 422, result.text
+    assert not services.job_manager.started
+
+
+def test_explicit_selection_never_falls_back_for_uncovered_hex_partition(app, services, explicit_algorithms):
+    result = _inspect_multi(app, ['internal'])
+    assert result.status_code == 200, result.text
+    assert result.json()['preview_only']
+    assert result.json()['uncovered_segments'] == [{'start': 0x90000000, 'end': 0x90000004}]
+    started = request(app, 'POST', '/api/online-flash/jobs', json={
+        'target_part': 'DEVICE_A', 'probe_id': 'mk', 'image_id': result.json()['image_id'],
+        'algorithm_ids': ['internal'], 'actions': ['connect', 'verify', 'disconnect']})
+    assert started.status_code == 422
+    assert not services.job_manager.started
+
+
+def test_changed_algorithm_bytes_block_job_after_inspection(app, services, explicit_algorithms):
+    inspected = _inspect_multi(app, ['internal', 'external']).json()
+    Path(explicit_algorithms[0].custom_path).write_bytes(b'changed')
+    started = request(app, 'POST', '/api/online-flash/jobs', json={
+        'target_part': 'DEVICE_A', 'image_id': inspected['image_id'], 'probe_id': 'mk',
+        'algorithm_ids': ['internal', 'external'], 'actions': ['connect', 'verify', 'disconnect']})
+    assert started.status_code == 422
+    assert not services.job_manager.started
+
+
+def test_explicit_multiple_algorithms_block_unbounded_chip_erase(app, services, explicit_algorithms):
+    result = request(app, 'POST', '/api/online-flash/jobs', json={
+        'target_part': 'DEVICE_A', 'probe_id': 'mk', 'algorithm_ids': ['internal', 'external'],
+        'actions': ['connect', 'erase', 'disconnect']})
+    assert result.status_code == 422
+    assert not services.job_manager.started
+
+
+def test_manual_native_internal_and_custom_external_algorithms(app, services, explicit_algorithms):
+    services.catalog.search = lambda *a, **k: [TargetRecord('DEVICE_A', 'Vendor', installed=True, source='builtin')]
+    native = 'pyocd-builtin:device_a:00001000'
+    result = _inspect_multi(app, [native, 'external'])
+    assert result.status_code == 200, result.text
+    image = result.json()
+    assert [item['algorithm_id'] for item in image['algorithm_plan']] == [native, 'external']
+    started = request(app, 'POST', '/api/online-flash/jobs', json={
+        'target_part': 'DEVICE_A', 'probe_id': 'mk', 'image_id': image['image_id'],
+        'algorithm_ids': [native, 'external'], 'actions': ['connect', 'verify', 'disconnect']})
+    assert started.status_code == 200, started.text
+    assert services.job_manager.started[0].custom_flm_regions == ((0x90000000, 0x1000),)
+
+
+def test_manual_pack_uses_extracted_flm_sector_geometry(services, explicit_algorithms, monkeypatch, tmp_path):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    import hashlib
+    original = explicit_algorithms[0]
+    explicit_algorithms[0] = replace(original, source_kind='installed-pack', custom_path=None,
+        custom_sha256=None, pack_path='selected.pack', sector_sizes=())
+    monkeypatch.setattr('mklink.cmsis_dap.algorithm_catalog.extract_algorithm', lambda item, destination: Path(original.custom_path))
+    monkeypatch.setattr('mklink.cmsis_dap.custom_flm._parse_flm', lambda path: SimpleNamespace(
+        flash_start=0x1000, flash_size=0x1000, page_size=0x100, sector_sizes=((0, 0x200),)))
+    regions, fingerprints, paths = _target_flash_configuration(services, 'DEVICE_A', algorithm_ids=['internal'])
+    assert regions[0].sector_size == 0x200
+    assert fingerprints == (hashlib.sha256(b'internal').hexdigest(),)
+    assert paths == (original.custom_path,)
+
+
+def test_automatic_preview_plan_cannot_change_before_start(app, services, explicit_algorithms):
+    from dataclasses import replace
+    services.target_memory_provider = lambda _: (
+        MemoryRegion('internal', 0x1000, 0x1000, True, True, 0x100),
+        MemoryRegion('external', 0x90000000, 0x1000, True, True, 0x100))
+    explicit_algorithms.pop()  # no alternative competing with the automatic choice
+    result = _inspect_multi(app, [])
+    assert result.status_code == 200, result.text
+    image = result.json()
+    explicit_algorithms[0] = replace(explicit_algorithms[0], algorithm_id='different')
+    started = request(app, 'POST', '/api/online-flash/jobs', json={
+        'target_part': 'DEVICE_A', 'probe_id': 'mk', 'image_id': image['image_id'],
+        'actions': ['connect', 'verify', 'disconnect']})
+    assert started.status_code == 422, started.text
+    assert 'plan changed' in started.json()['detail']['message']
+    assert not services.job_manager.started

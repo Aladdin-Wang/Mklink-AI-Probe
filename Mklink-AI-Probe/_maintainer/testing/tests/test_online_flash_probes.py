@@ -2046,3 +2046,63 @@ def test_rtt_start_failure_callback_runs_after_worker_cleanup():
     manager._thread.join(timeout=1)
     assert callback_observations == [(True, False)]
     assert resource_manager.get_status() == {}
+
+@pytest.mark.parametrize("interval", [0, -1, 0.0000001, 61, "NaN", "Infinity", "bad"])
+def test_superwatch_start_rejects_invalid_interval_before_resources(interval):
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    managers["superwatch"].set_interval = MagicMock()
+    client, state = _dashboard_client(managers)
+    response = client.post("/api/dash/superwatch/start", json={"interval": interval})
+    assert response.status_code == 422
+    managers["superwatch"].set_interval.assert_not_called()
+    managers["superwatch"].start.assert_not_called()
+    assert state["resource_manager"].get_status() == {}
+
+
+def test_superwatch_concurrent_start_preferences_and_operation_resume():
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    sw = managers["superwatch"]
+    sw.interval = 0.01
+    sw.set_interval = MagicMock(side_effect=lambda value: setattr(sw, "interval", value))
+    sw.start = MagicMock(side_effect=lambda device: setattr(sw, "running", True))
+    sw.get_status = lambda: {"interval": sw.interval}
+    client, state = _dashboard_client(managers)
+    route = next(r for r in client.app.routes if getattr(r, "path", None) == "/api/dash/superwatch/start")
+
+    async def exercise():
+        return await asyncio.gather(route.endpoint(interval=0.00001), route.endpoint(interval=0.002))
+
+    first, second = asyncio.run(exercise())
+    assert first["status"] == "started"
+    assert second == {"status": "already_running", "stopped": [], "interval": 0.00001}
+    sw.set_interval.assert_called_once_with(0.00001)
+    sw.start.assert_called_once_with(state["device"])
+    # A later explicit change must survive an exclusive operation's resume.
+    sw.set_interval(0.003)
+    sw.running = False
+    sw._restart_after_operation()
+    assert sw.interval == 0.003
+    assert sw.set_interval.call_count == 2
+    assert sw.running
+
+
+def test_superwatch_start_preference_does_not_bypass_resource_conflict():
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    managers["rtt"].start.side_effect = lambda *args, **kwargs: setattr(managers["rtt"], "running", True)
+    managers["superwatch"].set_interval = MagicMock()
+    client, state = _dashboard_client(managers)
+    assert client.post("/api/dash/rtt/start", json={}).status_code == 200
+    response = client.post("/api/dash/superwatch/start", json={"interval": 0.00001})
+    assert response.status_code == 409
+    managers["superwatch"].set_interval.assert_not_called()
+    managers["superwatch"].start.assert_not_called()
+    assert state["resource_manager"].get_status()["mklink_bridge"]["owner"] == "user:dashboard:rtt"

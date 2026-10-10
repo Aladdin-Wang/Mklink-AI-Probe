@@ -14,6 +14,7 @@ import type { WorkerOutput } from '../../workers/streamDecoder.worker'
 import '../../assets/rtt_viewer.css'
 import i18nUrl from '../../assets/rtt_i18n.js?url'
 import viewerUrl from '../../assets/rtt_viewer.js?url'
+import { DESKTOP_SETTINGS_STORAGE_KEY } from '../../lib/desktopSettings'
 import { language } from '../../composables/useLanguage'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 import { saveTextFile } from '../../lib/downloadTextFile'
@@ -334,7 +335,8 @@ onMounted(() => {
   // 1. Inject HTML template
   el.innerHTML = buildTemplate(props.mode)
   if (props.mode === 'SuperWatch') {
-    disposeReplay = mountReplayButton(el.querySelector('.header-actions') as HTMLElement, { language: language.value })
+    compactSuperwatchControls(el)
+    disposeReplay = mountReplayButton(el.querySelector('.watch-log-menu') as HTMLElement, { language: language.value })
   }
 
   // 2. Inject CONFIG + load scripts
@@ -383,6 +385,43 @@ onUnmounted(() => {
   if (container.value) container.value.innerHTML = ''
   if ((window as any).__MKLINK_SAVE_FILE__) delete (window as any).__MKLINK_SAVE_FILE__
 })
+
+function compactSuperwatchControls(el: HTMLElement): void {
+  // Remove UI before the viewer binds handlers; VOFA retains its raw terminal.
+  for (const id of ['raw-log-panel', 'btn-save-project', 'btn-load-project', 'project-load-input']) el.querySelector('#' + id)?.remove()
+  el.querySelector('[data-i18n="help_rawlog"]')?.parentElement?.remove()
+  const actions = el.querySelector('.header-actions')!
+  const row = document.createElement('div')
+  row.className = 'watch-toolbar-row'
+  const control = el.querySelector('#control-toolbar')!
+  control.before(row)
+  row.append(control, actions)
+  for (const id of ['conn-status', 'transport-state-badge', 'transport-health-badge', 'sample-rate-badge']) {
+    control.append(el.querySelector('#' + id)!)
+  }
+  const logs = document.createElement('details')
+  logs.className = 'watch-log-controls'
+  logs.innerHTML = '<summary data-i18n="logs">日志</summary><div class="watch-log-menu"></div>'
+  const exportButton = el.querySelector('#btn-export-csv')!
+  exportButton.setAttribute('data-i18n', 'export_sample_log')
+  exportButton.textContent = '导出采样日志'
+  logs.querySelector('.watch-log-menu')!.append(exportButton)
+  actions.append(logs)
+  const trigger = el.querySelector('#trigger-toolbar')!
+  const dialog = document.createElement('dialog')
+  dialog.className = 'watch-trigger-dialog'
+  dialog.setAttribute('aria-label', '触发设置 / Trigger settings')
+  dialog.innerHTML = '<header><strong data-i18n="trigger_settings">触发设置</strong><button type="button" class="panel-btn" data-i18n="close">关闭</button></header>'
+  dialog.append(trigger)
+  el.append(dialog)
+  const open = document.createElement('button')
+  open.type = 'button'; open.className = 'panel-btn'; open.dataset.testid = 'open-trigger-settings'
+  open.dataset.i18n = 'trigger_settings'; open.textContent = '触发设置'
+  open.onclick = () => dialog.showModal()
+  dialog.querySelector('button')!.onclick = () => dialog.close()
+  dialog.addEventListener('keydown', event => event.stopPropagation())
+  actions.prepend(open)
+}
 
 function buildTemplate(mode: string): string {
   const minPoints = mode === 'SuperWatch' ? 50000 : 2
@@ -621,6 +660,7 @@ function injectScripts(el: HTMLDivElement, mode: string) {
       mode: "${mode}",
       lang: ${JSON.stringify(language.value)},
       apiBase: ${JSON.stringify(API_BASE)},
+      viewerSettingsKey: ${JSON.stringify(DESKTOP_SETTINGS_STORAGE_KEY + '.waveform.' + mode)},
       deviceConnected: ${props.deviceConnected}
     };
   `

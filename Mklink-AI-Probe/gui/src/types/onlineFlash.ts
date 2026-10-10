@@ -73,6 +73,7 @@ export interface ImageSegment {
 }
 
 export interface ImageInspection {
+  algorithm_plan?: Array<FlashAlgorithmRecord & { ranges: ImageSegment[] }>
   preview_only?: boolean
   validation_message?: string
   uncovered_segments?: ImageSegment[]
@@ -115,6 +116,7 @@ export interface JobRequest {
   actions: JobAction[]
   image_id?: string | null
   algorithm_id?: string | null
+  algorithm_ids?: string[]
   preempt_ai?: boolean
   probe_id?: string | null
   target_part?: string | null

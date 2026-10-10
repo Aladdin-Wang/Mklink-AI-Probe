@@ -79,6 +79,11 @@ def main():
     work = Path(os.environ["MKLINK_BUILD_WORK_DIR"])
     work.mkdir(parents=True, exist_ok=True)
     os.environ["MKLINK_BUILTIN_FLM_ROOT"] = str(restore_published_algorithms(work))
+    if not os.environ.get("MKLINK_BUILTIN_PACK_BUNDLE") and not builder.builtin_pack_roots():
+        # Older published Skills lack SVD resources; do not propagate that
+        # omission to a fresh native build. Reuse only digest-pinned sources.
+        pack_sources = builder.load_builtin_pack_assets().download_sources(root, work / "pack-sources")
+        os.environ["MKLINK_BUILTIN_PACK_ROOTS"] = str(pack_sources)
     target = builder.native_target()
     output = Path(os.environ["MKLINK_BUILD_OUTPUT_DIR"]) / target
     output.mkdir(parents=True, exist_ok=True)

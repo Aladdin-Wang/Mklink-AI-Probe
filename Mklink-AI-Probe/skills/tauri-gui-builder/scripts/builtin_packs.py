@@ -118,6 +118,9 @@ def _pack_files(
         name = element.attrib.get("name")
         if name:
             files.add(_relative_path(name, "algorithm path"))
+    for element in root.iter():
+        if _local_name(element) == "debug" and element.attrib.get("svd"):
+            files.add(_relative_path(element.attrib["svd"], "SVD path"))
     if metadata.get("redistribution_authorized") is not True:
         raise ValueError("builtin Pack requires explicit redistribution_authorized=true")
     source_url = _text(metadata.get("source_url"), "Pack source_url")
@@ -267,6 +270,9 @@ def _archive_metadata(
                 )
                 if relative.as_posix() in archive_names:
                     files.add(relative)
+        for element in root.iter():
+            if _local_name(element) == "debug" and element.attrib.get("svd"):
+                files.add(descriptor.parent / _relative_path(element.attrib["svd"], "archive SVD path"))
         declared_names = {relative.as_posix() for relative in descriptor_licenses}
         if not declared_names.issubset(configured_licenses):
             raise ValueError("every descriptor license must be pinned in archive license_files")

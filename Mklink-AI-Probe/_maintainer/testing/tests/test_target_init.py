@@ -109,27 +109,43 @@ class TestInitializeTarget:
 
 class TestDeviceConnectInitializesTarget:
     @pytest.mark.parametrize('fallback', ['set clock 1000000\r\n', 'Error: busy'])
-    def test_saved_high_clock_only_keeps_connection_after_confirmed_fallback(self, fallback):
+    def test_saved_clock_failure_never_disconnects_healthy_usb_session(self, fallback):
         from mklink._types import DeviceState
         dev = Device(port='COM6', initialize_target_now=False)
         bridge = MagicMock()
         bridge.connect.return_value = True
         bridge.state = DeviceState.READY
-        bridge.idcode = 0x1BA01477
-        bridge.send_command.side_effect = ['set clock 20000000', fallback]
+        bridge.idcode = 0
+        bridge.send_command.side_effect = ['Error: clock not accepted', fallback]
         with patch('mklink.bridge.MKLinkSerialBridge', return_value=bridge), \
              patch('mklink.project_config.load_config', return_value={'swd_clock': '20000000'}):
+            dev._connect()
+            assert dev.connected
             if fallback.startswith('set clock'):
-                dev._connect()
-                assert dev.connected
                 assert bridge._ctx.swd_clock_hz == 1000000
                 assert 'restored 1 MHz' in dev.clock_warning
-                dev.close()
             else:
-                with pytest.raises(Exception, match='fallback clock'):
-                    dev._connect()
-                assert not dev.connected
-                bridge.close.assert_called_once()
+                assert bridge._ctx.swd_clock_hz == 0
+                assert 'fallback clock' in dev.clock_warning
+            bridge.close.assert_not_called()
+            dev.close()
+
+    @pytest.mark.parametrize('config', [{'swd_clock': 'invalid'}, {'swd_clock': '10000000'}, {'debug_speed': 'invalid'}])
+    def test_optional_clock_configuration_failure_keeps_probe_connected(self, config):
+        from mklink._types import DeviceState
+        dev = Device(port='COM6')
+        bridge = MagicMock()
+        bridge.connect.return_value = True
+        bridge.state = DeviceState.READY
+        bridge.idcode = 0
+        bridge.send_command.return_value = 'Error: clock not accepted'
+        with patch('mklink.bridge.MKLinkSerialBridge', return_value=bridge), \
+             patch('mklink.project_config.load_config', return_value=config), \
+             patch('mklink.device.initialize_target', return_value=0):
+            dev._connect()
+        assert dev.connected and dev.clock_warning
+        bridge.close.assert_not_called()
+        dev.close()
 
     def test_deferred_connection_applies_saved_clock(self):
         dev = Device(port="COM6", initialize_target_now=False)

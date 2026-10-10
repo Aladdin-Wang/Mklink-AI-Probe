@@ -247,8 +247,11 @@ export function useOnlineFlashApi() {
     return request(`/targets?${params.toString()}`, { signal })
   }
 
-  function getTargetMemoryMap(partNumber: string, algorithmId = ''): Promise<TargetMemoryRegion[]> {
-    const query = algorithmId ? `?algorithm_id=${encoded(algorithmId)}` : ''
+  function getTargetMemoryMap(partNumber: string, algorithmId = '', algorithmIds: string[] = []): Promise<TargetMemoryRegion[]> {
+    const params = new URLSearchParams()
+    if (algorithmId) params.set('algorithm_id', algorithmId)
+    for (const id of algorithmIds) params.append('algorithm_ids', id)
+    const query = params.size ? `?${params}` : ''
     return request(`/targets/${encoded(partNumber)}/memory-map${query}`)
   }
 
@@ -313,6 +316,7 @@ export function useOnlineFlashApi() {
     signal?: AbortSignal,
     capturedFromTarget = false,
     algorithmId = '',
+    algorithmIds: string[] = [],
   ): Promise<ImageInspection> {
     const body = new FormData()
     body.append('file', file)
@@ -322,6 +326,7 @@ export function useOnlineFlashApi() {
     }
     if (capturedFromTarget) body.append('captured_from_target', 'true')
     if (algorithmId) body.append('algorithm_id', algorithmId)
+    for (const id of algorithmIds) body.append('algorithm_ids', id)
     return request('/images/inspect', { method: 'POST', body, signal })
   }
 
@@ -331,6 +336,7 @@ export function useOnlineFlashApi() {
     baseAddress?: number | string | null,
     signal?: AbortSignal,
     algorithmId = '',
+    algorithmIds: string[] = [],
   ): Promise<ImageInspection> {
     return request('/images/inspect-path', {
       method: 'POST',
@@ -338,6 +344,7 @@ export function useOnlineFlashApi() {
         path,
         part_number: partNumber,
         algorithm_id: algorithmId || null,
+        algorithm_ids: algorithmIds,
         base_address: baseAddress === undefined || baseAddress === null ? null : String(baseAddress),
       }),
       signal,

@@ -1,8 +1,29 @@
+!include "${__FILEDIR__}\installer-file-check.nsh"
+
+; .onInit has restored the installed directory before MUI initializes its UI.
+; Check before Tauri's maintenance page can launch an OLD uninstaller, whose
+; pre-uninstall hook did not yet protect a shared backend. PREINSTALL repeats
+; the check for silent /UPDATE and the final directory selected by the user.
+!define MUI_CUSTOMFUNCTION_GUIINIT MklinkCheckBeforeMaintenance
+Function MklinkCheckBeforeMaintenance
+  Push $0
+  Push $INSTDIR
+  ; This product key is also used by Tauri's RestorePreviousInstallLocation.
+  ReadRegStr $0 SHCTX "Software\microkeen\Mklink AI Probe" ""
+  ${If} $0 != ""
+    StrCpy $INSTDIR $0
+    Call MklinkWaitForUpgradeFiles
+  ${EndIf}
+  Pop $INSTDIR
+  Pop $0
+FunctionEnd
+
 ; Installer-time USB naming is deliberately best-effort. The main application
 ; must remain installable when no MKLink is connected or PnP is still settling.
 Var MklinkLegacyInstallDir
 
 !macro NSIS_HOOK_PREINSTALL
+  Call MklinkWaitForUpgradeFiles
   ; Tauri owns uninstall/reinstall. In /UPDATE mode it deliberately overwrites
   ; in place and preserves shortcuts. Launching another uninstaller here races
   ; file extraction and deletes shortcuts which /UPDATE will not recreate.
@@ -59,4 +80,8 @@ Var MklinkLegacyInstallDir
   ${Else}
     DetailPrint "MKLink USB serial port naming initialization returned code $0."
   ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  Call un.MklinkWaitForUpgradeFiles
 !macroend

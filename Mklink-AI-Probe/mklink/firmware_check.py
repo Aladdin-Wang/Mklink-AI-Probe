@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from dataclasses import dataclass
 import hashlib
 import json
@@ -273,7 +275,8 @@ def _remote_firmwares_from_source(
     try:
         request = Request(
             FIRMWARE_MANIFEST_URLS[source],
-            headers={"Accept": "application/json", "User-Agent": "mklink-ai-probe"},
+            headers={"Accept": "application/json", "User-Agent": "mklink-ai-probe",
+                     "Cache-Control": "no-cache", "Pragma": "no-cache"},
         )
         with urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -308,27 +311,35 @@ def _remote_firmware(
     family: FirmwareFamily = "microlink",
     timeout: float = 8.0,
 ) -> FirmwareInfo | None:
-    """Find the newest same-model UF2 from GitHub, then Gitee."""
-    for source in ("github", "gitee"):
-        candidate = _remote_firmware_from_source(
-            model, source, family=family, timeout=timeout,
-        )
-        if candidate is not None:
+    """Resolve the newest published entry for this exact probe family/model."""
+    for candidate in _remote_firmwares(timeout=timeout) or []:
+        if candidate.model == model and candidate.family == family:
             return candidate
     return None
 
 
 def _remote_firmwares(*, timeout: float = 8.0) -> list[FirmwareInfo] | None:
-    """Fetch the complete index with GitHub-to-Gitee provider fallback."""
-    for source in ("github", "gitee"):
-        entries = _remote_firmwares_from_source(source, timeout=timeout)
-        if entries is not None:
-            for info in entries:
-                if info.download_urls and source in info.download_urls:
-                    info.download_source = source
-                    info.download_url = info.download_urls[source]
-            return entries
-    return None
+    """Compare both trusted mirrors so a lagging successful mirror cannot pin updates."""
+    sources = ("github", "gitee")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(
+            lambda source: _remote_firmwares_from_source(source, timeout=timeout), sources,
+        ))
+    if all(entries is None for entries in results):
+        return None
+    latest = {}
+    for source, entries in zip(sources, results):
+        for info in entries or []:
+            key = (info.family, info.model)
+            previous = latest.get(key)
+            # Equal versions retain GitHub precedence and its integrity metadata.
+            if previous is not None and previous.version >= info.version:
+                continue
+            if info.download_urls and source in info.download_urls:
+                info.download_source = source
+                info.download_url = info.download_urls[source]
+            latest[key] = info
+    return list(latest.values())
 
 
 def _materialize_firmware(info: FirmwareInfo) -> tuple[Path, bool, str]:

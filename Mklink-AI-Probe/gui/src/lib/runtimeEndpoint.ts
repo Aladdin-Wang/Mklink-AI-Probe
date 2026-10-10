@@ -40,6 +40,7 @@ export function browserRuntimePort(location: Pick<Location, 'port' | 'protocol'>
 // A reverse proxy's public port is not the backend's listening port.
 const backendPort = ref<number | null>(IS_TAURI || browserRuntimeBase() ? null : browserRuntimePort())
 export const runtimeBackendPort = readonly(backendPort)
+export const backendStartupError = ref('')
 
 export type BackendEndpoint = {
   port: number
@@ -53,6 +54,20 @@ export function applyBackendEndpoint(endpoint: BackendEndpoint): void {
   API_BASE = `http://127.0.0.1:${endpoint.port}${remoteSuffix}`
   WS_BASE = `ws://127.0.0.1:${endpoint.port}${remoteSuffix}`
   backendPort.value = endpoint.port
+  backendStartupError.value = ''
+}
+
+export async function refreshRuntimeEndpoint(): Promise<boolean> {
+  if (!IS_TAURI) return false
+  try {
+    const endpoint = await invoke<BackendEndpoint | null>('backend_endpoint')
+    if (!endpoint) return false
+    applyBackendEndpoint(endpoint)
+    return true
+  } catch (error) {
+    backendStartupError.value = String(error)
+    return false
+  }
 }
 
 export function applyReportedBackendPort(port: unknown): void {
@@ -76,14 +91,21 @@ export async function initializeRuntimeEndpoint(): Promise<void> {
   // alive until that budget has elapsed, including IPC/scheduling overhead.
   const deadline = Date.now() + 125_000
   while (Date.now() < deadline) {
-    const endpoint = await invoke<BackendEndpoint | null>('backend_endpoint')
+    let endpoint: BackendEndpoint | null
+    try {
+      endpoint = await invoke<BackendEndpoint | null>('backend_endpoint')
+    } catch (error) {
+      backendStartupError.value = String(error)
+      throw error
+    }
     if (endpoint) {
       applyBackendEndpoint(endpoint)
       return
     }
     await new Promise(resolve => setTimeout(resolve, 100))
   }
-  throw new Error('Timed out waiting for the desktop backend endpoint')
+  backendStartupError.value = 'Timed out waiting for the desktop backend endpoint'
+  throw new Error(backendStartupError.value)
 }
 
 export async function restartRuntimeBackend(): Promise<BackendEndpoint> {

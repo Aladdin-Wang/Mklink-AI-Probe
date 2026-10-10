@@ -1,6 +1,60 @@
 <template>
   <aside class="symbol-panel">
-    <SelectedSignals :paths="[...selected]" :values="latestValues" :hidden="hiddenChannels" @visibility="(path, visible) => emit('visibility-change', path, visible)" />
+    <div v-if="pinsError" class="stale-banner" role="alert">{{ pinsError }}</div>
+
+    <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
+    <div v-else-if="sourceReloaded" class="stale-banner">{{ tr('符号已重载；请确认目标上的固件与当前符号文件一致。', 'Symbols reloaded. Confirm that the target firmware matches the current symbol file.') }}</div>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('SuperWatch 读取变量前需要连接 MKLink 设备。', 'Connect the MKLink device before reading variables with SuperWatch.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :busy="connecting"
+      @primary="quickConnect"
+    />
+    <SetupHint
+      v-else-if="symbolError || catalog.error.value"
+      kind="error"
+      :message="tr('符号文件解析失败：', 'Symbol parsing failed: ') + (symbolError || catalog.error.value)"
+      :primary-label="tr('重新选择', 'Choose Another File')"
+      :secondary-label="hasSymbolSource ? tr('重试解析', 'Retry Parsing') : ''"
+      :busy="loadingSymbols"
+      @primary="loadSymbolFile"
+      @secondary="parseSelectedSymbols"
+    />
+    <SetupHint
+      v-else-if="!symbolLoaded"
+      kind="symbols"
+      :message="hasSymbolSource ? tr('已选择 AXF / ELF，解析后即可浏览变量。', 'An AXF / ELF file is selected. Parse it to browse variables.') : tr('SuperWatch 需要 AXF / ELF 中的变量和类型信息。', 'SuperWatch needs variable and type information from an AXF / ELF file.')"
+      :primary-label="hasSymbolSource ? tr('解析已选文件', 'Parse Selected File') : tr('加载 AXF / ELF', 'Load AXF / ELF')"
+      :busy="loadingSymbols"
+      @primary="hasSymbolSource ? parseSelectedSymbols() : loadSymbolFile()"
+    />
+    <div v-else-if="catalog.loading.value" class="empty-state">{{ tr('正在加载符号...', 'Loading symbols...') }}</div>
+    <div ref="sectionRegion" class="sections-layout">
+    <section class="signal-section variable-section" :class="{ collapsed: collapsed.signals }" :style="sectionSizes.style('signals')">
+      <button type="button" class="section-heading" data-testid="toggle-signals-section"
+        :aria-expanded="!collapsed.signals" @click="collapsed.signals = !collapsed.signals">
+        <ChevronRight v-if="collapsed.signals" :size="14" /><ChevronDown v-else :size="14" />
+        <span>{{ tr('信号分组', 'Signal groups') }}</span><small>{{ tr(`已选 ${selected.size}`, `${selected.size} selected`) }}</small>
+      </button>
+      <SelectedSignals v-show="!collapsed.signals" :paths="[...selected]" :values="latestValues" :hidden="hiddenChannels" @visibility="(path, visible) => emit('visibility-change', path, visible)" />
+    </section>
+    <div v-if="sectionSizes.canResize('signals')" class="section-resizer" role="separator" tabindex="0" aria-orientation="horizontal"
+      data-testid="resize-signals-section" :aria-label="tr('调整信号分组高度', 'Resize signal groups')"
+      :aria-valuenow="sectionSizes.layout.value.sizes.signals" :aria-valuemin="sectionSizes.minimum.signals" :aria-valuemax="sectionSizes.maxSize('signals')"
+      :title="tr('上下拖动调整高度；双击恢复默认', 'Drag vertically to resize; double-click to reset')"
+      @pointerdown.prevent="sectionSizes.start($event, 'signals')" @keydown="sectionSizes.keyboard($event, 'signals')" @dblclick="sectionSizes.reset()"></div>
+    <template v-for="group in variableGroups" :key="group.key">
+      <section class="variable-section" :style="sectionSizes.style(group.key)"
+        :class="{ 'pinned-section': group.key === 'pinned', collapsed: collapsed[group.key] }" :data-testid="`${group.key}-variables`">
+      <button type="button" class="section-heading" :data-testid="`toggle-${group.key}-section`"
+        :aria-expanded="!collapsed[group.key]" @click="collapsed[group.key] = !collapsed[group.key]">
+        <ChevronRight v-if="collapsed[group.key]" :size="14" /><ChevronDown v-else :size="14" />
+        <span>{{ group.title }}</span>
+      </button>
+      <div v-show="!collapsed[group.key]" class="section-content">
+      <template v-if="group.key === 'all'">
     <div class="panel-toolbar">
       <input
         v-model="query"
@@ -78,42 +132,9 @@
         {{ tr('置顶已选', 'Pin selected') }}
       </button>
     </div>
-    <div v-if="pinsError" class="stale-banner" role="alert">{{ pinsError }}</div>
-
-    <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
-    <div v-else-if="sourceReloaded" class="stale-banner">{{ tr('符号已重载；请确认目标上的固件与当前符号文件一致。', 'Symbols reloaded. Confirm that the target firmware matches the current symbol file.') }}</div>
-    <SetupHint
-      v-if="!deviceConnected"
-      kind="device"
-      :message="tr('SuperWatch 读取变量前需要连接 MKLink 设备。', 'Connect the MKLink device before reading variables with SuperWatch.')"
-      :primary-label="tr('连接设备', 'Connect Device')"
-      :busy="connecting"
-      @primary="quickConnect"
-    />
-    <SetupHint
-      v-else-if="symbolError || catalog.error.value"
-      kind="error"
-      :message="tr('符号文件解析失败：', 'Symbol parsing failed: ') + (symbolError || catalog.error.value)"
-      :primary-label="tr('重新选择', 'Choose Another File')"
-      :secondary-label="hasSymbolSource ? tr('重试解析', 'Retry Parsing') : ''"
-      :busy="loadingSymbols"
-      @primary="loadSymbolFile"
-      @secondary="parseSelectedSymbols"
-    />
-    <SetupHint
-      v-else-if="!symbolLoaded"
-      kind="symbols"
-      :message="hasSymbolSource ? tr('已选择 AXF / ELF，解析后即可浏览变量。', 'An AXF / ELF file is selected. Parse it to browse variables.') : tr('SuperWatch 需要 AXF / ELF 中的变量和类型信息。', 'SuperWatch needs variable and type information from an AXF / ELF file.')"
-      :primary-label="hasSymbolSource ? tr('解析已选文件', 'Parse Selected File') : tr('加载 AXF / ELF', 'Load AXF / ELF')"
-      :busy="loadingSymbols"
-      @primary="hasSymbolSource ? parseSelectedSymbols() : loadSymbolFile()"
-    />
-    <div v-else-if="catalog.loading.value" class="empty-state">{{ tr('正在加载符号...', 'Loading symbols...') }}</div>
-    <div v-else class="variable-groups">
-      <section v-for="group in variableGroups" :key="group.key" class="variable-section"
-        :class="{ 'pinned-section': group.key === 'pinned' }" :data-testid="`${group.key}-variables`">
-      <h3 class="variable-root-heading">{{ group.title }}</h3>
-      <div class="variable-section-rows">
+      </template>
+      <div class="variable-section-rows" tabindex="0" :aria-label="group.title">
+      <template v-if="deviceConnected && symbolLoaded && !symbolError && !catalog.error.value && !catalog.loading.value">
       <div v-if="group.key === 'pinned' && !pins.length" class="pin-help">
         {{ tr('点击图钉，或置顶已选变量；取消采样不影响置顶。', 'Pin a variable or pin the selected set. Unchecking sampling keeps favorites here.') }}
       </div>
@@ -300,9 +321,17 @@
           </div>
         </div>
       </template>
-      <div v-if="group.key === 'all' && group.rows.length === 0" class="empty-state">{{ tr('无匹配变量（置顶变量见上方）', 'No other matching variables; see pinned variables above') }}</div>
+      <div v-if="group.key === 'all' && group.rows.length === 0" class="empty-state">{{ tr('无匹配变量', 'No matching variables') }}</div>
+      </template>
+      </div>
       </div>
       </section>
+      <div v-if="group.key === 'pinned' && sectionSizes.canResize('pinned')" class="section-resizer" role="separator" tabindex="0" aria-orientation="horizontal"
+        data-testid="resize-pinned-section" :aria-label="tr('调整常用变量高度', 'Resize favorite variables')"
+        :aria-valuenow="sectionSizes.layout.value.sizes.pinned" :aria-valuemin="sectionSizes.minimum.pinned" :aria-valuemax="sectionSizes.maxSize('pinned')"
+        :title="tr('上下拖动调整高度；双击恢复默认', 'Drag vertically to resize; double-click to reset')"
+        @pointerdown.prevent="sectionSizes.start($event, 'pinned')" @keydown="sectionSizes.keyboard($event, 'pinned')" @dblclick="sectionSizes.reset()"></div>
+    </template>
     </div>
 
     <div v-if="cLayoutOpen" class="modal-overlay" data-testid="c-layout-modal" @click.self="closeCLayout">
@@ -402,6 +431,8 @@ import VariablePath from './VariablePath.vue'
 import SelectedSignals from './SelectedSignals.vue'
 import { useWatchWorkspace } from '../../composables/useWatchWorkspace'
 import { API_BASE } from '../../lib/runtimeEndpoint'
+import { DESKTOP_SETTINGS_STORAGE_KEY } from '../../lib/desktopSettings'
+import { useWatchSectionSizes } from '../../composables/useWatchSectionSizes'
 
 const props = withDefaults(defineProps<{
   deviceConnected: boolean
@@ -433,6 +464,20 @@ const {
   loadSymbolFile,
   parseSelectedSymbols,
 } = useDashboardSetup()
+// Local layout preferences must not alter shared sampling or waveform groups.
+const sectionStorageKey = DESKTOP_SETTINGS_STORAGE_KEY + '.superwatch-sections'
+const collapsed = reactive({ signals: false, pinned: false, all: false })
+const sectionRegion = ref<HTMLElement | null>(null)
+const sectionSizes = useWatchSectionSizes(sectionRegion, collapsed)
+try {
+  const saved = JSON.parse(localStorage.getItem(sectionStorageKey) || '{}')
+  for (const key of ['signals', 'pinned', 'all'] as const) {
+    if (typeof saved?.[key] === 'boolean') collapsed[key] = saved[key]
+  }
+} catch { /* A damaged or unavailable store must not block the catalog. */ }
+watch(collapsed, value => {
+  try { localStorage.setItem(sectionStorageKey, JSON.stringify(value)) } catch { /* Best effort. */ }
+})
 const query = ref('')
 const pathAlignment = ref<{ edge: 'left' | 'right'; revision: number }>({ edge: 'left', revision: 0 })
 function alignPaths(edge: 'left' | 'right'): void {
@@ -496,15 +541,15 @@ const rows = computed(() => visibleSymbolRows(tree.value, {
 }))
 const variableGroups = computed(() => [
   {
-    key: 'pinned', title: tr(`常用变量 · ${pins.value.length}`, `Pinned variables · ${pins.value.length}`),
+    key: 'pinned' as const, title: tr(`常用变量 · ${pins.value.length}`, `Pinned variables · ${pins.value.length}`),
     rows: pins.value.map(path => ({
       node: { key: path, label: path, kind: 'leaf', descriptor: pinnedDescriptors.value.get(path) ?? null,
         container: null, browse: null, children: [], leafCount: 1, childCount: null },
       depth: 0, expanded: false, selectedLeafCount: Number(selected.value.has(path)),
     } as VisibleSymbolRow)),
   },
-  { key: 'all', title: query.value.trim() ? tr('搜索结果', 'Search results') : tr('全局变量', 'Global Variables'),
-    rows: rows.value.filter(row => !pinnedPaths.value.has(row.node.key)) },
+  { key: 'all' as const, title: tr('搜索变量', 'Find variables'),
+    rows: rows.value.filter(row => query.value.trim() || selectedOnly.value || collapsed.pinned || !pinnedPaths.value.has(row.node.key)) },
 ])
 
 function applyPins(payload: any): void {
@@ -971,6 +1016,7 @@ watch(tree, roots => {
   flex-direction: column;
   min-width: 280px;
   min-height: 0;
+  overflow: auto;
   border-right: 1px solid var(--border);
   background: var(--surface);
 }
@@ -984,11 +1030,22 @@ watch(tree, roots => {
 .path-alignment { display: flex; gap: 4px; }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }
 .stale-banner { padding: 7px 10px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
-.variable-groups { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
-.variable-section { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-.variable-section-rows { overflow: auto; min-height: 0; }
-.pinned-section { flex: 0 1 auto; max-height: 45%; border-bottom: 2px solid var(--border); }
-.pinned-section .variable-root-heading { color: var(--accent); }
+.sections-layout { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; }
+.section-resizer { position: relative; flex: 0 0 6px; background: var(--bg); cursor: row-resize; touch-action: none; user-select: none; }
+.section-resizer::after { content: ''; position: absolute; width: 36px; height: 2px; top: 2px; left: calc(50% - 18px); border-radius: 2px; background: var(--muted); }
+.section-resizer:hover, .section-resizer:focus-visible { background: var(--accent); outline: none; }
+.variable-section { display: flex; flex: 1; flex-direction: column; min-height: 34px; overflow: hidden; }
+.section-heading { display: flex; align-items: center; gap: 6px; flex: 0 0 34px; width: 100%; padding: 0 10px; border: 0; border-bottom: 1px solid var(--border); background: var(--bg); color: var(--fg); text-align: left; cursor: pointer; font-size: 12px; font-weight: 600; }
+.section-heading small { margin-left: auto; color: var(--muted); font-weight: normal; }
+.section-heading:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.section-content { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+.section-content > :not(.variable-section-rows) { flex-shrink: 0; }
+.variable-section-rows { flex: 1; overflow: auto; min-height: 0; overscroll-behavior: contain; }
+.signal-section :deep(.selected-workspace) { flex: 1 1 auto; min-height: 0; max-height: none; overscroll-behavior: contain; }
+.pinned-section .section-heading { color: var(--accent); }
+/* Notices retain their intrinsic height; a shrinking hint used to cover groups. */
+.symbol-panel > .setup-hint, .symbol-panel > .stale-banner, .symbol-panel > .empty-state { flex: 0 0 auto; }
+.variable-section.collapsed { max-height: 34px; }
 .pin-help { padding: 8px 10px; color: var(--muted); font-size: 11px; }
 .pin-controls { display: flex; }
 .pin-button { display: grid; place-items: center; width: 22px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
@@ -996,7 +1053,6 @@ watch(tree, roots => {
 .missing-pin { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 8px; color: var(--muted); }
 .missing-pin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 12px Consolas, monospace; }
 .missing-pin small { white-space: nowrap; }
-.variable-root-heading { margin: 0; padding: 7px 10px; color: var(--muted); background: var(--bg); font-size: 11px; font-weight: 600; }
 .branch-row {
   align-items: center;
   display: flex;
@@ -1087,7 +1143,12 @@ watch(tree, roots => {
   .variable-main > .edit-button { grid-column: 4; grid-row: 2; }
   .pin-controls { grid-column: 5; grid-row: 2; }
 }
-.edit-button { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 11px; }
+@container (min-width: 440px) and (max-width: 720px) {
+  .variable-main { grid-template-columns: 18px 24px minmax(0, 1fr) 76px 32px auto; }
+  .variable-main > input, .visibility-slot, .variable-name, .variable-value, .variable-main > .edit-button, .pin-controls { grid-column: auto; grid-row: 1; }
+  .variable-value { text-align: right; white-space: nowrap; }
+}
+.edit-button { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 11px; white-space: nowrap; }
 .edit-button:disabled { color: var(--muted); cursor: default; }
 .write-editor { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 0 8px 8px 60px; }
 .write-editor input, .write-editor select { min-width: 0; height: 28px; }

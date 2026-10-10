@@ -1,4 +1,4 @@
-# MKLink 0.3.2 standalone remote service
+# MKLink 0.3.3 standalone remote service
 
 Builds require the same complete, integrity-checked built-in FLM bundle as the
 desktop package. Set `MKLINK_BUILTIN_FLM_ROOT` to that local asset directory

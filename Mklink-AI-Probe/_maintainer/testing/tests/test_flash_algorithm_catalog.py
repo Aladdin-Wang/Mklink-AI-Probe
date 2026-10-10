@@ -471,3 +471,27 @@ def test_daplink_bundle_token_extracts_for_offline_deployment(
 
     assert _pack_source(paths, candidate["source_token"], destination) == destination
     assert destination.read_bytes() == payload
+
+
+def test_adjacent_algorithms_cover_one_contiguous_hex_segment():
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm, FlashAlgorithmError
+    import pytest
+    def algorithm(name, start):
+        return FlashAlgorithm(name, 'target', name + '.flm', start, 0x1000,
+                              0x20000000, 0x1000, True, 'custom-flm', name, name)
+    first, second = algorithm('internal', 0x1000), algorithm('external', 0x2000)
+    plan = resolve_firmware_algorithms([first, second], [(0x1FF0, 0x2010)])
+    assert [(item.algorithm.algorithm_id, item.ranges) for item in plan] == [
+        ('internal', ((0x1FF0, 0x2000),)), ('external', ((0x2000, 0x2010),))]
+    with pytest.raises(FlashAlgorithmError, match='no Flash algorithm covers'):
+        resolve_firmware_algorithms([first], [(0x1FF0, 0x2010)])
+
+
+def test_partial_alternative_does_not_split_an_existing_whole_segment_choice():
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+    whole = FlashAlgorithm('whole', 'target', 'whole.flm', 0x1000, 0x2000,
+                           0, 0, True, 'installed-pack', 'whole', 'whole')
+    partial = FlashAlgorithm('partial', 'target', 'partial.flm', 0x1000, 0x1000,
+                             0, 0, True, 'builtin-pack', 'partial', 'partial')
+    result = resolve_firmware_algorithms([partial, whole], [(0x1000, 0x3000)])
+    assert [(item.algorithm.algorithm_id, item.ranges) for item in result] == [('whole', ((0x1000, 0x3000),))]

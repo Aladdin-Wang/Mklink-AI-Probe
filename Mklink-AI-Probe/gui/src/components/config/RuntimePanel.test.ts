@@ -1,10 +1,13 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import RuntimePanel from './RuntimePanel.vue'
+import { setLanguage } from '../../composables/useLanguage'
 
 const refreshDeviceStatus = vi.hoisted(() => vi.fn().mockResolvedValue({ connected: false }))
 vi.mock('../../composables/useMklinkApi', () => ({ useMklinkApi: () => ({ refreshStatus: refreshDeviceStatus }) }))
 
+// Text assertions use Chinese regardless of a host's persisted language.
+beforeEach(() => setLanguage('zh'))
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); refreshDeviceStatus.mockClear() })
 
 it('keeps UART stop available during a target job and preserves subscriber protection', async () => {

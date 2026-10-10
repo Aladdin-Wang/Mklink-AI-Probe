@@ -93,6 +93,7 @@
         <div>
           <strong>{{ recoveryTitle }}</strong>
           <p v-if="!isTauri">{{ recoveryHint }}</p>
+          <p v-if="isTauri && backendStartupError" data-testid="backend-startup-error">{{ backendStartupError }}</p>
         </div>
         <button v-if="isTauri" data-testid="backend-restart" @click="restart">{{ tr('重启服务', 'Restart Service') }}</button>
         <button v-else data-testid="backend-recheck" @click="refreshHealth">{{ tr('重新检查', 'Check Again') }}</button>
@@ -133,7 +134,7 @@ const router = useRouter()
 const DashboardView = defineAsyncComponent(() => import('./views/DashboardView.vue'))
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
-const { backendState, sharedRuntime, authenticationRequired, startHealthPolling, stopHealthPolling, restart, refreshHealth, isTauri } = useBackendHealth()
+const { backendState, sharedRuntime, authenticationRequired, backendStartupError, startHealthPolling, stopHealthPolling, restart, refreshHealth, isTauri } = useBackendHealth()
 const recoveryTitle = computed(() => authenticationRequired.value
   ? tr('当前页面授权已失效', 'This page is no longer authorized')
   : tr('无法连接本地服务', 'Cannot reach the local service'))

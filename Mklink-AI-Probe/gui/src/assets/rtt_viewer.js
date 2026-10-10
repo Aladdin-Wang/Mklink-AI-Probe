@@ -726,7 +726,7 @@ function resizeMinimap() {
 var debugMain = document.getElementById('debug-main');
 var viewerResizeObserver = new ResizeObserver(function() { resize(); resizeMinimap(); drawChart(); });
 viewerResizeObserver.observe(debugMain);
-document.getElementById('raw-log-panel').addEventListener('transitionend', function(e) {
+document.getElementById('raw-log-panel')?.addEventListener('transitionend', function(e) {
   if (e.propertyName === 'height') { resize(); drawChart(); }
 });
 
@@ -805,6 +805,7 @@ var currentInterval = IS_SUPERWATCH_MODE ? 0.001 : 0;
 var intervalInput = document.getElementById('interval-input');
 var intervalDirty = false;
 var intervalUpdatePending = false;
+var restoredInterval = null;
 var estimatedInterval = 0;
 var estimatedRate = 0;
 var timeUnit = 'ms';
@@ -911,6 +912,10 @@ function superwatchErrorMessage(message, name) {
 
 function syncDashboardStatus(d) {
   if (!d) return;
+  if (Object.prototype.hasOwnProperty.call(d, 'error')) {
+    acquisitionError = typeof d.error === 'string' ? d.error : '';
+    renderBinaryHealth();
+  }
   if (IS_SUPERWATCH_MODE && Array.isArray(d.write_events)) {
     superwatchWriteEvents = d.write_events.slice(-128);
     superwatchWriteEvents.forEach(function(event) {
@@ -928,6 +933,11 @@ function syncDashboardStatus(d) {
   var nextState = d.state;
   if (!nextState && d.running !== undefined) nextState = d.running ? 'running' : 'stopped';
   if (nextState) acquisitionState = nextState;
+  if ((nextState === 'running' || nextState === 'paused') && restoredInterval !== null) {
+    // A live shared acquisition owns its interval; opening a view must not change it.
+    restoredInterval = null;
+    intervalDirty = false;
+  }
   // A shared stop ends this display pause too; the next shared start must be visible.
   if (nextState === 'stopped') renderPaused = false;
   if (IS_BINARY_WAVEFORM_MODE && renderPaused && nextState === 'running') {
@@ -1008,6 +1018,7 @@ function updateCollectionUI(state) {
 function setDeviceConnected(connected) {
   if (typeof CONFIG !== 'undefined') CONFIG.deviceConnected = connected;
   updateCollectionUI(collectionState);
+  renderBinaryHealth();
 }
 if (typeof window !== 'undefined') {
   if (!window.__waveformViewers) window.__waveformViewers = {};
@@ -1029,6 +1040,11 @@ document.getElementById('btn-start').addEventListener('click', function() {
       interval: currentInterval > 0 ? currentInterval : 0.1
     });
   }
+  // The backend applies this only inside its shared start transaction.
+  if (IS_SUPERWATCH_MODE && restoredInterval !== null) {
+    opts.headers = {'Content-Type': 'application/json'};
+    opts.body = JSON.stringify({interval: restoredInterval});
+  }
   fetch(API_CTRL + 'start', opts)
     .then(function(r){
       return r.json().catch(function(){ return {}; }).then(function(d){
@@ -1037,6 +1053,12 @@ document.getElementById('btn-start').addEventListener('click', function() {
       });
     })
     .then(function(d){
+      if (IS_SUPERWATCH_MODE && restoredInterval !== null) {
+        restoredInterval = null;
+        intervalDirty = false;
+        if (Number(d.interval) > 0) syncIntervalFromServer(d.interval);
+        scheduleViewerPreferences();
+      }
       if (IS_VOFA_MODE && Array.isArray(d.channels)) {
         vofaChannels = normalizeVofaChannels(d.channels);
         notifyVofaChannels();
@@ -1119,7 +1141,9 @@ document.getElementById('btn-apply-interval').addEventListener('click', function
     })
     .then(function(normalized){
       intervalUpdatePending = false;
+      restoredInterval = null;
       syncIntervalFromServer(normalized);
+      scheduleViewerPreferences();
     })
     .catch(function(err){
       intervalUpdatePending = false;
@@ -1170,6 +1194,7 @@ function paintRawLog(force) {
 }
 
 function appendRawLogLine(line) {
+  if (!rawLogPanel) return;
   if (rawLogStoredCount < RAW_LOG_CAPACITY) {
     rawLogLines[(rawLogHead + rawLogStoredCount) % RAW_LOG_CAPACITY] = line;
     rawLogStoredCount++;
@@ -1209,6 +1234,7 @@ function appendBinaryRawSamples(times, values, itemCount, channelCount) {
 }
 
 function clearRawLog() {
+  if (!rawLogEl) return;
   rawLogEl.textContent = '';
   rawLogLines = new Array(RAW_LOG_CAPACITY);
   rawLogHead = 0;
@@ -1260,6 +1286,7 @@ function saveRawLog() {
 }
 
 function setRawLogOpen(open) {
+  if (!rawLogPanel) return;
   rawLogOpen = open;
   rawLogPanel.dataset.open = open ? 'true' : 'false';
   if (open) {
@@ -1269,26 +1296,26 @@ function setRawLogOpen(open) {
 }
 
 function toggleRawLog() { setRawLogOpen(!rawLogOpen); }
-rawLogPanel.querySelector('.panel-header').addEventListener('click', function(e) {
+rawLogPanel?.querySelector('.panel-header')?.addEventListener('click', function(e) {
   if (e.target.closest('button')) return;
   toggleRawLog();
 });
-document.getElementById('raw-log-close').addEventListener('click', function() { setRawLogOpen(false); });
-document.getElementById('raw-log-save').addEventListener('click', saveRawLog);
-document.getElementById('raw-log-clear').addEventListener('click', clearRawLog);
+document.getElementById('raw-log-close')?.addEventListener('click', function() { setRawLogOpen(false); });
+document.getElementById('raw-log-save')?.addEventListener('click', saveRawLog);
+document.getElementById('raw-log-clear')?.addEventListener('click', clearRawLog);
 
 // -- drag resize for raw log --
 var panelResizer = document.querySelector('#raw-log-panel .panel-resizer');
 var resizingRawLog = false;
 
-panelResizer.addEventListener('pointerdown', function(e) {
+panelResizer?.addEventListener('pointerdown', function(e) {
   resizingRawLog = true;
   panelResizer.setPointerCapture(e.pointerId);
   document.body.style.cursor = 'ns-resize';
   document.body.style.userSelect = 'none';
 });
 
-panelResizer.addEventListener('pointermove', function(e) {
+panelResizer?.addEventListener('pointermove', function(e) {
   if (!resizingRawLog) return;
   var mainRect = debugMain.getBoundingClientRect();
   var h = Math.round(mainRect.bottom - e.clientY);
@@ -1297,7 +1324,7 @@ panelResizer.addEventListener('pointermove', function(e) {
   resize(); drawChart();
 });
 
-panelResizer.addEventListener('pointerup', function(e) {
+panelResizer?.addEventListener('pointerup', function(e) {
   resizingRawLog = false;
   panelResizer.releasePointerCapture(e.pointerId);
   document.body.style.cursor = '';
@@ -2398,6 +2425,7 @@ function setBufferCapacity(newCapacity, confirmed, prepared) {
   updateWatchTable();
   drawChart();
   drawMinimap();
+  scheduleViewerPreferences();
   return true;
 }
 
@@ -3063,6 +3091,7 @@ function discardPausedBinarySnapshot() {
 
 function configureBinaryChannels(channels) {
   if (!IS_BINARY_WAVEFORM_MODE || !Array.isArray(channels)) return;
+  if (binaryChannelNames.length) saveViewerPreferences();
   var metadata = {};
   var nextNames = [];
   var signatureRows = [];
@@ -3146,8 +3175,13 @@ function configureBinaryChannels(channels) {
   binaryLastUiPaint = -Infinity;
   resetBinarySampleRate();
   applyChannelMetadata(metadata, false);
+  restoreChannelPreferences();
   setHiddenChannels(Object.keys(hiddenChannelNames));
   updateTriggerSourceOptions();
+  if (IS_SUPERWATCH_MODE && viewerPreferences?.triggerSettings?.source && FIELDS[viewerPreferences.triggerSettings.source]) {
+    triggerSettings.source = viewerPreferences.triggerSettings.source;
+    document.getElementById('trigger-source').value = triggerSettings.source;
+  }
   updateChartLegend();
   updateBufferMemoryEstimate();
 }
@@ -3448,22 +3482,34 @@ function resetBinaryStream() {
   if (triggerSettings.enabled) armTrigger();
 }
 
+var lastBinaryHealth = null;
+var acquisitionError = '';
 function updateBinaryHealth(health) {
+  if (!IS_BINARY_WAVEFORM_MODE || !health) return;
+  lastBinaryHealth = health;
+  renderBinaryHealth();
+}
+
+function renderBinaryHealth() {
+  var health = lastBinaryHealth;
   if (!IS_BINARY_WAVEFORM_MODE || !health) return;
   var stateBadge = document.getElementById('transport-state-badge');
   var healthBadge = document.getElementById('transport-health-badge');
   var phase = String(health.phase || 'stopped');
   if (stateBadge) {
-    stateBadge.textContent = 'transport ' + phase +
+    var deviceOffline = CONFIG.deviceConnected === false;
+    var failure = acquisitionError || health.error;
+    stateBadge.textContent = t('view_channel') + ' ' + phase +
       (health.reconnectDelayMs ? ' (' + health.reconnectDelayMs + ' ms)' : '') +
-      (health.error ? ': ' + String(health.error) : '');
+      (deviceOffline ? ' · ' + t('device_disconnected') : '') +
+      (failure ? ': ' + String(failure) : '');
     stateBadge.className = 'badge ' + (
+      failure ? 'badge-err' : deviceOffline ? 'badge-warn' :
       phase === 'connected' ? 'badge-ok' :
       phase === 'error' ? 'badge-err' :
       phase === 'stopped' ? 'badge-info' : 'badge-warn'
     );
-    if (health.error) stateBadge.title = String(health.error);
-    else stateBadge.removeAttribute('title');
+    stateBadge.title = t('view_channel_tip') + (failure ? '\n' + String(failure) : '');
   }
   if (healthBadge) {
     var transportDroppedBatches = Math.max(0, Number(health.transportDroppedBatches) || 0);
@@ -3491,6 +3537,8 @@ function renderBinaryFrame() {
 }
 
 function disposeViewer() {
+  saveViewerPreferences();
+  clearTimeout(viewerPreferenceTimer);
   clearChartLegendHideTimer();
   stopWatchColumnResize();
   viewerResizeObserver.disconnect();
@@ -5587,7 +5635,7 @@ addViewerGlobalListener(document, 'keydown', function(e) {
       updateCollectionUI('running');
     }
   }
-  if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+  if (rawLogPanel && (e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     toggleRawLog();
   }
@@ -5604,11 +5652,11 @@ addViewerGlobalListener(document, 'keydown', function(e) {
 // -- export button bindings --
 document.getElementById('btn-export-csv').addEventListener('click', function() { exportCSV(); });
 document.getElementById('btn-export-png').addEventListener('click', function() { exportPNG(); });
-document.getElementById('btn-save-project').addEventListener('click', function() { saveProject(); });
-document.getElementById('btn-load-project').addEventListener('click', function() {
+document.getElementById('btn-save-project')?.addEventListener('click', function() { saveProject(); });
+document.getElementById('btn-load-project')?.addEventListener('click', function() {
   document.getElementById('project-load-input').click();
 });
-document.getElementById('project-load-input').addEventListener('change', function() {
+document.getElementById('project-load-input')?.addEventListener('change', function() {
   loadProjectFile(this.files && this.files[0]);
   this.value = '';
 });
@@ -5660,3 +5708,84 @@ document.getElementById('project-load-input').addEventListener('change', functio
     }
   });
 })();
+
+// Local display preferences never import a workspace or restore target metadata.
+var viewerPreferenceTimer = null;
+var viewerPreferences = null;
+var viewerPreferencesReady = false;
+function preferenceKey() {
+  return CONFIG.viewerSettingsKey || 'mklink.desktop.settings.v1.waveform.' + CONFIG.mode;
+}
+function saveViewerPreferences() {
+  if (!IS_SUPERWATCH_MODE || !viewerPreferencesReady) return;
+  try {
+    var state = serializeState();
+    state.interval = restoredInterval === null ? currentInterval : restoredInterval;
+    state.timeSpan = superwatchTimelineSpan;
+    delete state.workspace;
+    delete state.firmwareHash;
+    delete state.parserMode;
+    state.channels = state.channels.map(function(channel) {
+      var display = { name: channel.name };
+      ['color', 'format', 'precision', 'thresholds', 'yOffset', 'yZoom', 'yAutoRange', 'yMin', 'yMax'].forEach(function(key) { display[key] = channel[key]; });
+      return display;
+    });
+    // Keep preferences for temporarily absent channels across metadata refreshes.
+    var previous = viewerPreferences && Array.isArray(viewerPreferences.channels) ? viewerPreferences.channels : [];
+    var current = new Set(state.channels.map(function(ch) { return ch.name; }));
+    state.channels = state.channels.concat(previous.filter(function(ch) { return !current.has(ch.name); })).slice(0, 256);
+    viewerPreferences = state;
+    localStorage.setItem(preferenceKey(), JSON.stringify(state));
+  } catch (_) { /* Unavailable storage must not interrupt acquisition. */ }
+}
+function scheduleViewerPreferences() {
+  if (!IS_SUPERWATCH_MODE || !viewerPreferencesReady) return;
+  clearTimeout(viewerPreferenceTimer);
+  viewerPreferenceTimer = setTimeout(saveViewerPreferences, 250);
+}
+function restoreChannelPreferences() {
+  if (!IS_SUPERWATCH_MODE || !viewerPreferences) return;
+  if (Number.isFinite(Number(viewerPreferences.timeSpan)) && Number(viewerPreferences.timeSpan) > 0) {
+    superwatchTimelineSpan = Number(viewerPreferences.timeSpan);
+    superwatchTimelineUserAdjusted = true;
+  }
+  (viewerPreferences.channels || []).forEach(function(ch) {
+    if (!ch || typeof ch.name !== 'string' || !Object.prototype.hasOwnProperty.call(FIELDS, ch.name)) return;
+    var field = FIELDS[ch.name];
+    if (!field) return;
+    if (typeof ch.color === 'string') field.color = ch.color;
+    field.format = normalizeValueFormat(ch.format || 'auto');
+    field.precision = Number.isInteger(ch.precision) ? Math.max(0, Math.min(12, ch.precision)) : 2;
+    field.thresholds = normalizeThresholds(ch.thresholds);
+    channelYState[ch.name] = { zoom: Number(ch.yZoom) > 0 ? Number(ch.yZoom) : 1,
+      offset: Number(ch.yOffset) || 0, autoRange: ch.yAutoRange !== false,
+      manualMin: parseNullableNumber(ch.yMin), manualMax: parseNullableNumber(ch.yMax) };
+  });
+}
+if (IS_SUPERWATCH_MODE) {
+  try {
+    var savedPreferences = JSON.parse(localStorage.getItem(preferenceKey()) || 'null');
+    if (savedPreferences && Array.isArray(savedPreferences.channels)) {
+      savedPreferences.channels = savedPreferences.channels.filter(function(ch) {
+        return ch && typeof ch.name === 'string';
+      }).slice(0, 256);
+      viewerPreferences = savedPreferences;
+      if (Number(savedPreferences.interval) >= 0.000001 && Number(savedPreferences.interval) <= 60) {
+        restoredInterval = Number(savedPreferences.interval);
+        intervalInput.value = String(restoredInterval);
+        intervalDirty = true;
+      }
+      // Whitelist display settings; never replay a stored shared workspace.
+      deserializeState({ channels: [], bufferPoints: savedPreferences.bufferPoints,
+        globalYView: savedPreferences.globalYView, triggerSettings: savedPreferences.triggerSettings,
+        watchColumns: savedPreferences.watchColumns });
+      restoreChannelPreferences();
+    }
+  } catch (_) { /* Ignore damaged preferences. */ }
+  viewerPreferencesReady = true;
+  var preferenceHost = document.getElementById('debug-main')?.closest('.waveform-viewer');
+  if (preferenceHost) ['change', 'click', 'pointerup', 'wheel', 'keyup'].forEach(function(type) {
+    addViewerGlobalListener(preferenceHost, type, scheduleViewerPreferences);
+  });
+  addViewerGlobalListener(window, 'pagehide', saveViewerPreferences);
+}

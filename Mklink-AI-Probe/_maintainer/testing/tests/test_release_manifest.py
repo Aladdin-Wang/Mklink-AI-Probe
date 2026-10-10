@@ -145,6 +145,7 @@ def test_public_skill_archive_excludes_repository_maintenance(
     release_module, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(release_module, "_requires_builtin_flm", lambda _version: False)
+    monkeypatch.setattr(release_module, "_requires_builtin_packs", lambda _version: False)
     source_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"],
         cwd=release_module.REPO_ROOT,

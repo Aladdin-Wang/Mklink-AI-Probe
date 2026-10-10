@@ -4,12 +4,27 @@ import { nextTick } from 'vue'
 import SuperWatchTab from './SuperWatchTab.vue'
 import SymbolVariablePanel from './SymbolVariablePanel.vue'
 import WaveformViewer from './WaveformViewer.vue'
+import { DESKTOP_SETTINGS_STORAGE_KEY } from '../../lib/desktopSettings'
 
 describe('SuperWatchTab', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ profile: 'medium' }) })))
   })
   afterEach(() => vi.unstubAllGlobals())
+  it('ignores obsolete hidden-pane preferences while retaining the useful layout settings', async () => {
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === DESKTOP_SETTINGS_STORAGE_KEY + '.superwatch-layout'
+      ? JSON.stringify({ panelWidth: 420, hideSettings: true, hideCatalog: true }) : null, setItem: vi.fn() })
+    const wrapper = mount(SuperWatchTab, {
+      props: { deviceConnected: false },
+      global: { stubs: { SymbolVariablePanel: true, PeripheralWatchPanel: true, WaveformViewer: true } },
+    })
+    expect(wrapper.get('.superwatch-workspace').classes()).not.toContain('compact')
+    expect(wrapper.get('.superwatch-workspace').classes()).not.toContain('catalog-hidden')
+    expect(wrapper.get('.superwatch-workspace').attributes('style')).toContain('420px')
+    expect(wrapper.get('.workspace-actions').findAll('button')).toHaveLength(1)
+    expect(wrapper.get('#superwatch-speed').isVisible()).toBe(true)
+    wrapper.unmount()
+  })
   it.each([
     [{ busy: ['superwatch'] }, '请先停止采集，再应用调试速率'],
     [{ message: 'Target is busy debugging' }, 'Target is busy debugging'],
@@ -91,7 +106,7 @@ describe('SuperWatchTab', () => {
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/device/debug-speed'), expect.objectContaining({
       method: 'POST', body: JSON.stringify({ profile: 'high' }),
     }))
-    expect(wrapper.get('[role="status"]').text()).toContain('已应用')
+    expect(wrapper.get('[role="status"]').text()).toBe('')
     wrapper.unmount()
     vi.unstubAllGlobals()
   })

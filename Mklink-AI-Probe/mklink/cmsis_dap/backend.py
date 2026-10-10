@@ -6,6 +6,7 @@ import hashlib
 import io
 import logging
 import re
+import struct
 import threading
 import time
 from copy import copy
@@ -2561,7 +2562,7 @@ class PyOcdBackend:
             session = self._require_session()
             try:
                 verified = 0
-                total = image.size if isinstance(image.size, int) and image.size > 0 else 0
+                total = image.payload_size
                 if progress_callback is not None:
                     progress_callback(0.0)
                 for address, expected in self._iter_image_chunks(image):
@@ -2634,7 +2635,7 @@ class PyOcdBackend:
                             f"verification mismatch at 0x{mismatch:X}",
                         )
                 else:
-                    actual = cls._read_target_bytes(target, current, size)
+                    actual = cls._read_verification_bytes(target, current, size)
                     if actual == expected[offset : offset + size]:
                         offset += size
                         continue
@@ -2996,6 +2997,17 @@ class PyOcdBackend:
         return data
 
     @staticmethod
+    def _read_verification_bytes(target: Any, address: int, size: int) -> bytes:
+        # pyOCD's byte API expands every word and filters software breakpoints
+        # once per byte. Aligned Flash spans can use its public word API and
+        # pack in C, retaining the same breakpoint semantics and exact range.
+        read32 = getattr(target, "read_memory_block32", None)
+        if address % 4 == 0 and size % 4 == 0 and callable(read32):
+            words = read32(address, size // 4)
+            return struct.pack("<{}I".format(len(words)), *words)
+        return PyOcdBackend._read_target_bytes(target, address, size)
+
+    @staticmethod
     def _read_target_bytes(target: Any, address: int, size: int) -> bytes:
         read8 = getattr(target, "read_memory_block8", None)
         if callable(read8):
@@ -3135,6 +3147,26 @@ class PyOcdBackend:
     @staticmethod
     def _mapped_error(exc: Exception, fallback: FlashErrorCode) -> FlashError:
         text = str(exc)
+        if "read thread exited unexpectedly" in text or "Timeout reading from probe" in text:
+            # pyOCD chains the actual libusb/WinUSB failure. Preserve it before
+            # session cleanup clears the receive-thread exception. Never replay
+            # a potentially completed erase/program to recover a dead reader.
+            cause = exc.__cause__
+            seen = {id(exc)}
+            diagnostics = []
+            while cause is not None and id(cause) not in seen and len(diagnostics) < 4:
+                seen.add(id(cause))
+                codes = ", ".join(
+                    f"{key}={getattr(cause, key)}"
+                    for key in ("errno", "backend_error_code", "winerror")
+                    if getattr(cause, key, None) is not None
+                )
+                diagnostics.append(f"{type(cause).__name__}: {cause}" + (f" ({codes})" if codes else ""))
+                cause = cause.__cause__
+            text = f"{fallback.value}: {text}"
+            if diagnostics:
+                text += "; " + "; ".join(diagnostics)
+            logging.getLogger(__name__).error("Online Flash transport failed: %s", text, exc_info=exc)
         if PyOcdBackend._is_locked_error(exc):
             return FlashError(FlashErrorCode.TARGET_LOCKED, text or "target is locked")
         return FlashError(fallback, text or fallback.value)

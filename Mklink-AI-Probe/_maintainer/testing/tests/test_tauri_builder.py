@@ -42,6 +42,11 @@ def builder(monkeypatch, tmp_path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "build_web_assets", lambda: tmp_path / "gui" / "dist")
+    from types import SimpleNamespace
+    monkeypatch.setattr(module, "load_builtin_pack_assets", lambda: SimpleNamespace(
+        prepare_bundle=lambda _: tmp_path / "builtin_packs",
+        validate_bundle=lambda _: {"svd_target_count": 1},
+    ))
     return module
 
 
@@ -704,11 +709,12 @@ def test_builtin_pack_builder_accepts_explicit_authorized_slim_archives(
         '<releases><release version="1.0.0"/></releases>'
         '<devices><family Dfamily="Test"><device Dname="DEVICE_A">'
         '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
-        '</device></family></devices></package>'
+        '<debug svd="SVD/device.svd"/></device></family></devices></package>'
     )
     with ZipFile(archive_path, "w") as archive:
         archive.writestr("Vendor.Device_DFP.pdsc", descriptor)
         archive.writestr("Flash/Test.FLM", b"algorithm")
+        archive.writestr("SVD/device.svd", b"<device/>")
         archive.writestr("LICENSE.txt", "Redistribution terms")
         archive.writestr("Examples/large.bin", b"do-not-bundle")
     source_digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
@@ -744,7 +750,7 @@ def test_builtin_pack_builder_accepts_explicit_authorized_slim_archives(
     assert record["redistribution_basis"] == "Vendor terms permit redistribution"
     assert record["licenses"] == [{"path": "LICENSE.txt", "sha256": license_digest}]
     with ZipFile(tmp_path / "out" / record["file"]) as archive:
-        assert sorted(archive.namelist()) == ["Flash/Test.FLM", "LICENSE.txt", "Vendor.Device_DFP.pdsc"]
+        assert sorted(archive.namelist()) == ["Flash/Test.FLM", "LICENSE.txt", "SVD/device.svd", "Vendor.Device_DFP.pdsc"]
 
 
 def test_builtin_archive_requires_allowlisted_digest_and_descriptor_license(
