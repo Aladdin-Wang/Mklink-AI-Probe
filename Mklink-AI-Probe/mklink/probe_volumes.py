@@ -42,6 +42,22 @@ def volume_inventory(*, firmware=False):
         if sys.platform.startswith('linux'):
             return linux_volume_inventory(firmware=True) if firmware else linux_volume_inventory()
         raise RuntimeError('USB volume discovery is unavailable on this operating system')
+    try:
+        return _windows_wmi_inventory()
+    except RuntimeError as wmi_error:
+        from mklink.windows_volumes import volume_inventory as native_inventory
+        try:
+            return native_inventory()
+        except (OSError, RuntimeError) as native_error:
+            raise RuntimeError(
+                f'Windows volume discovery failed before disk selection. '
+                f'WMI: {wmi_error}; native USB inventory: {native_error}. '
+                'Check the current account/AI process device permissions; '
+                'no disk was selected. Do not retry an unknown flash job automatically.'
+            ) from native_error
+
+
+def _windows_wmi_inventory():
     script = Path(__file__).with_name('windows_probe_volumes.ps1')
     powershell = shutil.which('pwsh') or shutil.which('powershell.exe')
     if not powershell:
@@ -55,13 +71,16 @@ def volume_inventory(*, firmware=False):
                                 capture_output=True, encoding='utf-8-sig', errors='replace', timeout=20,
                                 creationflags=subprocess.CREATE_NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
-        raise RuntimeError('Windows volume inventory unavailable; no disk selected') from exc
+        raise RuntimeError(f'Windows volume inventory unavailable: {exc}') from exc
     if result.returncode:
-        raise RuntimeError('Windows volume inventory failed; no disk selected')
+        detail = ' '.join((result.stderr or '').split())[:1500]
+        raise RuntimeError(f'Windows volume inventory failed (exit {result.returncode}): {detail}')
     try:
         rows = json.loads(result.stdout)
     except ValueError as exc:
         raise RuntimeError('Invalid Windows volume inventory; no disk selected') from exc
+    if not isinstance(rows, list) or any(not isinstance(row, dict) or 'pnp_id' not in row for row in rows):
+        raise RuntimeError('Invalid Windows volume inventory rows; no disk selected')
     for row in rows:
         row['usb_identity'] = usb_ancestor(row['pnp_id'])
     return rows

@@ -19,6 +19,10 @@ import time
 import serial
 
 
+class _ControlFailure(serial.SerialException):
+    """A missing/malformed reply makes subsequent command replies ambiguous."""
+
+
 def _worker_command(port, baudrate):
     if getattr(sys, 'frozen', False):
         return [sys.executable, '--internal-serial-worker', port, str(baudrate)]
@@ -46,6 +50,7 @@ class IsolatedSerial:
         self._rx = bytearray()
         self._control = bytearray()
         self._epoch = 0
+        self._control_operation = 'open'
         self._rx_lock = threading.Lock()
         self._command_lock = threading.Lock()
         try:
@@ -73,11 +78,16 @@ class IsolatedSerial:
                 try:
                     response = json.loads(line)
                 except (ValueError, UnicodeError) as exc:
-                    raise serial.SerialException('Invalid serial worker response') from exc
+                    raise _ControlFailure('Invalid serial worker response') from exc
+                if not isinstance(response, dict):
+                    raise _ControlFailure('Invalid serial worker response')
                 if 'error' in response:
                     raise serial.SerialException(response['error'])
                 return response
-            n = _available(self._process.stderr)
+            try:
+                n = _available(self._process.stderr)
+            except serial.SerialException as exc:
+                raise _ControlFailure(f'Serial worker control pipe closed during {self._control_operation}') from exc
             if n:
                 data = self._process.stderr.read(min(n,65536))
                 if not data: break
@@ -86,26 +96,33 @@ class IsolatedSerial:
                 break
             else:
                 time.sleep(.001)
-        raise serial.SerialException('Serial worker control connection failed')
+        raise _ControlFailure(f'Serial worker control connection failed during {self._control_operation} (reply deadline 7s)')
 
     def _command(self, op, **kwargs):
         with self._command_lock:
             if not self.is_open:
                 raise serial.SerialException('Serial port is closed')
             try:
+                self._control_operation = op
                 data = memoryview((json.dumps({'op': op, **kwargs})+'\n').encode())
                 while data:
                     count = self._process.stdin.write(data)
                     if not count:
-                        raise serial.SerialException('Serial worker input closed')
+                        raise _ControlFailure('Serial worker input closed')
                     data = data[count:]
                 return self._reply()
+            except _ControlFailure:
+                self.is_open = False
+                self._dispose()  # Do not accept a late reply as the next command.
+                raise
             except serial.SerialException:
                 # Worker errors already identify the failed transport operation.
                 # SerialException is also an OSError; do not hide a USB timeout
                 # or a closed control pipe behind an unrelated write error.
                 raise
             except (OSError, ValueError) as exc:
+                self.is_open = False
+                self._dispose()
                 raise serial.SerialException(f'Serial worker write failed: {exc}') from exc
 
     def _drain(self):

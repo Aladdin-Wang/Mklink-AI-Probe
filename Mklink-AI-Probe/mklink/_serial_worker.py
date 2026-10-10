@@ -5,15 +5,25 @@ Only this process opens the port. The caller retains the application port lock.
 """
 import base64
 import json
+import os
 import queue
 import struct
 import sys
 import threading
+import time
 
 # Executed by filename: do not shadow pyserial with mklink/serial/.
 if __package__ in (None, ''):
     sys.path.pop(0)
 import serial
+
+# Retain ctypes storage even while a constructor unwinds on failed cancellation.
+# The worker exits immediately after reporting that failure.
+_unreaped_readers = []
+
+
+class _PendingReadTimeout(serial.SerialException):
+    """Only process termination may release storage still owned by the driver."""
 
 
 class _WindowsReadQueue:
@@ -21,7 +31,7 @@ class _WindowsReadQueue:
 
     Consume in submission order. Each request owns its buffer and event until
     completion, including cancellation; USB never writes into recycled memory.
-    Only the receive thread calls read/close; reset is protected by read_lock.
+    Only the receive thread reads. Control pauses it before reset/close.
     """
 
     def __init__(self, port):
@@ -77,10 +87,17 @@ class _WindowsReadQueue:
         api, ctypes = self._api, self._ctypes
         count = api.DWORD()
         ok = api.GetOverlappedResult(self._port._port_handle, ctypes.byref(ov),
-                                     ctypes.byref(count), True)
+                                     ctypes.byref(count), False)
+        error = api.GetLastError() if not ok else 0
+        if not ok and error == 996:  # ERROR_IO_INCOMPLETE; buffer is still live
+            # Wait for completion without imposing a polling delay on arriving
+            # data. The short bound also lets reset/close take the read lock.
+            if api.WaitForSingleObject(ov.hEvent, 5) == 0xFFFFFFFF:
+                error = api.GetLastError()
+                raise serial.SerialException(f'CDC receive event failed (WinError {error})')
+            return b''
         slot[2] = False
         if not ok:
-            error = api.GetLastError()
             if self._closed and error == api.ERROR_OPERATION_ABORTED:
                 return b''
             raise serial.SerialException(f'CDC queued read failed (WinError {error}: {ctypes.FormatError(error).strip()})')
@@ -99,11 +116,18 @@ class _WindowsReadQueue:
                     self._api.CancelIoEx(self._port._port_handle, self._ctypes.byref(ov))
 
     def _reap(self):
+        deadline = time.monotonic() + 1
         for slot in self._slots:
-            if slot[2]:
+            while slot[2]:
                 count = self._api.DWORD()
-                self._api.GetOverlappedResult(self._port._port_handle,
-                    self._ctypes.byref(slot[0]), self._ctypes.byref(count), True)
+                ok = self._api.GetOverlappedResult(self._port._port_handle,
+                    self._ctypes.byref(slot[0]), self._ctypes.byref(count), False)
+                if not ok and self._api.GetLastError() == 996:
+                    if time.monotonic() >= deadline:
+                        _unreaped_readers.append(self)
+                        raise _PendingReadTimeout('CDC cancellation did not complete within 1s; worker must exit')
+                    time.sleep(.002)
+                    continue
                 slot[2] = False
 
     def reset(self):
@@ -137,6 +161,8 @@ def main(arguments=None):
         reply({'error': str(exc)})
         return 1
     stopped = threading.Event()
+    read_enabled = threading.Event()
+    read_enabled.set()
     read_lock = threading.Lock()
     pending = queue.Queue(maxsize=1024)  # at most 16 MiB, then explicit backpressure
     epoch = 0
@@ -145,6 +171,9 @@ def main(arguments=None):
     try:
         if sys.platform == 'win32' and hasattr(port, '_port_handle'):
             reader = _WindowsReadQueue(port)
+    except _PendingReadTimeout as exc:
+        reply({'error': str(exc)})
+        os._exit(1)  # Never free buffers while the kernel can still write them.
     except Exception as exc:
         port.close()
         reply({'error': str(exc)})
@@ -153,7 +182,11 @@ def main(arguments=None):
     def receive():
         try:
             while not stopped.is_set():
+                if not read_enabled.wait(.05):
+                    continue
                 with read_lock:
+                    if stopped.is_set() or not read_enabled.is_set():
+                        continue
                     generation = epoch
                     try:
                         data = reader.read() if reader else port.read(min(4096, port.in_waiting) or 1)
@@ -170,11 +203,14 @@ def main(arguments=None):
                         except queue.Full:
                             pass
         except Exception as exc:
-            if not stopped.is_set():
-                pending.put((b'E', epoch, str(exc).encode('utf-8')))
-        finally:
-            if reader:
-                reader.close()
+            while not stopped.is_set():
+                try:
+                    pending.put((b'E', epoch, str(exc).encode('utf-8')), timeout=.05)
+                    break
+                except queue.Full:
+                    # Keep the error ordered after queued data, but let close
+                    # interrupt backpressure. Never silently drop the E frame.
+                    pass
 
     def transmit():
         try:
@@ -193,6 +229,23 @@ def main(arguments=None):
     tx = threading.Thread(target=transmit, daemon=True)
     rx.start()
     tx.start()
+    closed = False
+
+    def close_port():
+        nonlocal closed
+        if closed:
+            return
+        stopped.set()
+        read_enabled.set()
+        reader.cancel() if reader else port.cancel_read()
+        rx.join(timeout=1)
+        if rx.is_alive():
+            raise _PendingReadTimeout('Serial receiver did not stop within 1s; worker must exit')
+        if reader:
+            reader.close()
+        port.close()
+        closed = True
+
     reply({'ready': True})
     try:
         for line in sys.stdin:
@@ -207,7 +260,14 @@ def main(arguments=None):
                     port.flush()
                     reply({'result': None})
                 elif op == 'reset_input_buffer':
-                    with read_lock:
+                    # Stop new reads BEFORE competing for the lock. Otherwise
+                    # a busy receiver can reacquire it indefinitely.
+                    read_enabled.clear()
+                    if reader:
+                        reader.cancel()
+                    if not read_lock.acquire(timeout=1):
+                        raise _PendingReadTimeout('Serial receiver did not pause within 1s; worker must exit')
+                    try:
                         if receive_error:
                             raise serial.SerialException(receive_error[0])
                         epoch += 1
@@ -215,25 +275,32 @@ def main(arguments=None):
                             reader.reset()
                         else:
                             port.reset_input_buffer()
+                    except Exception as exc:
+                        receive_error.append(str(exc))
+                        raise
+                    finally:
+                        read_lock.release()
+                    read_enabled.set()
                     reply({'epoch': epoch})
                 elif op == 'reset_output_buffer':
                     port.reset_output_buffer()
                     reply({'result': None})
                 elif op == 'close':
-                    stopped.set()
-                    reader.cancel() if reader else port.cancel_read()
-                    rx.join(timeout=1)
+                    close_port()
                     reply({'result': None})
                     break
                 else:
                     raise ValueError('Unknown serial worker operation')
+            except _PendingReadTimeout as exc:
+                reply({'error': str(exc)})
+                os._exit(1)
             except Exception as exc:
                 reply({'error': str(exc)})
     finally:
-        stopped.set()
-        reader.cancel() if reader else port.cancel_read()
-        rx.join(timeout=1)
-        port.close()
+        try:
+            close_port()
+        except _PendingReadTimeout:
+            os._exit(1)
     return 0
 
 

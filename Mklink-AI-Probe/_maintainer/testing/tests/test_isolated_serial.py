@@ -114,3 +114,106 @@ worker.main(['test', '115200'])
     finally:
         port.close()
     assert port._process.poll() is not None
+
+
+def test_busy_receiver_cannot_starve_reset_and_close(monkeypatch):
+    import sys
+    from mklink import _isolated_serial
+    script = '''
+from mklink import _serial_worker as worker
+import time
+class Port:
+    in_waiting = 0
+    def read(self, size):
+        time.sleep(.02)
+        return b''
+    def reset_input_buffer(self): pass
+    def cancel_read(self): pass
+    def close(self): pass
+worker.serial.serial_for_url = lambda *a, **kw: Port()
+worker.main(['test', '115200'])
+'''
+    monkeypatch.setattr(_isolated_serial, '_worker_command', lambda *a: [sys.executable, '-c', script])
+    port = IsolatedSerial('test', 115200)
+    started = time.monotonic()
+    try:
+        for _ in range(20):
+            port.reset_input_buffer()
+        assert port._epoch == 20
+    finally:
+        port.close()
+    assert time.monotonic() - started < 3
+
+
+def test_unresponsive_receiver_exits_after_bounded_reset(monkeypatch):
+    import sys
+    from mklink import _isolated_serial
+    script = '''
+from mklink import _serial_worker as worker
+import threading
+class Port:
+    in_waiting = 0
+    def read(self, size): threading.Event().wait()
+    def cancel_read(self): pass
+    def close(self): pass
+worker.serial.serial_for_url = lambda *a, **kw: Port()
+worker.main(['test', '115200'])
+'''
+    monkeypatch.setattr(_isolated_serial, '_worker_command', lambda *a: [sys.executable, '-c', script])
+    port = IsolatedSerial('test', 115200)
+    started = time.monotonic()
+    try:
+        with pytest.raises(serial.SerialException, match='did not pause'):
+            port.reset_input_buffer()
+    finally:
+        port.close()
+    assert time.monotonic() - started < 3
+    assert port._process.poll() is not None
+
+
+def test_missing_control_reply_disposes_worker_without_replay(monkeypatch):
+    from mklink._isolated_serial import _ControlFailure
+    port = IsolatedSerial('loop://', 115200)
+    def missing():
+        raise _ControlFailure('reply deadline')
+    monkeypatch.setattr(port, '_reply', missing)
+    with pytest.raises(_ControlFailure):
+        port.write(b'once')
+    assert not port.is_open and port._process.poll() is not None
+    with pytest.raises(serial.SerialException, match='closed'):
+        port.write(b'never replay')
+    port.close()
+
+
+@pytest.mark.parametrize('drain', [False, True])
+def test_receive_failure_under_backpressure_remains_visible_and_close_is_bounded(monkeypatch, drain):
+    import sys
+    from mklink import _isolated_serial
+    script = '''
+from mklink import _serial_worker as worker
+import queue, serial
+Queue = queue.Queue
+worker.queue.Queue = lambda **kw: Queue(maxsize=2)
+class Port:
+    in_waiting = 4096
+    reads = 0
+    def read(self, size):
+        self.reads += 1
+        if self.reads > 4: raise serial.SerialException('backpressure RX failure')
+        return b'x' * 4096
+    def cancel_read(self): pass
+    def close(self): pass
+worker.serial.serial_for_url = lambda *a, **kw: Port()
+worker.main(['test', '115200'])
+'''
+    monkeypatch.setattr(_isolated_serial, '_worker_command', lambda *a: [sys.executable, '-c', script])
+    port = IsolatedSerial('test', 115200)
+    time.sleep(.1)  # Let the unread data pipe apply backpressure.
+    try:
+        if drain:
+            with pytest.raises(serial.SerialException, match='backpressure RX failure'):
+                collect(port, 65536)
+    finally:
+        started = time.monotonic()
+        port.close()
+    assert time.monotonic() - started < 3
