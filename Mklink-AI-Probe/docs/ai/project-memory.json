@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-10T09:29:40+08:00",
+  "updated_at": "2026-10-10T10:03:45+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "0.3.2既有修复回归与V3最终补验。88源码完整Python4635通过、2跳过；V3原路径在线后RTT8/Watch4并行512KiB回读通过，但空闲82秒后会话过期。已修复单次临时心跳失败永久停止续租，109专项通过，完整Python重跑。V3.6.3/V4.6.7新固件未实测，首发串口写错仍未归因；不得发布。"
+    "current_task": "0.3.2最终回归与发布归档。b06心跳修复完整Python4647通过、2跳过，三平台原生候选哈希/冻结检查通过；Windows新候选构建中。V3.6.3/V4.6.7仍待刷测，不继承旧哈希HIL。用户已授权验收后合并主分支正式发布并清理修复空间；Mac/Linux真机与Windows人工UAC项豁免。正式包、交接、必要证据必须回原工作空间。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "0.3.2 V3.6.2补验与首发失败",
-      "result": "见v032-v3-final-candidate.md。86冻结+V3.6.2实际GUI升级、30MHz两档时间戳、RTT8/Watch4/UART、脱机/共享/失败/停止恢复通过。在线后回读首发Serial worker write failed；两轮显式10MHz重测512KiB一致，88源码原路径复测亦一致。随后无close空闲82秒会话过期，修复SDK临时心跳失败有界重试，109专项通过；完整Python重新运行。363/467新固件待刷测，Keil/OpenOCD/退出矩阵待完成，不以V4旧通过替代。"
+      "result": "见v032-v3-final-candidate.md。86冻结+V3.6.2实际GUI升级、30MHz两档时间戳、RTT8/Watch4/UART、脱机/共享/失败/停止恢复通过。在线后回读首发Serial worker write failed；两轮显式10MHz重测512KiB一致，88源码原路径复测亦一致。随后无close空闲82秒会话过期，修复SDK临时心跳失败有界重试，109专项通过；完整Python重新运行。363/467新固件待刷测，Keil/OpenOCD/退出矩阵待完成，不以V4旧通过替代。 b06全量Python最终4647通过、2跳过、60已有警告，682.98秒；磁盘耗尽的旧运行不计通过。原生构建38013387325三平台成功且载荷哈希核验通过。"
     },
     {
       "area": "0.3.2最终候选与既有修复回归",
@@ -74,12 +74,13 @@
     "V3 main bdd18d7、V4 main ed73ae9已通过CI并合并推送；本地已切main。Arm-2D/MicroBoot等子模块保持原状。",
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。",
     "2026-10-08用户明确授权正式0.3.0发布、版本说明精简及V3/V4推送main；固件已经CI/PR整合，主机仍须精确提交发布门槛。",
-    "用户最新已提供最终V3.6.0/V4.6.0/HPMLink V4.6.0 UF2并明确授权一起发布，取代此前暂缓指示。文件由用户编译提供，不得将先前HIL候选的哈希或性能结果称为最终二进制重新实测。"
+    "用户最新已提供最终V3.6.0/V4.6.0/HPMLink V4.6.0 UF2并明确授权一起发布，取代此前暂缓指示。文件由用户编译提供，不得将先前HIL候选的哈希或性能结果称为最终二进制重新实测。",
+    "2026-10-10用户授权本轮验收完成后合并主分支、正式发布0.3.2；Mac/Linux实际安装USB/MSC及原地升级由客户后验，不再阻塞发布，Windows人工UAC项豁免。随后清理新建修复工作空间，保留用户改动。正式包/交接/必要证据回归原工作空间；F:/MKLink-Build仅临时构建。详见v032-archive-handoff.md。"
   ],
   "hardware": {
     "state": "本会话独占V3，当前V3.6.2；全部旧测试进程已正常退出，硬件未交给其他会话。VCC未改，512KiB多次保全。363/467候选UF2哈希已核对尚未刷入；新包/新固件和原失败收敛后再发布。",
     "installer": "Windows86cfdff4 NSIS SHA256 c3463d7ad42c426f82efce986dbf3b7f413fd91b3707176019e26a28cfadce15，提取冻结后台和生产Web实测，不是覆盖安装；UAC人工项用户豁免。三平台3e39e1ef与Windows产品代码相同但打包提交不同，正式同源要求仍需整合后重建；候选未签名更新/未公证，不声称实装升级通过。",
-    "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
+    "backups": "原工作空间Git根.build/artifacts保留既有完整HIL与目标备份；v032-handoff为统一阶段归档入口，最终v032-official保存正式包和清单。新增构建暂在F:/MKLink-Build，删除前须回原目录逐项SHA核验。固件原MicroLinkV3、MicroLink_Plus各有根CURRENT_HANDOFF.md及firmware-releases归档。"
   },
   "known_limits": [
     "HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。最终无诊断固件完整SES矩阵、已在仿真时新开采集、RTT下行及负载下烧录回读仍需后续验证。详见release handoff；长期目标暂停。",
@@ -92,10 +93,11 @@
     "Windows安装包无Authenticode签名；自动更新签名独立。正式发布必须核对manifest和三端下载哈希，不得因本地构建成功宣称已经发布。"
   ],
   "next_actions": [
-    "完成心跳修复完整回归，冻结同源三平台候选。",
+    "Windows b06新候选完成后冻结并检查CLI/MCP/Web；产品完整Python已通过。",
     "实际GUI升级V3.6.3，补测原在线并行回读/时钟恢复、长空闲续租、Keil/OpenOCD/GUI退出AI接续及最后端口释放。",
-    "V3完成后请求换V4，验证V4.6.7；Mac/Linux客户实装USB/MSC/签名原地升级待反馈，不能用云机替代。",
-    "实际失败及发布门槛收敛前不发布；其后按用户授权统一源构建、签名及更新渠道。"
+    "V3完成后请求换V4，验证V4.6.7。Mac/Linux实机及原地升级由客户后验，明确记录豁免而非通过。",
+    "硬件及实际失败收敛后按用户授权合并、统一源构建签名、发布三平台/Skill/SiteAgent并核对渠道。",
+    "按v032-archive-handoff.md归档正式包、证据与统一交接到原工作空间，逐项哈希核验，保全用户文件后再清理修复空间。"
   ],
   "continuation_protocol": [
     "交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。"
