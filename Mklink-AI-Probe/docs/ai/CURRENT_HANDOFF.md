@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-10T21:41:57+08:00`
+- 更新时间：`2026-10-10T22:04:54+08:00`
 - 分支：`0.3.3修复分支`
-- HEAD：`Worker/Windows volume/MCP setup source 350c3c18 with ownership closure b5ef7c5f; probe-only source ac542173 / Web 871b496f; startup/CDC source 2d033e77. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.`
+- HEAD：`File-source history source 132cb364 / Web 9f013b65; worker/volume/MCP source 350c3c18 + b5ef7c5f; probe-only source ac542173. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.`
 - 远端 HEAD：`microkeen/main; verify exact current tip with Git.`
 - 工作树：Original workspace remains main; active isolated worktree Mklink-AI-Probe-startup-cdc holds user-named branch 0.3.3修复分支. Preserve it while diagnosis continues.
-- 当前任务：0.3.3修复分支/草稿PR38：新增客户COM8报告中的worker清缓冲等待、WMI权限失败、MCP解释器/缓存配置修复，源码350c3c18及关闭所有权补强b5ef7c5f。保留共享后台唯一串口所有权；锁修复必须结合整体架构审查，不为局部通过破坏会话、数据代际、资源寿命和未知结果不重放。1521扩展回归、97针对性/包边界检查及最后关闭时序70项通过；最终USB-only V3冷开关100次、后台冷启动10次、共享附着100次、实际MCP/CLI及原生卷枚举通过，后台已释放。此前USB-only速率修复保留。客户原环境和原始高速停采/首次离线仍待复测；仅修应用，固件需求另开会话。
+- 当前任务：0.3.3修复分支/草稿PR38：新增文件来源AXF/ELF最近10条历史下拉，支持筛选、鼠标/键盘选择、移除及本地持久化，排除上传快照。源码132cb364，生产Web已更新；57项现有测试、生产构建和实际浏览器刷新/选择/删除通过，见v033-symbol-path-history.md。先前USB-only时钟、worker/卷枚举/MCP修复保留，锁修复必须服从整体共享架构。客户原环境及原始高速停采/首次离线待复测；安装继续暂缓，固件修复另开会话。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -21,6 +21,7 @@
 
 ## 验证证据
 
+- **0.3.3 文件来源历史**：源码132cb364/Web9f013b65：ConfigView/desktopSettings/filePicker 57通过，TypeScript/生产构建通过；实际浏览器无硬件lobby验证三条录入、最近排序、鼠标/键盘选择、筛选、删除和刷新保留。历史仅客户端本地保存，上传快照不混入；不自动解析/连接。见v033-symbol-path-history.md。未重建NSIS。
 - **0.3.3 worker/卷枚举/MCP环境**：源码350c3c18及b5ef7c5f；1521共享架构扩展回归通过，最后背压调整及包边界97通过。V3.6.4仅USB最终重跑100次worker/串口冷开关、10次共享后台冷启动/释放、100次共享附着、实际生成配置在最小PATH下MCP stdio与CLI设速率、原生卷发现/WMI失败注入回退均通过。无目标/磁盘写入，后台已释放。报告v033-worker-volume-mcp.md。客户Python3.12/权限原环境及有目标高速采集未重跑；旧NSIS不含本轮修复。 最后关闭状态发布/端口所有权70项通过；最终真机整组在b5ef7c5f重跑。
 - **0.3.3 USB-only连接和时钟**：源码ac542173/Web871b496f；Python十组316通过，后补USB断开用例所在文件10通过；GUI59与生产构建通过。用户确认断开目标板，本机V3.6.4/IDCODE0旧20/30MHz拒绝复现，修复后SDK4/10/20/30、实际MCP stdio30、CLI20保存、断开重连恢复20和实际浏览器30均通过。无固件/供电/目标修改，已释放后台。见v033-probe-only-connection.md，取代上一轮要求目标先识别的建议。旧NSIS不含本轮修复。
 - **0.3.3 启动/CDC第一轮修复**：源码2d033e77/Web92415bb3；Python177、GUI917、Rust22及标准NSIS构建通过。冻结CLI/MCP Windows-only PATH通过；默认环境原生启动、代理退出换端口恢复、真实Web状态通过。V3.6.4/STM32F103 30MHz/1µs候选90秒约2371万样本错误/丢弃0，接收worker退出注入停采断连及显式重连恢复通过。此前695秒源码诊断出现接收队列丢弃11754288字节，无CDC错误；不能称无损。实际安装获用户暂缓。见v033-startup-cdc-recovery.md。
@@ -28,7 +29,6 @@
 - **0.3.2 V4.6.8最终收尾**：见v032-v4-final-closure.md。冻结b06 + V4.6.8后台升级13.148秒；Keil新启/暂停/单步/继续/退出、四路并发检查、在线并行512KiB保全427.25秒、脱机共享失败停止恢复57.842秒及OpenOCD/退出/重连完成。30MHz并行1kHz/最大目标读错+1/+273，10MHz0，旧V4.6.6原始+1/+224已更正。用户接受限制继续发布。
 - **0.3.2 V3最终矩阵**：v032-keil-capture-start.md：V3.6.4后台升级、Keil先Run新启RTT8/Watch4、暂停单步继续退出、UART并行、在线脱机共享失败停止恢复、OpenOCD、512KiB保全及6.03秒释放通过。已收敛，不再等待V4换机；V4最终矩阵另列。
 - **0.3.2最终候选与既有修复回归**：见v032-final-candidate.md。86cfdff4冻结候选实际GUI升级V4.6.6；30MHz Flash128B在1kHz/请求1µs两档完整性指标均0，最大样本间隔1049/233µs；RTT8/Watch4/UART并行、文件检查、在线/脱机/共享烧录成功/失败/停止恢复、Keil下载断点单步退出及OpenOCD、GUI退出AI接续、旧端点重发现、最后6.299秒释放通过；512KiB逐字不变，未改VCC。真实收发毫秒/RX/TX、独立RTT拖动及20/30MHz保存通过。旧155次status5不冒作新固件故障注入证据。914 GUI/生产构建通过；原生3e39e1ef构建37949511991全部成功；完整Python/Rust和交付状态以发布准备报告为准。 全量Python4634通过/2跳过，Rust21+6通过；三平台下载CRC和载荷SHA256均核验，当前候选可交客户复测。 2026-10-10更正：旧并行load实际有+1/+224目标读错；passed不代表零读错，见V4最终收尾。
-- **0.3.1正式发布**：v031-release-handoff.md：main/tag 1d61159d，clean locked GUI912、签名NSIS与SiteAgent重建通过；冻结MCP/CLI、4.825秒lobby、36项Web字节一致、10.340秒原生窗口、无Python子进程及正常退出通过；UAC安装豁免。三端资产/应用及固件索引已核对。用户原GUI保留，本次不连接目标。
 
 ## 架构决策
 
@@ -50,7 +50,7 @@
 
 ## 下一动作
 
-1. 保留0.3.3修复分支和草稿PR38；以350c3c18/b5ef7c5f及后续文档为本轮源码，后续可构建包含worker/卷枚举/MCP与USB-only修复的新候选交客户复测，重点客户Python3.12及受限AI权限。读v033-worker-volume-mcp.md；连接/设速率不要求目标板，目标操作仍须目标通信。固件修复需求另开会话。
+1. 保留0.3.3修复分支和草稿PR38；后续可构建包含历史路径132cb364、worker/卷枚举/MCP350c3c18+b5ef7c5f及USB-only修复的新候选交客户复测。读对应v033验证报告；重点客户Python3.12及受限AI权限。连接/设速率不要求目标板，目标操作仍须目标通信；固件修复另开会话。
 2. 继续0.3.3修复分支：优先复现30MHz/1µs CDC底层失败和首次冷启动离线，读取候选新增Win32码/启动日志。保留草稿PR；实际覆盖安装暂缓，不宣称两个根因彻底修复。
 3. 保留Mklink-AI-Probe-startup-cdc工作树；原工作区仍为主入口，候选与日志已在原.build/artifacts/v033-fixes归档。不得覆盖0.3.2正式包、标签、渠道或擅自合并。
 4. 下一版排查30MHz并行目标读错/Flash偶发status5，区分固件目标访问与主机队列；保持偶发错误不断采、不误断的行为。
