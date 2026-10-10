@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-10T21:37:52+08:00`
+- 更新时间：`2026-10-10T21:41:57+08:00`
 - 分支：`0.3.3修复分支`
-- HEAD：`Worker/Windows volume/MCP setup source 350c3c18; probe-only source ac542173 / Web 871b496f; startup/CDC source 2d033e77. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.`
+- HEAD：`Worker/Windows volume/MCP setup source 350c3c18 with ownership closure b5ef7c5f; probe-only source ac542173 / Web 871b496f; startup/CDC source 2d033e77. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.`
 - 远端 HEAD：`microkeen/main; verify exact current tip with Git.`
 - 工作树：Original workspace remains main; active isolated worktree Mklink-AI-Probe-startup-cdc holds user-named branch 0.3.3修复分支. Preserve it while diagnosis continues.
-- 当前任务：0.3.3修复分支/草稿PR38：新增客户COM8报告中的worker清缓冲等待、WMI权限失败、MCP解释器/缓存配置修复，源码350c3c18。保留共享后台唯一串口所有权；锁修复必须结合整体架构审查，不为局部通过破坏会话、数据代际、资源寿命和未知结果不重放。1521扩展回归、最终97针对性/包边界检查通过；最终USB-only V3冷开关100次、后台冷启动10次、共享附着100次、实际MCP/CLI及原生卷枚举通过，后台已释放。此前USB-only速率修复保留。客户原环境和原始高速停采/首次离线仍待复测；仅修应用，固件需求另开会话。
+- 当前任务：0.3.3修复分支/草稿PR38：新增客户COM8报告中的worker清缓冲等待、WMI权限失败、MCP解释器/缓存配置修复，源码350c3c18及关闭所有权补强b5ef7c5f。保留共享后台唯一串口所有权；锁修复必须结合整体架构审查，不为局部通过破坏会话、数据代际、资源寿命和未知结果不重放。1521扩展回归、97针对性/包边界检查及最后关闭时序70项通过；最终USB-only V3冷开关100次、后台冷启动10次、共享附着100次、实际MCP/CLI及原生卷枚举通过，后台已释放。此前USB-only速率修复保留。客户原环境和原始高速停采/首次离线仍待复测；仅修应用，固件需求另开会话。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -21,7 +21,7 @@
 
 ## 验证证据
 
-- **0.3.3 worker/卷枚举/MCP环境**：源码350c3c18；1521共享架构扩展回归通过，最后背压调整及包边界97通过。V3.6.4仅USB最终重跑100次worker/串口冷开关、10次共享后台冷启动/释放、100次共享附着、实际生成配置在最小PATH下MCP stdio与CLI设速率、原生卷发现/WMI失败注入回退均通过。无目标/磁盘写入，后台已释放。报告v033-worker-volume-mcp.md。客户Python3.12/权限原环境及有目标高速采集未重跑；旧NSIS不含本轮修复。
+- **0.3.3 worker/卷枚举/MCP环境**：源码350c3c18及b5ef7c5f；1521共享架构扩展回归通过，最后背压调整及包边界97通过。V3.6.4仅USB最终重跑100次worker/串口冷开关、10次共享后台冷启动/释放、100次共享附着、实际生成配置在最小PATH下MCP stdio与CLI设速率、原生卷发现/WMI失败注入回退均通过。无目标/磁盘写入，后台已释放。报告v033-worker-volume-mcp.md。客户Python3.12/权限原环境及有目标高速采集未重跑；旧NSIS不含本轮修复。 最后关闭状态发布/端口所有权70项通过；最终真机整组在b5ef7c5f重跑。
 - **0.3.3 USB-only连接和时钟**：源码ac542173/Web871b496f；Python十组316通过，后补USB断开用例所在文件10通过；GUI59与生产构建通过。用户确认断开目标板，本机V3.6.4/IDCODE0旧20/30MHz拒绝复现，修复后SDK4/10/20/30、实际MCP stdio30、CLI20保存、断开重连恢复20和实际浏览器30均通过。无固件/供电/目标修改，已释放后台。见v033-probe-only-connection.md，取代上一轮要求目标先识别的建议。旧NSIS不含本轮修复。
 - **0.3.3 启动/CDC第一轮修复**：源码2d033e77/Web92415bb3；Python177、GUI917、Rust22及标准NSIS构建通过。冻结CLI/MCP Windows-only PATH通过；默认环境原生启动、代理退出换端口恢复、真实Web状态通过。V3.6.4/STM32F103 30MHz/1µs候选90秒约2371万样本错误/丢弃0，接收worker退出注入停采断连及显式重连恢复通过。此前695秒源码诊断出现接收队列丢弃11754288字节，无CDC错误；不能称无损。实际安装获用户暂缓。见v033-startup-cdc-recovery.md。
 - **0.3.2正式安装和渠道**：v032-release-handoff.md：NSIS真实覆盖0.3.1至0.3.2、注册及载荷哈希一致；安装态CLI/MCP、36项Web字节/MIME、3.420秒lobby、8.605秒原生启动、版本日期/说明界面及正常退出通过。最终GUI914，既有Python4647/2skip，Rust21+6。五份更新签名实际验签，17个公开文件及三个渠道核对，原空间v032-official归档。Mac/Linux物理安装USB/MSC/原地更新后验，不称通过。
@@ -40,7 +40,7 @@
 - 原空间是唯一维护入口。正式包/证据已回原.build/artifacts/v032-official和v032-handoff，F盘仅构建缓存；清理实录见cleanup.json。固件原V3/V4 main已核对，V4-fixes已清理，用户子模块改动保留。
 - mklink及既有长期跟进维持暂停；不得因旧交接自动接管硬件或重复发布。
 - 用户指定0.3.3修复分支；此会话仅修改应用分支，需要V3/V4固件修复时另开会话。连接下载器及设置时钟属于探针操作，不要求目标板；精确set clock回包可确认设置，profile_confirmed单列，不冒充目标稳定性验证。安装继续暂缓；保留草稿PR。
-- 用户特别要求：锁相关修复必须结合整体共享架构，不能仅消除当前卡点。保留唯一串口所有权、USB身份绑定、会话/操作锁及未知结果不重放；审查读写控制顺序、epoch隔离、取消完成前缓冲寿命、背压错误传播和端口释放，再以跨客户端与真实进程/硬件验证。
+- 用户特别要求：锁相关修复必须结合整体共享架构，不能仅消除当前卡点。保留唯一串口所有权、USB身份绑定、会话/操作锁及未知结果不重放；审查读写控制顺序、epoch隔离、取消完成前缓冲寿命、背压错误传播和端口释放，再以跨客户端与真实进程/硬件验证。 父进程仅在worker真正退出后发布串口关闭，避免其他线程提前释放应用锁。
 
 ## 真机环境
 
@@ -50,7 +50,7 @@
 
 ## 下一动作
 
-1. 保留0.3.3修复分支和草稿PR38；以350c3c18及后续文档为本轮源码，后续可构建包含worker/卷枚举/MCP与USB-only修复的新候选交客户复测，重点客户Python3.12及受限AI权限。读v033-worker-volume-mcp.md；连接/设速率不要求目标板，目标操作仍须目标通信。固件修复需求另开会话。
+1. 保留0.3.3修复分支和草稿PR38；以350c3c18/b5ef7c5f及后续文档为本轮源码，后续可构建包含worker/卷枚举/MCP与USB-only修复的新候选交客户复测，重点客户Python3.12及受限AI权限。读v033-worker-volume-mcp.md；连接/设速率不要求目标板，目标操作仍须目标通信。固件修复需求另开会话。
 2. 继续0.3.3修复分支：优先复现30MHz/1µs CDC底层失败和首次冷启动离线，读取候选新增Win32码/启动日志。保留草稿PR；实际覆盖安装暂缓，不宣称两个根因彻底修复。
 3. 保留Mklink-AI-Probe-startup-cdc工作树；原工作区仍为主入口，候选与日志已在原.build/artifacts/v033-fixes归档。不得覆盖0.3.2正式包、标签、渠道或擅自合并。
 4. 下一版排查30MHz并行目标读错/Flash偶发status5，区分固件目标访问与主机队列；保持偶发错误不断采、不误断的行为。
