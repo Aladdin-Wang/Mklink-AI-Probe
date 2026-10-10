@@ -1,5 +1,5 @@
 <template>
-  <aside class="symbol-panel" :class="{ 'search-collapsed': collapsed.all, 'catalog-unavailable': catalogUnavailable }">
+  <aside class="symbol-panel">
     <div v-if="pinsError" class="stale-banner" role="alert">{{ pinsError }}</div>
 
     <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
@@ -31,7 +31,8 @@
       @primary="hasSymbolSource ? parseSelectedSymbols() : loadSymbolFile()"
     />
     <div v-else-if="catalog.loading.value" class="empty-state">{{ tr('正在加载符号...', 'Loading symbols...') }}</div>
-    <section class="signal-section variable-section" :class="{ collapsed: collapsed.signals }">
+    <div ref="sectionRegion" class="sections-layout">
+    <section class="signal-section variable-section" :class="{ collapsed: collapsed.signals }" :style="sectionSizes.style('signals')">
       <button type="button" class="section-heading" data-testid="toggle-signals-section"
         :aria-expanded="!collapsed.signals" @click="collapsed.signals = !collapsed.signals">
         <ChevronRight v-if="collapsed.signals" :size="14" /><ChevronDown v-else :size="14" />
@@ -39,8 +40,13 @@
       </button>
       <SelectedSignals v-show="!collapsed.signals" :paths="[...selected]" :values="latestValues" :hidden="hiddenChannels" @visibility="(path, visible) => emit('visibility-change', path, visible)" />
     </section>
-    <div class="variable-groups" :class="{ 'favorites-collapsed': collapsed.pinned }">
-      <section v-for="group in variableGroups" :key="group.key" class="variable-section"
+    <div v-if="sectionSizes.canResize('signals')" class="section-resizer" role="separator" tabindex="0" aria-orientation="horizontal"
+      data-testid="resize-signals-section" :aria-label="tr('调整信号分组高度', 'Resize signal groups')"
+      :aria-valuenow="sectionSizes.layout.value.sizes.signals" :aria-valuemin="sectionSizes.minimum.signals" :aria-valuemax="sectionSizes.maxSize('signals')"
+      :title="tr('上下拖动调整高度；双击恢复默认', 'Drag vertically to resize; double-click to reset')"
+      @pointerdown.prevent="sectionSizes.start($event, 'signals')" @keydown="sectionSizes.keyboard($event, 'signals')" @dblclick="sectionSizes.reset()"></div>
+    <template v-for="group in variableGroups" :key="group.key">
+      <section class="variable-section" :style="sectionSizes.style(group.key)"
         :class="{ 'pinned-section': group.key === 'pinned', collapsed: collapsed[group.key] }" :data-testid="`${group.key}-variables`">
       <button type="button" class="section-heading" :data-testid="`toggle-${group.key}-section`"
         :aria-expanded="!collapsed[group.key]" @click="collapsed[group.key] = !collapsed[group.key]">
@@ -320,6 +326,12 @@
       </div>
       </div>
       </section>
+      <div v-if="group.key === 'pinned' && sectionSizes.canResize('pinned')" class="section-resizer" role="separator" tabindex="0" aria-orientation="horizontal"
+        data-testid="resize-pinned-section" :aria-label="tr('调整常用变量高度', 'Resize favorite variables')"
+        :aria-valuenow="sectionSizes.layout.value.sizes.pinned" :aria-valuemin="sectionSizes.minimum.pinned" :aria-valuemax="sectionSizes.maxSize('pinned')"
+        :title="tr('上下拖动调整高度；双击恢复默认', 'Drag vertically to resize; double-click to reset')"
+        @pointerdown.prevent="sectionSizes.start($event, 'pinned')" @keydown="sectionSizes.keyboard($event, 'pinned')" @dblclick="sectionSizes.reset()"></div>
+    </template>
     </div>
 
     <div v-if="cLayoutOpen" class="modal-overlay" data-testid="c-layout-modal" @click.self="closeCLayout">
@@ -420,6 +432,7 @@ import SelectedSignals from './SelectedSignals.vue'
 import { useWatchWorkspace } from '../../composables/useWatchWorkspace'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 import { DESKTOP_SETTINGS_STORAGE_KEY } from '../../lib/desktopSettings'
+import { useWatchSectionSizes } from '../../composables/useWatchSectionSizes'
 
 const props = withDefaults(defineProps<{
   deviceConnected: boolean
@@ -441,10 +454,6 @@ const emit = defineEmits<{
 }>()
 
 const catalog = useSymbolCatalog()
-const catalogUnavailable = computed(() => !props.deviceConnected || !props.symbolLoaded
-  || !!props.symbolError || !!catalog.error.value
-  || (!catalog.loading.value && !catalog.items.value.length
-    && !catalog.containers.value.length && !catalog.browseRoots.value.length))
 const displayPrefs = useWatchWorkspace()
 const toast = useToast()
 const {
@@ -458,6 +467,8 @@ const {
 // Local layout preferences must not alter shared sampling or waveform groups.
 const sectionStorageKey = DESKTOP_SETTINGS_STORAGE_KEY + '.superwatch-sections'
 const collapsed = reactive({ signals: false, pinned: false, all: false })
+const sectionRegion = ref<HTMLElement | null>(null)
+const sectionSizes = useWatchSectionSizes(sectionRegion, collapsed)
 try {
   const saved = JSON.parse(localStorage.getItem(sectionStorageKey) || '{}')
   for (const key of ['signals', 'pinned', 'all'] as const) {
@@ -1019,7 +1030,10 @@ watch(tree, roots => {
 .path-alignment { display: flex; gap: 4px; }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }
 .stale-banner { padding: 7px 10px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
-.variable-groups { display: flex; flex: 1; flex-direction: column; min-height: 200px; overflow: hidden; }
+.sections-layout { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; }
+.section-resizer { position: relative; flex: 0 0 6px; background: var(--bg); cursor: row-resize; touch-action: none; user-select: none; }
+.section-resizer::after { content: ''; position: absolute; width: 36px; height: 2px; top: 2px; left: calc(50% - 18px); border-radius: 2px; background: var(--muted); }
+.section-resizer:hover, .section-resizer:focus-visible { background: var(--accent); outline: none; }
 .variable-section { display: flex; flex: 1; flex-direction: column; min-height: 34px; overflow: hidden; }
 .section-heading { display: flex; align-items: center; gap: 6px; flex: 0 0 34px; width: 100%; padding: 0 10px; border: 0; border-bottom: 1px solid var(--border); background: var(--bg); color: var(--fg); text-align: left; cursor: pointer; font-size: 12px; font-weight: 600; }
 .section-heading small { margin-left: auto; color: var(--muted); font-weight: normal; }
@@ -1027,21 +1041,11 @@ watch(tree, roots => {
 .section-content { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
 .section-content > :not(.variable-section-rows) { flex-shrink: 0; }
 .variable-section-rows { flex: 1; overflow: auto; min-height: 0; overscroll-behavior: contain; }
-.signal-section { flex: 0 0 auto; max-height: 35%; }
 .signal-section :deep(.selected-workspace) { flex: 1 1 auto; min-height: 0; max-height: none; overscroll-behavior: contain; }
-.pinned-section { flex: 0 0 auto; max-height: 30%; }
 .pinned-section .section-heading { color: var(--accent); }
-.search-collapsed .signal-section, .search-collapsed .pinned-section { flex: 1; max-height: none; }
-.search-collapsed .variable-groups { min-height: 68px; }
-.search-collapsed .variable-groups.favorites-collapsed { flex: 0 0 auto; }
 /* Notices retain their intrinsic height; a shrinking hint used to cover groups. */
 .symbol-panel > .setup-hint, .symbol-panel > .stale-banner, .symbol-panel > .empty-state { flex: 0 0 auto; }
-/* Without a readable catalog, let group content use its natural height instead
-   of reserving an empty search viewport and clipping saved groups above it. */
-.catalog-unavailable .signal-section { max-height: none; }
-.catalog-unavailable .variable-groups { flex: 0 0 auto; min-height: 0; }
-.catalog-unavailable .variable-section, .catalog-unavailable .section-content { flex: 0 0 auto; }
-.variable-section.collapsed { flex: 0 0 34px; max-height: 34px; }
+.variable-section.collapsed { max-height: 34px; }
 .pin-help { padding: 8px 10px; color: var(--muted); font-size: 11px; }
 .pin-controls { display: flex; }
 .pin-button { display: grid; place-items: center; width: 22px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--accent); cursor: pointer; }

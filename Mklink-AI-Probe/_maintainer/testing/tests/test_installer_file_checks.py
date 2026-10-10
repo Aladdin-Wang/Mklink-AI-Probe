@@ -112,4 +112,3 @@ def test_installer_blocks_before_any_payload_write_when_busy(installer):
         assert run_gate(output).returncode == 2
     assert not (payload / 'completed').exists()
     assert (payload / 'mklink-sidecar.exe').read_bytes() == b'existing version'
-

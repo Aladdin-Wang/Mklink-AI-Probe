@@ -244,6 +244,32 @@ describe('SymbolVariablePanel', () => {
     reopened.unmount()
   })
 
+  it('resizes with keyboard and pointer, keeps search usable and restores local heights', async () => {
+    const server = mockPinnedWorkspace(['gain'])
+    const props = { deviceConnected: true, latestValues: {} }
+    const wrapper = mount(SymbolVariablePanel, { props })
+    await flushPromises()
+    const handle = wrapper.get('[data-testid="resize-signals-section"]')
+    await handle.trigger('keydown', { key: 'ArrowDown' })
+    expect(handle.attributes('aria-valuenow')).toBe('200')
+    await handle.trigger('pointerdown', { clientY: 100, pointerId: 7, button: 0 })
+    window.dispatchEvent(new PointerEvent('pointermove', { clientY: 1000, pointerId: 7 }))
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7 }))
+    await nextTick()
+    expect(Number(handle.attributes('aria-valuenow'))).toBe(Number(handle.attributes('aria-valuemax')))
+    const size = handle.attributes('aria-valuenow')
+    await wrapper.get('[data-testid="toggle-signals-section"]').trigger('click')
+    expect(wrapper.find('[data-testid="resize-signals-section"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="toggle-signals-section"]').trigger('click')
+    expect(wrapper.get('[data-testid="resize-signals-section"]').attributes('aria-valuenow')).toBe(size)
+    wrapper.unmount()
+    const reopened = mount(SymbolVariablePanel, { props })
+    await flushPromises()
+    expect(reopened.get('[data-testid="resize-signals-section"]').attributes('aria-valuenow')).toBe(size)
+    expect(server.fetch.mock.calls.every(([, options]) => !options?.method || options.method === 'GET')).toBe(true)
+    reopened.unmount()
+  })
+
   it('includes matching favorites in search even when the favorites section is folded', async () => {
     mockPinnedWorkspace(['gain'])
     mocks.searchSymbols.mockResolvedValue(catalogItems)

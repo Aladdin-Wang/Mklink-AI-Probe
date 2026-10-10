@@ -21,7 +21,7 @@
     </fieldset>
     <div class="selected-groups">
       <section v-for="group in groups" :key="group.id" :data-watch-group="group.id" :class="{ 'drop-target': dragTarget === group.id }">
-        <div class="group-heading">
+        <div class="group-heading" :title="!group.paths.length ? tr('空组：移入信号后显示波形', 'Empty: move signals here to show a plot') : undefined">
           <button :aria-label="`折叠 ${group.name}`" :aria-expanded="!group.collapsed" @click="collapse(group.id)">{{ group.collapsed ? '▸' : '▾' }}</button>
           <InlineWatchName :value="group.name" :label="`重命名分组 ${group.name}`" :commit="name => rename(group.id,name)" />
           <small>{{ group.paths.length }}</small>
@@ -31,7 +31,6 @@
             <button :disabled="prefs.busy.value || groups.length === 1" title="删除分组，信号移入第一个分组" @click="remove(group.id)">×</button>
           </template>
         </div>
-        <p v-if="!group.paths.length" class="hint empty-group">{{ tr('空组：移入信号后显示波形', 'Empty: move signals here to show a plot') }}</p>
         <div v-show="!group.collapsed" v-for="path in group.paths" :key="path" class="selected-signal" :class="{ emphasized: prefs.style(path).emphasis }">
           <div class="signal-heading">
             <button class="drag-handle" :aria-label="`移动 ${path} 到分组`" :disabled="!prefs.ready.value" :title="tr('按住拖入目标分组', 'Drag into a group')" @pointerdown="startDrag(path,$event)" @pointermove="dragMove" @pointerup="finishDrag" @pointercancel="cancelDrag" @lostpointercapture="cancelDrag" @dragstart.prevent>⠿</button>

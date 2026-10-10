@@ -1,5 +1,5 @@
 <template>
-  <div ref="workspace" class="superwatch-workspace" :class="{ focused: focusMode, compact: hideSettings, 'catalog-hidden': hideCatalog }" :style="{ gridTemplateColumns: `${panelWidth}px 5px minmax(0, 1fr)` }">
+  <div ref="workspace" class="superwatch-workspace" :class="{ focused: focusMode }" :style="{ gridTemplateColumns: `${panelWidth}px 5px minmax(0, 1fr)` }">
     <div class="watch-catalog-pane">
       <div class="watch-source-tabs">
         <button :class="{ active: source === 'variables' }" @click="source = 'variables'">{{ tr('程序变量', 'Variables') }}</button>
@@ -27,10 +27,8 @@
       <div class="watch-topbar">
         <div class="workspace-actions">
           <button @click="focusMode = !focusMode">{{ focusMode ? tr('退出专注', 'Exit focus') : tr('展开工作区', 'Focus workspace') }}</button>
-          <button @click="hideCatalog = !hideCatalog">{{ hideCatalog ? tr('显示目录','Show catalog') : tr('只看已选','Selected only') }}</button>
-          <button @click="hideSettings = !hideSettings">{{ hideSettings ? tr('显示配置','Show settings') : tr('隐藏配置','Hide settings') }}</button>
         </div>
-        <div class="speed-controls" v-show="!hideSettings">
+        <div class="speed-controls">
           <label for="superwatch-speed">{{ tr('调试速率', 'Debug clock') }}</label>
           <select id="superwatch-speed" v-model="speedProfile" @change="speedDirty = true" data-testid="superwatch-speed" class="form-select" :disabled="applyingSpeed">
             <option value="low">{{ tr('低速 · 4 MHz', 'Low · 4 MHz') }}</option>
@@ -71,7 +69,7 @@ const props = withDefaults(defineProps<{
   symbolError: '',
 })
 
-const focusMode = ref(false), hideSettings = ref(false), hideCatalog = ref(false)
+const focusMode = ref(false)
 function exitFocus(event: KeyboardEvent) { if (event.key === 'Escape') focusMode.value = false }
 onMounted(() => window.addEventListener('keydown', exitFocus))
 onUnmounted(() => window.removeEventListener('keydown', exitFocus))
@@ -85,15 +83,12 @@ const layoutStorageKey = DESKTOP_SETTINGS_STORAGE_KEY + '.superwatch-layout'
 try {
   const saved = JSON.parse(localStorage.getItem(layoutStorageKey) || '{}')
   if (Number.isFinite(saved?.panelWidth)) panelWidth.value = Math.max(280, saved.panelWidth)
-  if (typeof saved?.hideSettings === 'boolean') hideSettings.value = saved.hideSettings
-  if (typeof saved?.hideCatalog === 'boolean') hideCatalog.value = saved.hideCatalog
   if (saved?.source === 'variables' || saved?.source === 'peripherals') source.value = saved.source
   if (Array.isArray(saved?.hidden)) hiddenChannels.value = new Set(saved.hidden.filter((name: unknown) => typeof name === 'string').slice(0, 256))
 } catch { /* Local preferences are optional. */ }
-watch([panelWidth, hideSettings, hideCatalog, source, hiddenChannels], () => {
+watch([panelWidth, source, hiddenChannels], () => {
   try {
-    localStorage.setItem(layoutStorageKey, JSON.stringify({ panelWidth: panelWidth.value,
-      hideSettings: hideSettings.value, hideCatalog: hideCatalog.value, source: source.value,
+    localStorage.setItem(layoutStorageKey, JSON.stringify({ panelWidth: panelWidth.value, source: source.value,
       hidden: [...hiddenChannels.value] }))
   } catch { /* Do not block the shared viewer when storage is unavailable. */ }
 })
@@ -231,10 +226,6 @@ watch(() => props.deviceConnected, loadSpeed)
 .watch-topbar { display:flex; align-items:center; flex:0 0 44px; gap:8px; overflow-x:auto; overflow-y:hidden; white-space:nowrap; }
 .workspace-actions { display:flex; gap:6px; padding:4px; flex-shrink:0; }
 .workspace-actions button { background:var(--surface);color:var(--text);border:1px solid var(--border);padding:5px 8px;border-radius:4px; }
-.catalog-hidden :deep(.symbol-panel > :not(.signal-section)) { display:none !important; }
-.catalog-hidden :deep(.signal-section:not(.collapsed)) { max-height:100%; flex:1; }
-.catalog-hidden .watch-source-tabs { display:none; }
-.compact :deep(#control-toolbar > label), .compact :deep(.buffer-unit), .compact :deep(#interval-group), .compact :deep(#control-toolbar .ctrl-sep), .compact :deep(#buffer-input), .compact :deep(#btn-apply-buffer), .compact :deep(#buffer-memory-estimate), .compact :deep(#interval-input), .compact :deep(#btn-apply-interval) { display:none; }
 
 .watch-catalog-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .watch-catalog-pane :deep(.symbol-panel) { flex: 1; min-height: 0; }
