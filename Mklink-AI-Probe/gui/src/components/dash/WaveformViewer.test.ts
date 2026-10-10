@@ -264,6 +264,16 @@ vi.mock('../../lib/stream/renderScheduler', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Auto-saved preferences belong to one test's simulated browser. Node's
+  // optional native localStorage otherwise leaks capacity/zoom/trigger state
+  // between cases, while hosts without native storage silently hide the leak.
+  const preferences = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => preferences.get(key) ?? null,
+    setItem: (key: string, value: string) => preferences.set(key, String(value)),
+    removeItem: (key: string) => preferences.delete(key),
+    clear: () => preferences.clear(),
+  })
   mocks.schedulerInstances.length = 0
   mocks.binary.waveformBatch = shallowRef(null)
   mocks.binary.envelope = shallowRef(null)
