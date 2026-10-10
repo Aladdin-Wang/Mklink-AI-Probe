@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-10T22:40:30+08:00",
+  "updated_at": "2026-10-10T23:09:12+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "0.3.3修复分支",
-    "head": "SuperWatch toolbar/preferences source 5444d3a5 / Web 32c69bb7; sections 0ed75a71 / Web b764ede3; history 132cb364; worker 350c3c18+b5ef7c5f; probe-only ac542173. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.",
+    "head": "Online flash algorithms/layout source 92e33221 / Web ee0c2024; SuperWatch toolbar 5444d3a5 / Web 32c69bb7; worker 350c3c18+b5ef7c5f; probe-only ac542173. Based on microkeen/main 01b413ff. Inspect Git for documentation/PR tip.",
     "remote_head": "microkeen/main; verify exact current tip with Git.",
     "working_tree": "Original workspace remains main; active isolated worktree Mklink-AI-Probe-startup-cdc holds user-named branch 0.3.3修复分支. Preserve it while diagnosis continues."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "0.3.3修复分支/草稿PR38：SuperWatch右侧压为两行，触发参数移入弹窗，删除原始日志面板及保存/加载按钮，配置自动本地记忆；CSV改为导出采样日志并与回放归入日志。源码5444d3a5/Web32c69bb7；GUI180、Python339、生产构建及真实浏览器模拟验证通过，见v033-superwatch-toolbar.md。间隔随已有启动事务一次应用，活动采集/独占恢复不被旧偏好覆盖。前轮三个折叠区、文件历史及共享后端修复保留。客户原环境及原始高速停采/首次离线待复测，安装继续暂缓，固件修复另开会话。"
+    "current_task": "0.3.3修复分支/草稿PR38：在线烧录紧凑排版和多算法映射完成，源码92e33221/Webee0c2024，GUI120/Python530及浏览器验证通过，见v033-online-flash-algorithms.md。用户追加授权：用本机V3/STM32F103RC工程排查在线写入100%后读线程退出、优化校验、修复SVD打包遗漏、重新打包0.3.3并覆盖安装。用户已接回目标并确认未占用，开始实际烧录诊断；不改供电或固件。前轮SuperWatch/文件历史/共享后端修复保留。"
   },
   "milestones": [
     {
@@ -39,6 +39,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "0.3.3 在线烧录算法选择与布局",
+      "result": "源码92e33221/Webee0c2024；连接折叠摘要、资源按钮、联网下载、多FLM选择及镜像地址映射。GUI120、Python530、构建通过；浏览器双分区模拟及真实内置F103RE文件解析通过。初次本地FLM目录缺失导致21项安全测试失败，基线同样失败，指定现有资产目录后全通过；未修改白名单。无物理烧录，未更新NSIS。见v033-online-flash-algorithms.md。"
+    },
     {
       "area": "0.3.3 SuperWatch工具栏与自动配置",
       "result": "源码5444d3a5/Web32c69bb7：两行44/42px；移除原始日志及保存/加载；触发弹窗、日志导出/回放菜单、本地自动偏好。GUI180、Python283+56、TypeScript/构建通过；真实浏览器模拟1600×900/1200×720验证布局、100k/10µs/触发参数刷新恢复和日志入口。启动间隔仅在已有共享启动事务首次应用，并发/资源冲突/独占恢复测试通过；不恢复旧目标地址或覆盖共享工作区。无硬件；未重建NSIS。见v033-superwatch-toolbar.md。"
@@ -66,10 +70,6 @@
     {
       "area": "0.3.2正式安装和渠道",
       "result": "v032-release-handoff.md：NSIS真实覆盖0.3.1至0.3.2、注册及载荷哈希一致；安装态CLI/MCP、36项Web字节/MIME、3.420秒lobby、8.605秒原生启动、版本日期/说明界面及正常退出通过。最终GUI914，既有Python4647/2skip，Rust21+6。五份更新签名实际验签，17个公开文件及三个渠道核对，原空间v032-official归档。Mac/Linux物理安装USB/MSC/原地更新后验，不称通过。"
-    },
-    {
-      "area": "0.3.2 V4.6.8最终收尾",
-      "result": "见v032-v4-final-closure.md。冻结b06 + V4.6.8后台升级13.148秒；Keil新启/暂停/单步/继续/退出、四路并发检查、在线并行512KiB保全427.25秒、脱机共享失败停止恢复57.842秒及OpenOCD/退出/重连完成。30MHz并行1kHz/最大目标读错+1/+273，10MHz0，旧V4.6.6原始+1/+224已更正。用户接受限制继续发布。"
     }
   ],
   "decisions": [
@@ -99,7 +99,7 @@
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。"
   ],
   "next_actions": [
-    "保留0.3.3修复分支和草稿PR38；后续新候选需包含工具栏5444d3a5/Web32c69bb7、目录分区、文件历史及worker/卷枚举/MCP/USB-only修复，交客户复测。读对应v033验证报告；重点客户Python3.12及受限AI权限。连接/设速率不要求目标板，目标操作仍须目标通信；固件修复另开会话。",
+    "当前继续0.3.3修复分支：排查用户在线烧录PROGRAM100%后read thread exited；使用已接回的V3/STM32F103RC工程实际测量下载/校验，核实并修复SVD资源打包，构建本地未签名0.3.3 NSIS并覆盖安装。用户已授权本轮安装；不发布、不合并、不改供电。新包必须包含本轮及之前全部修复。",
     "继续0.3.3修复分支：优先复现30MHz/1µs CDC底层失败和首次冷启动离线，读取候选新增Win32码/启动日志。保留草稿PR；实际覆盖安装暂缓，不宣称两个根因彻底修复。",
     "保留Mklink-AI-Probe-startup-cdc工作树；原工作区仍为主入口，候选与日志已在原.build/artifacts/v033-fixes归档。不得覆盖0.3.2正式包、标签、渠道或擅自合并。",
     "下一版排查30MHz并行目标读错/Flash偶发status5，区分固件目标访问与主机队列；保持偶发错误不断采、不误断的行为。",
