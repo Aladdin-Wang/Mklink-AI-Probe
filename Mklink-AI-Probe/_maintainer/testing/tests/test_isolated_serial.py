@@ -217,3 +217,36 @@ worker.main(['test', '115200'])
         started = time.monotonic()
         port.close()
     assert time.monotonic() - started < 3
+
+
+def test_closed_state_is_not_published_until_worker_reap_finishes(monkeypatch):
+    import threading
+    from mklink._isolated_serial import _ControlFailure
+    port = IsolatedSerial('loop://', 115200)
+    waiting, release = threading.Event(), threading.Event()
+    original_wait = port._process.wait
+    failures = []
+    def delayed_wait(*args, **kwargs):
+        waiting.set()
+        assert release.wait(3)
+        return original_wait(*args, **kwargs)
+    def missing():
+        raise _ControlFailure('reply deadline')
+    monkeypatch.setattr(port._process, 'wait', delayed_wait)
+    monkeypatch.setattr(port, '_reply', missing)
+    def send():
+        try:
+            port.write(b'once')
+        except _ControlFailure as exc:
+            failures.append(exc)
+    thread = threading.Thread(target=send)
+    thread.start()
+    try:
+        assert waiting.wait(3)
+        assert port.is_open, 'Bridge must not skip cleanup and release its port lock yet'
+    finally:
+        release.set()
+        thread.join(3)
+        port.close()
+    assert not thread.is_alive() and len(failures) == 1
+    assert not port.is_open and port._process.poll() is not None

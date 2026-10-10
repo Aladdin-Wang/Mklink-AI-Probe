@@ -53,6 +53,7 @@ class IsolatedSerial:
         self._control_operation = 'open'
         self._rx_lock = threading.Lock()
         self._command_lock = threading.Lock()
+        self._dispose_lock = threading.Lock()
         try:
             self._process = subprocess.Popen(
                 _worker_command(port, baudrate),
@@ -112,7 +113,6 @@ class IsolatedSerial:
                     data = data[count:]
                 return self._reply()
             except _ControlFailure:
-                self.is_open = False
                 self._dispose()  # Do not accept a late reply as the next command.
                 raise
             except serial.SerialException:
@@ -121,7 +121,6 @@ class IsolatedSerial:
                 # or a closed control pipe behind an unrelated write error.
                 raise
             except (OSError, ValueError) as exc:
-                self.is_open = False
                 self._dispose()
                 raise serial.SerialException(f'Serial worker write failed: {exc}') from exc
 
@@ -187,15 +186,20 @@ class IsolatedSerial:
         self._command('reset_output_buffer')
 
     def _dispose(self):
-        if self._process.poll() is None:
-            self._process.terminate()
-        try:
-            self._process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            self._process.kill()
-            self._process.wait(timeout=2)
-        for pipe in (self._process.stdin, self._process.stdout, self._process.stderr):
-            pipe.close()
+        with self._dispose_lock:
+            if self._process.poll() is None:
+                self._process.terminate()
+            try:
+                self._process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                self._process.wait(timeout=2)
+            for pipe in (self._process.stdin, self._process.stdout, self._process.stderr):
+                pipe.close()
+            # Bridge.close skips serial.close when is_open is false. Publish
+            # that state only after the worker has exited, so another thread
+            # cannot release the application port lock while it still owns IO.
+            self.is_open = False
 
     def close(self):
         try:
@@ -206,5 +210,4 @@ class IsolatedSerial:
             # must still release the port lock and reap an already-dead worker.
             pass
         finally:
-            self.is_open = False
             self._dispose()
