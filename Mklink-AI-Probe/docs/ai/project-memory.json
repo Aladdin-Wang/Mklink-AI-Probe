@@ -94,7 +94,7 @@
   ],
   "next_actions": [
     "按授权将PR35经所需CI合并main，从统一源重建签名Windows/Mac/Linux、Skill和SiteAgent，正式发布并校验三个渠道。",
-    "独立发布已验收V3.6.4/V4.6.8固件，HPMLink维持已发布4.6.0；用户最新要求原MK-Firmware同步最新，不恢复旧用户固件，旧文件保留归档备份。",
+    "独立发布已验收V3.6.4/V4.6.8固件，HPMLink按用户提供的V4.6.8发布（SHA36d004ed，未单独真机复测，不继承MicroLink V4结果）；用户最新要求原MK-Firmware同步最新，不恢复旧用户固件，旧文件保留归档备份。",
     "正式包、交接和必要原始证据回归原工作空间，核对本地与远端main后清理031、desktop-platforms及已合并固件V4-fixes工作树；不删除用户子模块改动。"
   ],
   "continuation_protocol": [
