@@ -1,0 +1,2 @@
+# Preserve the exact generated runtime bytes used in released packages.
+Mklink-AI-Probe/gui/dist/** -text whitespace=cr-at-eol
