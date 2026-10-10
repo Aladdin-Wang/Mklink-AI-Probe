@@ -95,7 +95,7 @@
         <button
           data-testid="serial-log-mode" type="button" :class="{ active: viewMode === 'log' }"
           :aria-pressed="viewMode === 'log'" :disabled="ymodemActive" @click="setViewMode('log')"
-        ><ScrollText :size="14" /><span>{{ tr('日志', 'Log') }}</span></button>
+        ><ScrollText :size="14" /><span>{{ tr('收发', 'Traffic') }}</span></button>
         <button
           data-testid="serial-terminal-mode" type="button" :class="{ active: viewMode === 'terminal' }"
           :aria-pressed="viewMode === 'terminal'" @click="setViewMode('terminal')"
@@ -322,7 +322,7 @@ function editAutomation(value: SerialAutomation): void {
 }
 const viewMode = ref<'log' | 'terminal'>('terminal')
 const logDisplayMode = ref<LogDisplayMode>('text')
-const showLogTimestamp = ref(false)
+const showLogTimestamp = ref(true)
 const logPanel = ref<InstanceType<typeof VirtualLogPanel> | null>(null)
 const terminalPanel = ref<InstanceType<typeof RttTerminalPanel> | null>(null)
 const serialSettings = ref<SerialAssistantSettings>(loadSerialAssistantSettings(localStorage))

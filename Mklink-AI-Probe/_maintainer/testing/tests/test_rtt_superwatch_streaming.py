@@ -1360,6 +1360,52 @@ def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
     assert b"cmd.dump_memory(0x20000000, 4, 0)\n" not in bridge.writes
 
 
+def test_superwatch_mux_transient_read_failure_keeps_capture_and_connection():
+    from test_mux import peer
+    from mklink.mux import packet
+    transport, commands = peer()
+    transport.handshake()
+    request = transport.request
+    def start_with_samples(op, *args, **kwargs):
+        result = request(op, *args, **kwargs)
+        if op == 0x32:
+            for seq, payload in enumerate([
+                bytes([0, 9, 1, 4]) + struct.pack('<If', 100, 1.5),
+                struct.pack('<BBI', 0, 5, 200),
+                bytes([0, 9, 1, 4]) + struct.pack('<If', 400, 2.5),
+            ], 1):
+                transport.feed(packet(0x41, 17, seq, payload))
+        return result
+    transport.request = start_with_samples
+    item = SimpleNamespace(name='value', type_name='float', size=4, address=0x20000000,
+                           source='ram', enum_values=None, metadata={})
+    bridge = SimpleNamespace(
+        supports_multiplex=lambda: True, enable_multiplex=lambda: transport,
+        _enter_stream=Mock(), _write_raw=Mock(), drain_stream_bytes=Mock(), _exit_stream=Mock(),
+    )
+    device = SimpleNamespace(_bridge=bridge, connected=True)
+    hub = StreamHub(max_batches_per_client=4)
+    manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=1)
+    manager._runtime = SimpleNamespace(items=[item], blocks=[
+        SimpleNamespace(address=0x20000000, size=4, items=[item])])
+    manager.start(device)
+    try:
+        deadline = time.monotonic() + 2
+        while manager.get_status()['read_cycles'] < 2 and time.monotonic() < deadline:
+            time.sleep(.001)
+        status = manager.get_status()
+        assert status['state'] == 'running' and status['error'] is None
+        assert status['read_cycles'] == 2 and status['read_errors'] == 1
+        assert status['stream_integrity']['firmware_read_errors'] == 1
+        assert hub.stats().produced_items == 2
+        assert device.connected and transport.watch_running
+        assert [op for op, _ in commands].count(0x32) == 1
+        assert not any(op == 0x31 for op, _ in commands)
+    finally:
+        manager.stop()
+    assert [op for op, _ in commands].count(0x31) == 1
+
+
 def test_superwatch_rejects_bridge_without_dump_stream_instead_of_read_ram_fallback():
     manager = SuperWatchStreamManager()
     manager._runtime = SuperWatchRuntime(items=[

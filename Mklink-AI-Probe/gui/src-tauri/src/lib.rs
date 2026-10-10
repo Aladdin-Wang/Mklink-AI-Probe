@@ -91,7 +91,7 @@ fn choose_sidecar_launch(
 
 fn find_bundled_sidecar() -> Option<std::path::PathBuf> {
     let directory = std::env::current_exe().ok()?.parent()?.to_path_buf();
-    let candidate = directory.join("mklink-sidecar.exe");
+    let candidate = directory.join(if cfg!(windows) { "mklink-sidecar.exe" } else { "mklink-sidecar" });
     candidate.is_file().then_some(candidate)
 }
 
@@ -400,9 +400,11 @@ fn spawn_sidecar(
     runtime_info_path: &Path,
     project_root: &str,
 ) -> Result<Child, String> {
+    #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
     use std::process::Stdio;
     // CREATE_NO_WINDOW = 0x08000000 — prevents Python console window from flashing
+    #[cfg(target_os = "windows")]
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     let (mut command, label) = match launch {
@@ -441,11 +443,10 @@ fn spawn_sidecar(
             command.env("MKLINK_STCP_LIBRARY", stcp_library);
         }
     }
+    command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
     command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|e| format!("Failed to start sidecar ({}): {}", label, e))
 }
@@ -489,6 +490,16 @@ fn spawn_registered_sidecar(
             let _ = child.wait();
         },
     )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn spawn_registered_sidecar(
+    state: &Sidecar,
+    launch: &SidecarLaunch,
+    port: u16,
+    project_root: &str,
+) -> Result<Child, String> {
+    spawn_sidecar(launch, port, &state.instance_id, &state.runtime_info_path, project_root)
 }
 
 fn request_sidecar_shutdown(port: u16, instance_id: &str) -> bool {

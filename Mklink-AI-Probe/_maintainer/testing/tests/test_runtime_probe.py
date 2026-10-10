@@ -51,6 +51,7 @@ def test_shared_firmware_upgrade_routes_bound_volumes_and_manual_fallback(probe,
     class Volumes:
         def __init__(self, probe): assert probe is selected
         def find(self, *, bootloader=False): return 'boot' if bootloader else 'application'
+        def begin_update(self): calls.append('snapshot')
     monkeypatch.setattr('mklink.probe_volumes.FirmwareVolumes', Volumes)
     def enter():
         calls.append('enter')
@@ -65,7 +66,7 @@ def test_shared_firmware_upgrade_routes_bound_volumes_and_manual_fallback(probe,
     result = client.post('/api/probe/firmware-upgrade', json=True)
     assert result.status_code == 200, result.text
     assert result.json()['status'] == ('updated' if supported else 'manual_required')
-    assert calls == [('open', 'COM9'), ('connect', {'recover_stream': False}), 'enter']
+    assert calls == ['snapshot', ('open', 'COM9'), ('connect', {'recover_stream': False}), 'enter']
     assert bridge.closed and not control.sessions and not state['resource_manager'].get_status()
 
 

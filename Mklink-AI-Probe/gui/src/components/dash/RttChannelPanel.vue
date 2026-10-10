@@ -1,5 +1,5 @@
 <template>
-  <section class="rtt-channel-panel" :data-channel="channel">
+  <section class="rtt-channel-panel" :class="{ collapsed }" :data-channel="channel">
     <header><h3>RTT {{ channel }}</h3>
       <button type="button" data-testid="channel-pause" @click="renderPaused ? onResumeRender() : onPauseRender()">{{ renderPaused ? tr('继续显示', 'Resume display') : tr('暂停显示', 'Pause display') }}</button>
       <button type="button" data-testid="channel-collapse" @click="collapsed = !collapsed">{{ collapsed ? tr('展开', 'Expand') : tr('收起', 'Collapse') }}</button>
@@ -27,7 +27,7 @@
               :aria-pressed="viewMode === 'log'" @click="setViewMode('log')"
             >
               <ScrollText :size="14" aria-hidden="true" />
-              <span>{{ tr('日志', 'Log') }}</span>
+              <span>{{ tr('收发', 'Traffic') }}</span>
             </button>
             <button
               data-testid="rtt-terminal-mode" type="button" :class="{ active: viewMode === 'terminal' }"
@@ -116,6 +116,7 @@
         :enabled="transmitEnabled" :settings="settings" :send="sendRtt"
         @settings-change="persistSettings"
       />
+      <small class="resize-hint">{{ tr('拖动右下角调整窗口大小', 'Drag the bottom-right corner to resize') }}</small>
     </div>
   </section>
 </template>
@@ -150,7 +151,7 @@ const numericChannelNames = ref<string[]>([])
 const chartEnabled = ref(true)
 const viewMode = ref<'log' | 'terminal' | 'hex'>('terminal')
 const logDisplayMode = ref<LogDisplayMode>('text')
-const showLogTimestamp = ref(false)
+const showLogTimestamp = ref(true)
 const formatHelpOpen = ref(false)
 const hasChartData = ref(false)
 const renderPaused = ref(false)
@@ -190,7 +191,21 @@ let terminalSendChain = Promise.resolve()
 
 
 function persistSettings(next: DesktopSettings) { settings.value = next }
-async function sendRtt(payload: Uint8Array): Promise<void> { await writeRtt(payload, props.channel) }
+async function sendRtt(payload: Uint8Array): Promise<void> {
+  const result = await writeRtt(payload, props.channel)
+  const sent = result.sent_bytes
+  if (!Number.isInteger(sent) || sent < 0 || sent > payload.length) throw new Error(tr('发送结果未确认', 'Send result was not confirmed'))
+  const accepted = payload.slice(0, sent)
+  const entry: VirtualLogInput = {
+    time: Date.now() / 1000, level: 'data', label: 'TX',
+    text: new TextDecoder(rttEncoding.value).decode(accepted), raw: accepted,
+  }
+  if (sent) {
+    if (renderPaused.value) pausedLines = [...pausedLines, entry].slice(-5000)
+    else logPanel.value?.append([entry])
+  }
+  if (sent !== payload.length) throw new Error(tr(`仅发送 ${sent}/${payload.length} 字节`, `Sent only ${sent}/${payload.length} bytes`))
+}
 async function onEncodingChange() {
   try {
     const response = await fetch(`${API_BASE}/api/dash/rtt/encoding`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({channel: props.channel, encoding: rttEncoding.value}) })
@@ -216,7 +231,7 @@ const scheduler = new RenderScheduler(() => {
 watch(() => logBinary.rttLines.value, batch => {
   if (!batch) return
   const lines = batch.lines.map(line => ({
-    time: line.timestampNs, level: line.level, text: line.text,
+    time: line.timestampNs, level: line.level, label: 'RX', text: line.text,
     raw: logEncoder.encode(`${line.text}\n`),
   } satisfies VirtualLogInput))
   if (renderPaused.value) pausedLines = [...pausedLines, ...lines].slice(-5000)
@@ -623,7 +638,9 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
-.rtt-channel-panel { display: flex; flex-direction: column; height: 600px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
+.rtt-channel-panel { display: flex; flex-direction: column; height: 600px; min-height: 320px; min-width: min(320px, 100%); max-width: 100%; width: 100%; box-sizing: border-box; overflow: auto; resize: both; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
+.rtt-channel-panel.collapsed { height: auto !important; min-height: 0; resize: none; }
+.resize-hint { align-self: flex-end; color: var(--muted); font-size: 11px; margin-top: 4px; padding-right: 10px; }
 header { display: flex; align-items: center; gap: 8px; }
 header h3 { flex: 1; margin: 0; font-size: 14px; }
 header button { color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: 12px var(--font-body); cursor: pointer; }

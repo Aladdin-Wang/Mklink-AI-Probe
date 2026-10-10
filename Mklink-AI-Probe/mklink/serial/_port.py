@@ -15,6 +15,7 @@ from mklink.usb_interfaces import (
     require_uart_port,
     is_mklink_usb_port,
     usb_interface_number,
+    usb_interface_numbers,
 )
 
 
@@ -23,12 +24,13 @@ from mklink.usb_interfaces import (
 # ---------------------------------------------------------------------------
 def is_mklink_port(port: str) -> bool:
     """判断指定 COM 口是否为 MKLink 命令接口。"""
-    for info in serial.tools.list_ports.comports():
+    ports = list(serial.tools.list_ports.comports())
+    for info, number in zip(ports, usb_interface_numbers(ports)):
         if canonical_serial_port(info.device) != canonical_serial_port(port):
             continue
         return (
             is_mklink_usb_port(info)
-            and usb_interface_number(info) == MKLINK_COMMAND_INTERFACE
+            and number == MKLINK_COMMAND_INTERFACE
         )
     return False
 
@@ -36,10 +38,11 @@ def is_mklink_port(port: str) -> bool:
 def list_uart_ports() -> list[dict]:
     """列出通用串口，排除 MKLink 命令接口和身份不明的接口。"""
     results: list[dict] = []
-    for info in serial.tools.list_ports.comports():
+    ports = list(serial.tools.list_ports.comports())
+    for info, number in zip(ports, usb_interface_numbers(ports)):
         is_command = (
             is_mklink_usb_port(info)
-            and usb_interface_number(info) in (None, MKLINK_COMMAND_INTERFACE)
+            and number in (None, MKLINK_COMMAND_INTERFACE)
         )
         if not is_command:
             results.append({

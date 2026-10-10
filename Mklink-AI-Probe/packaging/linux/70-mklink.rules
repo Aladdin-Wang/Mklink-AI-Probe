@@ -1,0 +1,3 @@
+# MKLink CMSIS-DAP USB and CDC interfaces. Active local seat access only.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0d28", ATTR{idProduct}=="0202", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0d28", ATTRS{idProduct}=="0202", MODE="0660", GROUP="dialout", TAG+="uaccess"

@@ -29,7 +29,7 @@ def test_flash_requires_exact_high_profile_ack(hz, hpm):
         _ctx=SimpleNamespace(swd_clock_hz=1_000_000))
     MKLinkFlash(bridge).set_swd_clock(hz)
     assert bridge._ctx.swd_clock_hz == hz
-    bridge.send_command.return_value = f'set clock {hz}\n'
+    bridge.send_command.side_effect = [f'set clock {hz}\n', 'set clock 1000000']
     with pytest.raises(FlashError, match='restored 1 MHz'):
         MKLinkFlash(bridge).set_swd_clock(hz)
     assert bridge._ctx.swd_clock_hz == 1_000_000

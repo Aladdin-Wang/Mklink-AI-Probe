@@ -1,4 +1,4 @@
-"""Identity-bound Windows MSC discovery. Labels/drive letters never identify a probe."""
+"""Identity-bound MSC discovery. Labels/mount names never identify a probe."""
 from __future__ import annotations
 
 import ctypes
@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 
 
 def usb_ancestor(instance_id):
@@ -33,9 +34,14 @@ def usb_ancestor(instance_id):
     return None
 
 
-def volume_inventory():
+def volume_inventory(*, firmware=False):
     if os.name != 'nt':
-        raise RuntimeError('Identity-bound MSC discovery is currently supported on Windows only')
+        from mklink.posix_probe_volumes import macos_volume_inventory, linux_volume_inventory
+        if sys.platform == 'darwin':
+            return macos_volume_inventory(firmware=True) if firmware else macos_volume_inventory()
+        if sys.platform.startswith('linux'):
+            return linux_volume_inventory(firmware=True) if firmware else linux_volume_inventory()
+        raise RuntimeError('USB volume discovery is unavailable on this operating system')
     script = Path(__file__).with_name('windows_probe_volumes.ps1')
     powershell = shutil.which('pwsh') or shutil.which('powershell.exe')
     if not powershell:
@@ -61,6 +67,16 @@ def volume_inventory():
     return rows
 
 
+def validated_volume_root(row):
+    if row.get('platform') in ('darwin', 'linux'):
+        from mklink.posix_probe_volumes import validate_mount
+        if not validate_mount(row):
+            raise RuntimeError('Verified USB volume is no longer mounted; no disk selected')
+    elif not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', row['root'], re.I):
+        raise RuntimeError('A stable Windows volume GUID is required')
+    return row['root']
+
+
 def resolve_volume(probe_id):
     from mklink.probes import select_probe
     probe = select_probe(probe_id)
@@ -72,48 +88,63 @@ def resolve_volume(probe_id):
     if len(matches) != 1:
         raise RuntimeError('Bound probe must have exactly one verified MICROKEEN volume; no disk selected')
     row = matches[0]
-    # Volume GUID paths remain tied to the volume if Windows reuses a drive letter.
-    if not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', row['root'], re.I):
-        raise RuntimeError('A stable Windows volume GUID is required')
-    return {'probe_id': probe_id, 'root': row['root'], 'drive': row['drive'], 'verified': True}
+    return {'probe_id': probe_id, 'root': validated_volume_root(row), 'drive': row['drive'], 'verified': True}
 
 
 class FirmwareVolumes:
-    """Retain USB identity while CDC disappears during a UF2 update.
+    """Follow the selected application disk, then its newly appearing UF2 disk.
 
-    V3/V4 application descriptors expose OTP words 88/89 (16 hex chars);
-    MicroLink/HPMLink UF2 descriptors expose words 88..91 (32 hex chars).
-    Never identify the bootloader by label, drive letter or enumeration order.
+    CHERRYUF2 is the dedicated upgrade label. Old bootloaders may have broken
+    or missing serial descriptors, so their serial is not an admission gate.
+    Exclude pre-existing upgrade volumes and reject multiple new candidates.
+    Ordinary offline target files still use resolve_volume's strict identity.
     """
     def __init__(self, probe):
-        if not probe['identity_stable']:
-            raise RuntimeError('Firmware update requires a unique USB serial number')
-        self.identity = (probe['vid'], probe['pid'], probe['serial_number'].casefold())
+        self.identity = ((probe['vid'], probe['pid'], probe['serial_number'].casefold())
+                         if probe.get('identity_stable') and probe.get('serial_number') else None)
+        self._existing_boot_roots = set()
 
-    def find(self, *, bootloader=False):
-        def matches(row):
-            identity = row.get('usb_identity')
-            if not identity:
-                return False
-            if identity == self.identity:
-                return True
-            return (bootloader and identity[:2] == self.identity[:2] == (0x0d28, 0x0202)
-                    and re.fullmatch('[0-9a-f]{16}', self.identity[2]) is not None
-                    and re.fullmatch('[0-9a-f]{32}', identity[2]) is not None
-                    and identity[2][:16] == self.identity[2])
-        rows = [row for row in volume_inventory() if matches(row)]
-        if len(rows) != 1:
+    @staticmethod
+    def _boot_root(row):
+        label = (row.get('label') or '').strip().upper()
+        if label not in {'CHERRYUF2', 'MICROKEEN'}:
             return None
-        root = rows[0]['root']
-        if not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', root, re.I):
-            return None
-        if bootloader:
+        try:
+            root = validated_volume_root(row)
             try:
                 info = (Path(root) / 'INFO_UF2.TXT').read_text(encoding='utf-8', errors='replace')
-            except OSError:
+            except FileNotFoundError:
+                info = ''  # Older CHERRYUF2 firmware need not expose a marker.
+            board = re.search(r'(?m)^Board-ID:\s*([^\r\n]+)', info)
+            if board and board[1].strip() != 'MicroKeenLink':
                 return None
-            if not re.search(r'(?m)^Board-ID:\s*MicroKeenLink\s*$', info):
-                return None
-        elif rows[0].get('label') != 'MICROKEEN':
+            if label == 'MICROKEEN' and not board:
+                return None  # An ordinary data disk is not an upgrade disk.
+            return root
+        except (OSError, RuntimeError):
             return None
-        return root
+
+    def begin_update(self):
+        # Snapshot just before sending the reboot command, not before a slow
+        # download. A different probe already in UF2 mode must never be chosen.
+        self._existing_boot_roots = {
+            root for row in volume_inventory(firmware=True)
+            if (root := self._boot_root(row)) is not None
+        }
+
+    def find(self, *, bootloader=False):
+        rows = volume_inventory(firmware=True)
+        if bootloader:
+            roots = [root for row in rows if (root := self._boot_root(row)) is not None
+                     and root not in self._existing_boot_roots]
+            return roots[0] if len(roots) == 1 else None
+        rows = [row for row in rows if (row.get('label') or '').strip().upper() == 'MICROKEEN']
+        if self.identity is not None:
+            # Keep the pre-reboot source/model tied to the selected application.
+            rows = [row for row in rows if row.get('usb_identity') == self.identity]
+        if len(rows) != 1:
+            return None
+        try:
+            return validated_volume_root(rows[0])
+        except RuntimeError:
+            return None

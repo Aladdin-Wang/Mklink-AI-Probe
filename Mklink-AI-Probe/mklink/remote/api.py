@@ -1365,6 +1365,7 @@ def create_app(
                 try:
                     async with _exclusive_probe_control("config-clock") as (device, _):
                         await run_in_threadpool(device._flash.set_swd_clock, parsed_swd_clock)
+                        device.clock_warning = None
                 except FlashError as error:
                     raise HTTPException(status_code=422, detail=str(error)) from error
         save_config(_state["project_root"], config)
@@ -1898,6 +1899,7 @@ def create_app(
             "axf_loaded": bool(getattr(device, "_dwarf_info", None)),
             "elf_backend": device.axf_status.get("elf_backend"),
             "target_initializing": True,
+            "clock_warning": getattr(device, "clock_warning", None),
         }
 
     @app.post("/api/device/disconnect")
@@ -1916,6 +1918,7 @@ def create_app(
             "idcode": hex(dev.idcode) if dev.connected else None,
             "port": dev.port,
             "axf": dev.axf_status,
+            "clock_warning": getattr(dev, "clock_warning", None),
         }
 
     @app.get("/api/probe/firmware-check")

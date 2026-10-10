@@ -42,6 +42,16 @@ const symbolCatalog = useSymbolCatalog()
 
 const activeSection = ref<ConfigSection>('local')
 const config = ref<ProjectConfig>({})
+// Keep the stored/API value in Hz; only the editable presentation uses MHz.
+const swdClockMhz = computed({
+  get: () => config.value.swd_clock ? String(Number(config.value.swd_clock) / 1_000_000) : '',
+  set: (value: string | number) => {
+    const text = String(value).trim()
+    const hz = Number(text) * 1_000_000
+    const rounded = Math.round(hz)
+    config.value.swd_clock = text ? String(Math.abs(hz - rounded) < 0.000001 ? rounded : hz) : ''
+  },
+})
 const localPort = ref('')
 const portOptions = ref<{ label: string; value: string }[]>([])
 const localPortExplicit = ref(false)
@@ -458,6 +468,9 @@ onUnmounted(() => {
         <div v-if="deviceStatus.connected && deviceStatus.port" class="connection-detail" data-testid="connected-port">
           {{ tr('当前串口：', 'Connected port: ') }}{{ deviceStatus.port }}
         </div>
+        <p v-if="deviceStatus.connected && deviceStatus.clock_warning" role="status" data-testid="clock-warning">
+          {{ tr('已连接，当前使用 1 MHz。固件未确认所选高速档位，请升级下载器固件后重新设置速率。', 'Connected at 1 MHz. The probe did not confirm the selected high-speed profile. Update its firmware before selecting the speed again.') }}
+        </p>
 
         <div class="form-row">
           <label class="form-label" for="local-port">{{ tr('串口', 'Serial Port') }}</label>
@@ -484,18 +497,18 @@ onUnmounted(() => {
         </div>
 
         <div class="form-row">
-          <label class="form-label" for="swd-clock">{{ tr('SWD 时钟', 'SWD Clock') }}</label>
+          <label class="form-label" for="swd-clock">{{ tr('SWD 时钟 (MHz)', 'SWD Clock (MHz)') }}</label>
           <input
             id="swd-clock"
-            v-model="config.swd_clock"
+            v-model="swdClockMhz"
             type="number"
-            min="1"
-            max="30000000"
-            step="1"
+            min="0.000001"
+            max="30"
+            step="any"
             class="form-input"
             data-testid="swd-clock"
             :disabled="savingLocal"
-            :placeholder="tr('如 1000000', 'e.g. 1000000')"
+            :placeholder="tr('如 1、10、20、30', 'e.g. 1, 10, 20, 30')"
             @change="saveLocalConfig"
           />
         </div>

@@ -117,7 +117,7 @@ describe('RttViewTab binary migration', () => {
     mocks.dash.start.mockResolvedValue(true)
     mocks.dash.stop.mockResolvedValue(true)
     mocks.api.findRtt.mockResolvedValue({ found: true, addr: '0x20001A40' })
-    mocks.api.writeRtt.mockResolvedValue({ sent_bytes: 1 })
+    mocks.api.writeRtt.mockImplementation(async data => ({ sent_bytes: data.length }))
     mocks.api.setRttEncoding.mockImplementation(async encoding => ({ encoding }))
     mocks.status = { running: false, numeric_channels: [], down_buffers: [] }
     vi.stubGlobal('localStorage', new MemoryStorage())
@@ -175,7 +175,7 @@ describe('RttViewTab binary migration', () => {
 
   it('renders each channel once with a fixed send destination', async () => {
     mocks.status = { running: true, channels: [2, 5], down_buffers: [{ channel: 2, active: true }, { channel: 5, active: true }] }
-    mocks.api.writeRtt.mockResolvedValue({})
+    mocks.api.writeRtt.mockImplementation(async data => ({ sent_bytes: data.length }))
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await flushPromises()
     expect(wrapper.findAll('[data-channel="2"]')).toHaveLength(1)
@@ -185,6 +185,24 @@ describe('RttViewTab binary migration', () => {
     const payload = new Uint8Array([10])
     await panel.findComponent({ name: 'RttTransmitBar' }).props('send')(payload)
     expect(mocks.api.writeRtt).toHaveBeenCalledWith(payload, 5)
+    await vi.waitFor(() => expect(panel.get('.virtual-log-level').text()).toBe('TX'))
+    expect(panel.get('.virtual-log-time').text()).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3}$/)
+    wrapper.unmount()
+  })
+
+  it('records only bytes accepted by RTT and leaves failed sends out of traffic', async () => {
+    mocks.status = { running: true, channels: [0], down_buffers: [{ channel: 0, active: true }] }
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const panel = wrapper.findComponent({ name: 'RttChannelPanel' })
+    const send = panel.findComponent({ name: 'RttTransmitBar' }).props('send')
+    mocks.api.writeRtt.mockResolvedValueOnce({ sent_bytes: 2 })
+    await expect(send(new TextEncoder().encode('ABCD'))).rejects.toThrow()
+    await vi.waitFor(() => expect(panel.text()).toContain('AB'))
+    expect(panel.text()).not.toContain('ABCD')
+    mocks.api.writeRtt.mockRejectedValueOnce(new Error('offline'))
+    await expect(send(new TextEncoder().encode('failed-message'))).rejects.toThrow('offline')
+    expect(panel.text()).not.toContain('failed-message')
     wrapper.unmount()
   })
 
@@ -365,7 +383,7 @@ describe('RttViewTab binary migration', () => {
     await wrapper.get('[data-testid="rtt-save-log"]').trigger('click')
 
     expect(wrapper.get('[data-testid="rtt-0-log-text"]').attributes('aria-pressed')).toBe('true')
-    expect((wrapper.get('[data-testid="rtt-0-log-timestamp"]').element as HTMLInputElement).checked).toBe(false)
+    expect((wrapper.get('[data-testid="rtt-0-log-timestamp"]').element as HTMLInputElement).checked).toBe(true)
     expect(mocks.saveBlobFile).toHaveBeenCalledWith('rtt-0-test.log', expect.any(Blob))
     const saved = mocks.saveBlobFile.mock.calls[0][1] as Blob
     expect(new TextDecoder().decode(await saved.arrayBuffer())).toBe('ready\n')

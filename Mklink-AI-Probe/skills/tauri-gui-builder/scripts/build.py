@@ -25,6 +25,24 @@ from tempfile import TemporaryDirectory
 IS_WINDOWS = platform.system() == "Windows"
 
 
+def native_target():
+    system = platform.system()
+    machine = platform.machine().lower()
+    architecture = {"amd64": "x86_64", "x86_64": "x86_64", "arm64": "aarch64", "aarch64": "aarch64"}.get(machine)
+    suffix = {"Windows": "pc-windows-msvc", "Darwin": "apple-darwin", "Linux": "unknown-linux-gnu"}.get(system)
+    if not architecture or not suffix:
+        raise RuntimeError(f"Unsupported native build host: {system}/{machine}")
+    return f"{architecture}-{suffix}"
+
+
+def sidecar_filename():
+    return "mklink-sidecar.exe" if IS_WINDOWS else "mklink-sidecar"
+
+
+def staged_sidecar_path():
+    return TAURI_DIR / "binaries" / (f"mklink-sidecar-{native_target()}" + (".exe" if IS_WINDOWS else ""))
+
+
 def cargo_target_dir():
     configured = os.environ.get("CARGO_TARGET_DIR")
     return Path(configured).resolve() if configured else TAURI_DIR / "target"
@@ -166,11 +184,11 @@ def build_web_assets():
 def build_sidecar(force=False):
     """Build Python sidecar exe with PyInstaller."""
     sidecar_dir = TAURI_DIR / "binaries"
-    sidecar_exe = sidecar_dir / "mklink-sidecar-x86_64-pc-windows-msvc.exe"
+    sidecar_exe = staged_sidecar_path()
     work_root = Path(os.environ["MKLINK_BUILD_WORK_DIR"]) / "pyinstaller"
     work_root.mkdir(parents=True, exist_ok=True)
     dist_dir = work_root / "dist"
-    built = dist_dir / "mklink-sidecar.exe"
+    built = dist_dir / sidecar_filename()
 
     if force:
         sidecar_exe.unlink(missing_ok=True)
@@ -220,6 +238,12 @@ def build_sidecar(force=False):
             ])
         else:
             print("[WARN] Local built-in algorithm assets are unavailable; bundle omitted")
+        if not IS_WINDOWS:
+            library = "libmklink-stcp.dylib" if platform.system() == "Darwin" else "libmklink-stcp.so"
+            native_library = SKILL_DIR / "native" / "stcp_bridge" / "build" / library
+            if not native_library.is_file():
+                raise RuntimeError(f"Native STCP library is required: {native_library}")
+            builtin_args.extend(["--add-binary", f"{native_library}{os.pathsep}."])
         run([
             sys.executable, "-m", "PyInstaller",
             "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",
@@ -500,7 +524,7 @@ def main():
     cargo_bin = Path.home() / ".cargo" / "bin"
     env_path = os.environ.get("PATH", "")
     if str(cargo_bin) not in env_path:
-        os.environ["PATH"] = f"{env_path};{cargo_bin}"
+        os.environ["PATH"] = f"{env_path}{os.pathsep}{cargo_bin}"
 
     if args.clean:
         clean()

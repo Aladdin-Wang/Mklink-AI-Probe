@@ -2854,7 +2854,7 @@ class SuperWatchStreamManager:
             "write_events": write_events,
             "read_cycles": self._completed_read_cycles,
             "read_drops": self._dropped_read_cycles,
-            "read_errors": self._read_errors,
+            "read_errors": self._read_errors + self._stream_integrity.get('firmware_read_errors', 0),
             "actual_rate": round(self._actual_rate, 6),
             "binary_drops": {
                 "batches": self._binary_dropped_batches,

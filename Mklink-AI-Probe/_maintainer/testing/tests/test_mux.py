@@ -404,7 +404,7 @@ def test_watch_compact_batch_preserves_values_and_microsecond_wrap():
     assert watch.samples == 2
 
 
-@pytest.mark.parametrize('status', [1, 2, 3, 4, 5, 6, 8, 255])
+@pytest.mark.parametrize('status', [1, 2, 3, 4, 6, 8, 255])
 def test_watch_target_error_stops_instead_of_silently_discarding_forever(status):
     transport, calls = peer()
     transport.handshake()
@@ -418,6 +418,111 @@ def test_watch_target_error_stops_instead_of_silently_discarding_forever(status)
     assert watch.samples == 0
     assert watch.gaps == 1
     assert len(calls) == previous_commands  # No target replay or implicit reset.
+
+
+@pytest.mark.parametrize('packed', [False, True])
+def test_watch_transient_read_error_preserves_valid_samples_and_subscription(packed):
+    transport, calls = peer()
+    transport.handshake()
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .001)
+    watch.start()
+    commands = list(calls)
+    events = [bytes([0, 9, 1, 4]) + struct.pack('<II', 100, 11),
+              struct.pack('<BBI', 0, 5, 101),
+              bytes([0, 9, 1, 4]) + struct.pack('<II', 900, 22)]
+    for seq, event in enumerate(events, 1):
+        transport.feed(packet(0x41, 17, seq, event))
+    frames = watch.read_frames(packed=packed)
+    assert [f.timestamp_us if packed else f['timestamp_us'] for f in frames] == [100, 900]
+    values = [struct.unpack_from('<I', f.payload, f.offset)[0] if packed
+              else struct.unpack('<I', f['regions'][0][1])[0] for f in frames]
+    assert values == [11, 22]  # The failed sample is never interpolated or zero-filled.
+    assert watch.samples == 2 and watch.gaps == watch.read_errors == 1
+    assert transport.watch_running and calls == commands
+    assert watch._read_failure_since is None
+
+
+def test_watch_continuous_read_failure_times_out_even_if_firmware_goes_silent(monkeypatch):
+    from types import SimpleNamespace
+    clock = [10.0]
+    monkeypatch.setattr('mklink.mux_watch.time', SimpleNamespace(monotonic=lambda: clock[0]))
+    transport, calls = peer()
+    transport.handshake()
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .001)
+    watch.start()
+    transport.feed(packet(0x41, 17, 1, struct.pack('<BBI', 0, 5, 100)))
+    assert watch.read_frames() == []
+    clock[0] = 12.99
+    transport.feed(packet(0x41, 17, 2, struct.pack('<BBI', 0, 5, 200)))
+    assert watch.read_frames() == []
+    clock[0] = 13.0
+    commands = list(calls)
+    with pytest.raises(RuntimeError, match='failed continuously.*status 5'):
+        watch.read_frames()
+    assert calls == commands and watch.read_errors == 2
+
+
+def test_watch_valid_complete_sample_resets_failure_window(monkeypatch):
+    from types import SimpleNamespace
+    clock = [0.0]
+    monkeypatch.setattr('mklink.mux_watch.time', SimpleNamespace(monotonic=lambda: clock[0]))
+    transport, _ = peer()
+    transport.handshake()
+    watch = MuxWatchSession(transport, [(0x20000000, 8), (0x20001000, 4)], .001)
+    watch.start()
+    seq = 0
+    def feed(index, status, data=b''):
+        nonlocal seq
+        seq += 1
+        transport.feed(packet(0x41, 17, seq, struct.pack('<BBI', index, status, seq) + data))
+    feed(0, 0, b'12345678')
+    feed(1, 5)
+    assert watch.read_frames() == []
+    clock[0] = 2.9
+    feed(1, 0, b'abcd')  # An orphaned part cannot recover an incomplete sample.
+    assert watch.read_frames() == []
+    assert watch._read_failure_since == 0
+    feed(0, 0, b'87654321')
+    feed(1, 0, b'efgh')
+    assert watch.read_frames()[0]['regions'] == [(0, b'87654321'), (1, b'efgh')]
+    clock[0] = 100
+    assert watch.read_frames() == []  # Healthy silence is not a fabricated read failure.
+    feed(0, 5)
+    assert watch.read_frames() == []
+    assert watch._read_failure_since == 100
+
+
+def test_watch_slow_sampling_allows_next_scheduled_sample(monkeypatch):
+    from types import SimpleNamespace
+    clock = [0.0]
+    monkeypatch.setattr('mklink.mux_watch.time', SimpleNamespace(monotonic=lambda: clock[0]))
+    transport, _ = peer()
+    transport.handshake()
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], 10)
+    watch.start()
+    transport.feed(packet(0x41, 17, 1, struct.pack('<BBI', 0, 5, 100)))
+    assert watch.read_frames() == []
+    clock[0] = 10
+    transport.feed(packet(0x41, 17, 2, struct.pack('<BBI', 0, 0, 10000100) + b'abcd'))
+    assert len(watch.read_frames()) == 1
+
+
+@pytest.mark.parametrize('failure', ['dap', 'transport'])
+def test_watch_transient_recovery_never_masks_invalidation_or_transport_failure(failure):
+    transport, _ = peer()
+    transport.handshake()
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .001)
+    watch.start()
+    transport.feed(packet(0x41, 17, 1, struct.pack('<BBI', 0, 5, 100)))
+    assert watch.read_frames() == []
+    if failure == 'dap':
+        transport.feed(packet(0x41, 17, 2, struct.pack('<BBI', 0, 7, 101)))
+        with pytest.raises(RuntimeError, match='DAP changed'):
+            watch.read_frames()
+    else:
+        transport.fail('USB disconnected')
+        with pytest.raises(MuxError, match='USB disconnected'):
+            watch.read_frames()
 
 
 @pytest.mark.parametrize('payload', [bytes([0,9,0,4,0,0]), bytes([0,9,128,4,0,0]),

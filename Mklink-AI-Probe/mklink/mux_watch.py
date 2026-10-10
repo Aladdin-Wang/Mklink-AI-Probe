@@ -1,6 +1,7 @@
 """Adapt bounded multiplex watch events to the existing SuperWatch decoder."""
 import math
 import struct
+import time
 from typing import NamedTuple
 
 
@@ -35,6 +36,11 @@ class MuxWatchSession:
         self._clock_high = 0
         self.samples = 0
         self.gaps = 0
+        self.read_errors = 0
+        self._read_failure_since = None
+        # A read error is not a transport disconnect. Allow subsequent scheduled
+        # samples to recover, including slow configurations and batched delivery.
+        self._read_failure_timeout = max(3.0, self.period / 1000000 * 3 + 0.5)
 
     def start(self):
         # DumpMemoryStreamSession validates capacity before opening transport.
@@ -50,14 +56,28 @@ class MuxWatchSession:
 
     def read_frames(self, *, packed=False):
         result = []
+        now = time.monotonic()
         # Keep decoding/publication bursts below the bounded RX queue's time
         # budget. Draining 64 KiB expands into thousands of Python sample
         # objects and can stall the next drain long enough to overflow it.
         for event in self.transport.drain(0x41, 255, max_bytes=16384):
+            if len(event) < 6:
+                raise RuntimeError('Invalid multiplex watch event')
             index, status = event[:2]
             if status == 7:
                 self._pending = []
                 raise RuntimeError('DAP changed the target; SuperWatch capture was invalidated. Restart capture after debugging.')
+            if status == 5:
+                if len(event) != 6 or index >= len(self.parts):
+                    raise RuntimeError('Invalid multiplex watch read-error event')
+                self._pending = []
+                self.gaps += 1
+                self.read_errors += 1
+                if self._read_failure_since is None:
+                    self._read_failure_since = now
+                # Firmware retains the subscription. Do not replay commands,
+                # reset the target, lower its clock or publish stale/zero values.
+                continue
             if status and status != 9:
                 self._pending = []
                 self.gaps += 1
@@ -70,6 +90,7 @@ class MuxWatchSession:
                         or len(event) != 4+stride*event[2]):
                     raise RuntimeError('Invalid multiplex watch batch')
                 self._pending = []
+                self._read_failure_since = None
                 for offset in range(4, len(event), stride):
                     timestamp = struct.unpack_from('<I', event, offset)[0]
                     if packed:
@@ -98,7 +119,16 @@ class MuxWatchSession:
             for (logical, _, _), data in zip(self.parts, self._pending):
                 regions[logical].extend(data)
             self._pending = []
+            self._read_failure_since = None
             result.append(self._frame(timestamp, [(i, bytes(data)) for i, data in enumerate(regions)]))
+        if (self._read_failure_since is not None
+                and now - self._read_failure_since >= self._read_failure_timeout
+                and not result):
+            raise RuntimeError(
+                f'SuperWatch target read failed continuously (status 5); '
+                f'no valid sample for {self._read_failure_timeout:g}s. Capture stopped; '
+                'check the target connection, selected addresses and sampling debug speed.'
+            )
         return result
 
     def _frame(self, timestamp, regions):

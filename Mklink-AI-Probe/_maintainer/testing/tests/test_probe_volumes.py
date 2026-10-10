@@ -2,38 +2,73 @@ import pytest
 from mklink import probe_volumes as volumes
 
 
-@pytest.mark.parametrize('serial,expected', [
-    ('0123456789abcdef', True), ('0123456789abcdef1111222233334444', True),
-    ('0123456789abcdee1111222233334444', False), ('0123456789abcdef12', False),
-])
-def test_firmware_bootloader_uses_exact_or_documented_uid_mapping(monkeypatch, serial, expected):
+@pytest.mark.parametrize('serial', ['0123456789abcdef', '0123456789abcdef1111222233334444',
+                                  '000000123456789abcdef11112222333', 'legacy-serial', ''])
+@pytest.mark.parametrize('marker', ['', 'UF2 Bootloader\r\nBoard-ID: MicroKeenLink\r\n'])
+def test_firmware_bootloader_uses_dedicated_label_without_serial_gate(monkeypatch, serial, marker):
     from pathlib import Path
     root = '\\\\?\\Volume{11111111-1111-1111-1111-111111111111}\\'
-    row = {'usb_identity': (0xd28, 0x202, serial), 'root': root, 'label': 'UF2'}
-    monkeypatch.setattr(volumes, 'volume_inventory', lambda: [row])
-    monkeypatch.setattr(Path, 'read_text', lambda self, **kw: 'UF2 Bootloader\r\nBoard-ID: MicroKeenLink\r\n')
+    row = {'usb_identity': (0xd28, 0x202, serial) if serial else None, 'root': root, 'label': 'CHERRYUF2'}
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda **kw: [row])
+    def read_marker(self, **kw):
+        if not marker: raise FileNotFoundError()
+        return marker
+    monkeypatch.setattr(Path, 'read_text', read_marker)
     binding = volumes.FirmwareVolumes({'identity_stable': True, 'vid': 0xd28, 'pid': 0x202,
                                       'serial_number': '0123456789ABCDEF'})
-    assert binding.find(bootloader=True) == (root if expected else None)
+    assert binding.find(bootloader=True) == root
     assert binding.find() is None
 
 
-def test_firmware_bootloader_never_uses_another_or_ambiguous_disk(monkeypatch):
+@pytest.mark.parametrize('serial', ['0123456789abcdef1111222233334444',
+                                   '000000123456789abcdef11112222333'])
+def test_firmware_bootloader_never_uses_another_or_ambiguous_disk(monkeypatch, serial):
     from pathlib import Path
     root = '\\\\?\\Volume{11111111-1111-1111-1111-111111111111}\\'
-    row = {'usb_identity': (0xd28, 0x202, '0123456789abcdef1111222233334444'), 'root': root}
+    row = {'usb_identity': (0xd28, 0x202, serial), 'root': root, 'label': 'CHERRYUF2'}
     rows = [row, dict(row)]
-    monkeypatch.setattr(volumes, 'volume_inventory', lambda: rows)
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda **kw: rows)
     monkeypatch.setattr(Path, 'read_text', lambda self, **kw: 'Board-ID: MicroKeenLink\n')
     binding = volumes.FirmwareVolumes({'identity_stable': True, 'vid': 0xd28, 'pid': 0x202,
                                       'serial_number': '0123456789abcdef'})
     assert binding.find(bootloader=True) is None
     rows.pop()
+    row['label'] = 'Ordinary data'
+    assert binding.find(bootloader=True) is None
+    row['label'] = 'CHERRYUF2'
     row['root'] = 'G:\\'  # reused drive letters are never accepted
     assert binding.find(bootloader=True) is None
     row['root'] = root
     monkeypatch.setattr(Path, 'read_text', lambda self, **kw: 'Board-ID: OtherBoard\n')
     assert binding.find(bootloader=True) is None
+
+
+def test_firmware_upgrade_excludes_preexisting_uf2_and_ambiguous_new_disks(monkeypatch):
+    from pathlib import Path
+    def row(n):
+        return {'label': 'CHERRYUF2', 'root': '\\\\?\\Volume{' + str(n) * 8 + '-1111-1111-1111-111111111111}\\'}
+    old, new, other = row(1), row(2), row(3)
+    rows = [old]
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda **kw: rows)
+    monkeypatch.setattr(Path, 'read_text', lambda *a, **kw: '')
+    binding = volumes.FirmwareVolumes({'identity_stable': False})
+    binding.begin_update()
+    assert binding.find(bootloader=True) is None
+    rows.append(new)
+    assert binding.find(bootloader=True) == new['root']
+    rows.append(other)
+    assert binding.find(bootloader=True) is None
+
+
+def test_normal_firmware_disk_uses_identity_when_available_and_unique_label_otherwise(monkeypatch):
+    root = '\\\\?\\Volume{11111111-1111-1111-1111-111111111111}\\'
+    rows = [{'label': 'MICROKEEN', 'root': root, 'usb_identity': (0xd28, 0x202, 'other')}]
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda **kw: rows)
+    assert volumes.FirmwareVolumes({'identity_stable': False}).find() == root
+    binding = volumes.FirmwareVolumes({'identity_stable': True, 'vid': 0xd28, 'pid': 0x202, 'serial_number': 'selected'})
+    assert binding.find() is None
+    rows.append(dict(rows[0]))
+    assert volumes.FirmwareVolumes({'identity_stable': False}).find() is None
 
 
 def test_volume_binding_uses_full_usb_identity_and_stable_volume_path(monkeypatch):

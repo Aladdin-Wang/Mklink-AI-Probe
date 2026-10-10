@@ -1,6 +1,6 @@
 ---
 name: tauri-gui-builder
-description: Maintainer-only workflow to build and qualify the Mklink AI Probe Tauri v2 Windows app, bundled Python sidecar, and standard NSIS installer. Invoke explicitly in a source checkout; never use for ordinary end-user GUI startup or hardware debugging.
+description: Maintainer-only workflow to build and qualify the Mklink AI Probe Tauri v2 desktop app, bundled Python sidecar, Windows NSIS and native macOS/Linux packages. Invoke explicitly in a source checkout; never use for ordinary end-user GUI startup or hardware debugging.
 ---
 
 # Mklink AI Probe Tauri Builder
@@ -55,6 +55,34 @@ Outputs:
 - updater signature: `.build/cache/cargo/release/bundle/nsis/*.exe.sig`
 
 These paths are relative to the main checkout, shared across worktrees.
+
+### Native macOS / Linux candidates
+
+Run `scripts/build_workspace.ps1` with `python` and argument
+`skills/tauri-gui-builder/scripts/build_unix.py` on the target OS/architecture.
+The `desktop-unix.yml` workflow builds Apple Silicon and Intel DMGs and Linux
+x64 DEB/AppImage packages. It bundles the native frozen `mklink-sidecar` and
+STCP shared library, without requiring Python on the user's machine. Linux
+DEB includes narrowly scoped USB/tty udev rules; the AppImage artifact includes
+the same rules as a separate file for the user's system administrator.
+
+`_maintainer/testing/desktop_unix_smoke.py <target>` checks packaged backend
+CLI/MCP, Web assets, health and shutdown. This is package-content qualification,
+not interactive installation, native WebView or USB hardware acceptance.
+Mac candidate bundles use ad-hoc signing only and are not Developer ID notarized.
+Candidate building does not authorize signing an update, merging or publishing.
+
+Native candidates also contain updater payloads: macOS `.app.tar.gz`, Linux
+AppImage and DEB. `build-manifest.json` declares `darwin-aarch64`,
+`darwin-x86_64`, `linux-x86_64-appimage`, and `linux-x86_64-deb` keys. Candidates
+remain unsigned. Once publication/signing is explicitly authorized, sign each
+payload with the existing Tauri updater key and pass all three build manifests
+to `prepare_release.py --desktop-manifest ...` (repeat for each target). The
+preparer requires matching source/version, hashes, and nonempty adjacent `.sig`
+files. The publisher validates and includes these platform entries in both
+update indexes. Never use a DMG as the updater payload or an AppImage for a DEB
+installation. Extracted payload qualification does not prove a signed in-place
+upgrade; retain that boundary in release evidence.
 
 `--bundle` must force a fresh PyInstaller sidecar and collect:
 
