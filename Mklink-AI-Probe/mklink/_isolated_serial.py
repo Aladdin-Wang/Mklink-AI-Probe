@@ -100,8 +100,13 @@ class IsolatedSerial:
                         raise serial.SerialException('Serial worker input closed')
                     data = data[count:]
                 return self._reply()
+            except serial.SerialException:
+                # Worker errors already identify the failed transport operation.
+                # SerialException is also an OSError; do not hide a USB timeout
+                # or a closed control pipe behind an unrelated write error.
+                raise
             except (OSError, ValueError) as exc:
-                raise serial.SerialException('Serial worker write failed') from exc
+                raise serial.SerialException(f'Serial worker write failed: {exc}') from exc
 
     def _drain(self):
         if not self.is_open:

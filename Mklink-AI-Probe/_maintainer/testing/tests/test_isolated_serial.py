@@ -69,3 +69,18 @@ def test_frozen_worker_uses_internal_executable_contract(monkeypatch):
     monkeypatch.setattr(sys, 'executable', 'D:/MKLink/mklink-sidecar.exe')
     assert _worker_command('COM42', 115200) == [
         'D:/MKLink/mklink-sidecar.exe', '--internal-serial-worker', 'COM42', '115200']
+
+
+def test_worker_command_preserves_reported_transport_error(monkeypatch):
+    port = IsolatedSerial('loop://', 115200)
+    failure = serial.SerialTimeoutException('Write timeout')
+    try:
+        def failed_reply():
+            raise failure
+        with monkeypatch.context() as patch:
+            patch.setattr(port, '_reply', failed_reply)
+            with pytest.raises(serial.SerialTimeoutException) as caught:
+                port.write(b'x')
+            assert caught.value is failure
+    finally:
+        port.close()
