@@ -84,3 +84,33 @@ def test_worker_command_preserves_reported_transport_error(monkeypatch):
             assert caught.value is failure
     finally:
         port.close()
+
+
+def test_dead_receiver_rejects_writes_and_resets_but_allows_clean_close(monkeypatch):
+    import sys
+    from mklink import _isolated_serial
+    script = '''
+from mklink import _serial_worker as worker
+import serial
+class Port:
+    in_waiting = 0
+    def read(self, size): raise serial.SerialException('injected CDC failure (WinError 31)')
+    def write(self, data): raise AssertionError('write reached dead receiver')
+    def reset_input_buffer(self): raise AssertionError('reset resurrected dead receiver')
+    def cancel_read(self): pass
+    def close(self): pass
+worker.serial.serial_for_url = lambda *a, **kw: Port()
+worker.main(['test', '115200'])
+'''
+    monkeypatch.setattr(_isolated_serial, '_worker_command', lambda *args: [sys.executable, '-c', script])
+    port = IsolatedSerial('test', 115200)
+    try:
+        with pytest.raises(serial.SerialException, match='WinError 31'):
+            collect(port, 1)
+        with pytest.raises(serial.SerialException, match='WinError 31'):
+            port.write(b'never replay')
+        with pytest.raises(serial.SerialException, match='WinError 31'):
+            port.reset_input_buffer()
+    finally:
+        port.close()
+    assert port._process.poll() is not None

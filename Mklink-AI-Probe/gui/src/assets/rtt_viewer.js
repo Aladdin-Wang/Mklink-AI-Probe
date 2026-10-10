@@ -911,6 +911,10 @@ function superwatchErrorMessage(message, name) {
 
 function syncDashboardStatus(d) {
   if (!d) return;
+  if (Object.prototype.hasOwnProperty.call(d, 'error')) {
+    acquisitionError = typeof d.error === 'string' ? d.error : '';
+    renderBinaryHealth();
+  }
   if (IS_SUPERWATCH_MODE && Array.isArray(d.write_events)) {
     superwatchWriteEvents = d.write_events.slice(-128);
     superwatchWriteEvents.forEach(function(event) {
@@ -1008,6 +1012,7 @@ function updateCollectionUI(state) {
 function setDeviceConnected(connected) {
   if (typeof CONFIG !== 'undefined') CONFIG.deviceConnected = connected;
   updateCollectionUI(collectionState);
+  renderBinaryHealth();
 }
 if (typeof window !== 'undefined') {
   if (!window.__waveformViewers) window.__waveformViewers = {};
@@ -3448,22 +3453,34 @@ function resetBinaryStream() {
   if (triggerSettings.enabled) armTrigger();
 }
 
+var lastBinaryHealth = null;
+var acquisitionError = '';
 function updateBinaryHealth(health) {
+  if (!IS_BINARY_WAVEFORM_MODE || !health) return;
+  lastBinaryHealth = health;
+  renderBinaryHealth();
+}
+
+function renderBinaryHealth() {
+  var health = lastBinaryHealth;
   if (!IS_BINARY_WAVEFORM_MODE || !health) return;
   var stateBadge = document.getElementById('transport-state-badge');
   var healthBadge = document.getElementById('transport-health-badge');
   var phase = String(health.phase || 'stopped');
   if (stateBadge) {
-    stateBadge.textContent = 'transport ' + phase +
+    var deviceOffline = CONFIG.deviceConnected === false;
+    var failure = acquisitionError || health.error;
+    stateBadge.textContent = t('view_channel') + ' ' + phase +
       (health.reconnectDelayMs ? ' (' + health.reconnectDelayMs + ' ms)' : '') +
-      (health.error ? ': ' + String(health.error) : '');
+      (deviceOffline ? ' · ' + t('device_disconnected') : '') +
+      (failure ? ': ' + String(failure) : '');
     stateBadge.className = 'badge ' + (
+      failure ? 'badge-err' : deviceOffline ? 'badge-warn' :
       phase === 'connected' ? 'badge-ok' :
       phase === 'error' ? 'badge-err' :
       phase === 'stopped' ? 'badge-info' : 'badge-warn'
     );
-    if (health.error) stateBadge.title = String(health.error);
-    else stateBadge.removeAttribute('title');
+    stateBadge.title = t('view_channel_tip') + (failure ? '\n' + String(failure) : '');
   }
   if (healthBadge) {
     var transportDroppedBatches = Math.max(0, Number(health.transportDroppedBatches) || 0);

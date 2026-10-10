@@ -761,6 +761,24 @@ describe('WaveformViewer VOFA binary transport', () => {
     } finally { runtime.cleanup() }
   })
 
+  it('keeps a CDC acquisition failure visible while the view socket is connected', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.updateBinaryHealth({ phase: 'connected' })
+      runtime.probe.syncStatus({ state: 'stopped', error: 'CDC queued read failed (WinError 31)' })
+      runtime.viewer.setDeviceConnected(false)
+      runtime.viewer.updateBinaryHealth({ phase: 'connected', error: null, bufferedSamples: 300 })
+      const badge = document.getElementById('transport-state-badge')!
+      expect(badge.textContent).toContain('CDC queued read failed')
+      expect(badge.className).toContain('badge-err')
+      runtime.probe.syncStatus({ state: 'running', error: null })
+      expect(badge.className).toContain('badge-warn')
+      runtime.viewer.setDeviceConnected(true)
+      expect(badge.className).toContain('badge-ok')
+      expect(badge.textContent).not.toContain('CDC queued read failed')
+    } finally { runtime.cleanup() }
+  })
+
   it('does not accumulate global listeners when resizing waveform history', async () => {
     const runtime = await loadRttViewerRuntime()
     const listener = vi.spyOn(window, 'addEventListener')

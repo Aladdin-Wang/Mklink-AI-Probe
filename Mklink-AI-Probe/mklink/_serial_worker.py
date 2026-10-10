@@ -63,8 +63,10 @@ class _WindowsReadQueue:
         count = api.DWORD()
         ok = api.ReadFile(self._port._port_handle, buffer, len(buffer),
                           ctypes.byref(count), ctypes.byref(ov))
-        if not ok and api.GetLastError() != api.ERROR_IO_PENDING:
-            raise serial.SerialException('Cannot queue CDC read')
+        if not ok:
+            error = api.GetLastError()
+            if error != api.ERROR_IO_PENDING:
+                raise serial.SerialException(f'Cannot queue CDC read (WinError {error}: {ctypes.FormatError(error).strip()})')
         slot[2] = True
 
     def read(self):
@@ -78,9 +80,10 @@ class _WindowsReadQueue:
                                      ctypes.byref(count), True)
         slot[2] = False
         if not ok:
-            if self._closed and api.GetLastError() == api.ERROR_OPERATION_ABORTED:
+            error = api.GetLastError()
+            if self._closed and error == api.ERROR_OPERATION_ABORTED:
                 return b''
-            raise serial.SerialException('CDC queued read failed')
+            raise serial.SerialException(f'CDC queued read failed (WinError {error}: {ctypes.FormatError(error).strip()})')
         data = buffer.raw[:count.value]
         with self._lock:
             if not self._closed:
@@ -137,6 +140,7 @@ def main(arguments=None):
     read_lock = threading.Lock()
     pending = queue.Queue(maxsize=1024)  # at most 16 MiB, then explicit backpressure
     epoch = 0
+    receive_error = []
     reader = None
     try:
         if sys.platform == 'win32' and hasattr(port, '_port_handle'):
@@ -151,7 +155,13 @@ def main(arguments=None):
             while not stopped.is_set():
                 with read_lock:
                     generation = epoch
-                    data = reader.read() if reader else port.read(min(4096, port.in_waiting) or 1)
+                    try:
+                        data = reader.read() if reader else port.read(min(4096, port.in_waiting) or 1)
+                    except Exception as exc:
+                        # The control thread must never reset or write to a port
+                        # whose sole receiver has already failed.
+                        receive_error.append(str(exc))
+                        raise
                 if data:
                     while not stopped.is_set():
                         try:
@@ -189,6 +199,8 @@ def main(arguments=None):
             try:
                 command = json.loads(line)
                 op = command['op']
+                if receive_error and op != 'close':
+                    raise serial.SerialException(receive_error[0])
                 if op == 'write':
                     reply({'result': port.write(base64.b64decode(command['data']))})
                 elif op == 'flush':
@@ -196,6 +208,8 @@ def main(arguments=None):
                     reply({'result': None})
                 elif op == 'reset_input_buffer':
                     with read_lock:
+                        if receive_error:
+                            raise serial.SerialException(receive_error[0])
                         epoch += 1
                         if reader:
                             reader.reset()

@@ -12,7 +12,7 @@ pytestmark = pytest.mark.skipif(sys.platform != 'win32', reason='Windows CDC API
 def native_reads(monkeypatch):
     from serial import win32
     state = SimpleNamespace(pending={}, events=set(), next_event=1, error=0,
-                            posts=0, resets=0, fail_at=None)
+                            posts=0, resets=0, fail_at=None, read_error=None)
 
     def create(*args):
         event = state.next_event
@@ -33,6 +33,9 @@ def native_reads(monkeypatch):
 
     def result(handle, ptr, count, wait):
         buffer, data, cancelled = state.pending.pop(ptr._obj.hEvent)
+        if state.read_error:
+            state.error = state.read_error
+            return False
         if cancelled:
             count._obj.value = 0
             state.error = win32.ERROR_OPERATION_ABORTED
@@ -98,3 +101,30 @@ def test_partial_initialization_failure_cancels_all_submitted_requests(native_re
     with pytest.raises(serial.SerialException, match='queue CDC read'):
         _WindowsReadQueue(state.port)
     assert not state.pending and not state.events
+
+
+@pytest.mark.parametrize('code', [31, 121, 995, 1167])
+def test_read_failure_preserves_native_code_without_reposting(native_reads, code):
+    import serial
+    from mklink._serial_worker import _WindowsReadQueue
+    reader = _WindowsReadQueue(native_reads.port)
+    native_reads.read_error = code
+    with pytest.raises(serial.SerialException, match=f'WinError {code}'):
+        reader.read()
+    assert native_reads.posts == 8 and len(native_reads.pending) == 7
+    reader.close()
+    assert not native_reads.pending and not native_reads.events
+
+
+def test_expected_cancel_during_completion_does_not_report_failure(native_reads, monkeypatch):
+    from serial import win32
+    from mklink._serial_worker import _WindowsReadQueue
+    reader = _WindowsReadQueue(native_reads.port)
+    complete = win32.GetOverlappedResult
+    def cancel_then_complete(*args):
+        reader.cancel()
+        return complete(*args)
+    monkeypatch.setattr(win32, 'GetOverlappedResult', cancel_then_complete)
+    assert reader.read() == b''
+    reader.close()
+    assert not native_reads.pending and not native_reads.events

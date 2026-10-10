@@ -5,6 +5,8 @@ import {
   applyReportedBackendPort,
   restartRuntimeBackend,
   runtimeBackendPort,
+  refreshRuntimeEndpoint,
+  backendStartupError,
 } from '../lib/runtimeEndpoint'
 
 /** 'starting' = backend not yet checked / currently booting */
@@ -43,7 +45,7 @@ async function refreshHealth() {
   if (alive) {
     backendState.value = 'alive'
     firstCheckDone = true
-  } else if (firstCheckDone || authenticationRequired.value) {
+  } else if (firstCheckDone || authenticationRequired.value || backendStartupError.value) {
     // Network startup failures get a grace period; a 401 needs action immediately.
     backendState.value = 'dead'
   }
@@ -51,12 +53,11 @@ async function refreshHealth() {
 }
 
 async function checkViaTauri(): Promise<boolean> {
-  try {
-    const alive = await (window as any).__TAURI__.invoke('backend_alive')
-    return !!alive && await checkBackendHealth()
-  } catch {
-    return await checkBackendHealth()
-  }
+  // Events can be missed during WebView initialization or a proxy restart.
+  // Always resolve this window's owned endpoint through the supported v2 IPC,
+  // never keep probing port zero or an obsolete proxy address indefinitely.
+  if (!await refreshRuntimeEndpoint()) return false
+  return await checkBackendHealth()
 }
 
 function startHealthPolling(intervalMs = 5000) {
@@ -99,6 +100,10 @@ async function restart(): Promise<void> {
         await restartRuntimeBackend()
       } catch (e) {
         console.error('[useBackendHealth] restart failed:', e)
+        backendStartupError.value = String(e)
+        backendState.value = 'dead'
+        firstCheckDone = true
+        return
       }
     }
     // Endpoint publication can precede HTTP readiness by a short interval.
@@ -133,6 +138,7 @@ export function useBackendHealth() {
     backendState,
     sharedRuntime,
     authenticationRequired,
+    backendStartupError,
     backendPort: runtimeBackendPort,
     isTauri: IS_TAURI,
     startHealthPolling,
