@@ -5,8 +5,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 
 # MKLink 用户入口
 
-仅用于设备及目标 MCU 工程，不读仓库交接、Git 状态、维护
-Skill 或发布流程；按需读参考页。
+用于设备及目标 MCU 工程，不读仓库交接、Git 状态、维护或发布流程；按需读参考页。
 
 ## 开始前
 

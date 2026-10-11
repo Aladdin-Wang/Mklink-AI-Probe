@@ -9,6 +9,25 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.3.4', date: '2026-10-11',
+    summary: '改善采集启动、变量写入与下载器切换',
+    summaryEn: 'Improve capture startup, variable writes and probe switching',
+    changes: [
+      '优化已知地址的 RTT 搜索与校验，改善 RTT、SuperWatch 和 SystemView 启动及并行采集。',
+      '修复外设选择在应用重启后失效导致无法连接下载器的问题。',
+      '同一窗口切换下载器复用原后台，另开客户端使用独立后台，采集跟随当前下载器。',
+      '断开或切换时自动停止采集、清理旧目标会话；已有硬件操作先完成收尾，共享 AI 和页面自动同步。',
+      'SuperWatch 变量写入以设备写应答为准，取消回读比较，避免运行中的变量变化被误报为失败。',
+    ],
+    changesEn: [
+      'Optimize RTT search and validation at known addresses, and improve RTT, SuperWatch and SystemView startup and concurrent capture.',
+      'Fix stale peripheral selections preventing probe connections after application restarts.',
+      'Reuse the current backend when switching probes in one window; separate clients use independent backends and capture follows the selected probe.',
+      'Automatically stop capture and retire old target sessions on disconnect or switch, after admitted hardware operations finish; shared AI clients and pages synchronize.',
+      'Acknowledge SuperWatch variable writes without readback comparison, so target-side changes do not produce false write failures.',
+    ],
+  },
+  {
     version: '0.3.3', date: '2026-10-10',
     summary: '共享连接、SuperWatch 布局与烧录资源修复',
     summaryEn: 'Shared connections, SuperWatch layout and programming resources',

@@ -1025,14 +1025,19 @@ def test_rtt_encoding_routes_validate_and_update_the_shared_manager():
     managers["rtt"].set_encoding.assert_called_once_with("gbk")
 
 
-def test_disconnect_stops_only_mklink_dashboards_and_preserves_serial_resources():
+def test_disconnect_stops_only_mklink_dashboards_and_preserves_serial_resources(monkeypatch):
+    from mklink.remote import dashboards
     from mklink.remote.resource_manager import ResourceGroup
 
-    managers = {
-        name: SimpleNamespace(running=name in ("rtt", "serial", "modbus"), start=MagicMock(), stop=MagicMock())
-        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
-    }
-    managers["rtt"].stop.side_effect = lambda: setattr(managers["rtt"], "running", False)
+    # Disconnect now retires target histories and stream hubs as well as workers.
+    # Exercise real target managers so this covers that lifecycle contract.
+    monkeypatch.setattr(dashboards, "_managers", {})
+    managers = dashboards.get_managers()
+    for name in ("serial", "modbus"):
+        managers[name] = SimpleNamespace(running=True, start=MagicMock(), stop=MagicMock())
+    original = dict(managers)
+    original["rtt"]._running = True
+    original["rtt"].stop = MagicMock(wraps=original["rtt"].stop)
     client, state = _dashboard_client(managers)
     device = MagicMock()
     device.connected = True
@@ -1046,9 +1051,16 @@ def test_disconnect_stops_only_mklink_dashboards_and_preserves_serial_resources(
 
     response = client.post("/api/device/disconnect")
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     device.close.assert_called_once()
-    managers["rtt"].stop.assert_called_once_with()
+    original["rtt"].stop.assert_called_once_with()
+    assert not original["rtt"].running
+    for name in dashboards.BRIDGE_DASHBOARD_TYPES:
+        assert managers[name] is not original[name]
+        assert not managers[name].running
+    assert state["device_generation"] == 1
+    assert managers["serial"] is original["serial"]
+    assert managers["modbus"] is original["modbus"]
     managers["serial"].stop.assert_not_called()
     managers["modbus"].stop.assert_not_called()
     status = state["resource_manager"].get_status()
