@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-11T21:38:38+08:00`
-- 分支：`codex/0.3.4-fixes`
-- HEAD：`0.3.4 candidate source 63e167147656, Web cea309bc, Site Agent metadata 4745ae08, test fixture dc510df6; final evidence-only commit follows. Inspect Git for exact tip.`
-- 远端 HEAD：`microkeen/codex/0.3.4-fixes; base microkeen/main 271af444. Verify current tip with Git.`
-- 工作树：Original workspace, codex/0.3.4-fixes / PR40; formal publication now explicitly authorized and in progress.
-- 当前任务：维护者已明确授权覆盖本地安装、更新本地Skill、正式发布0.3.4，含必要PR整合和既有密钥签名。候选NSIS已从0.3.3覆盖安装成功，正在验证安装后运行。远端CI仅Modbus异常类型断言失败：pymodbus3.16将串口OSError包装为ConnectionException，测试兼容两类传输错误而保持恢复设置、一次请求、失败终止断言，3.13/3.16各15通过。待精确头CI通过后合并、最终源重建、签名及渠道发布。
-- 状态：`in_progress`
+- 更新时间：`2026-10-11T23:05:48+08:00`
+- 分支：`codex/0.3.4-release-handoff`
+- HEAD：`Official v0.3.4 source a8fd3fab0403; follow-up handoff/Web commit follows. Inspect Git for exact tip.`
+- 远端 HEAD：`microkeen/main after PR40; immutable release tag a8fd3fab0403.`
+- 工作树：Official publication completed; follow-up handoff and preserved generated Web assets through PR.
+- 当前任务：0.3.4正式发布、本地实际覆盖安装和Skill更新完成。PR40合并源a8fd3fab0403；17附件、5更新签名、3渠道索引均核对。最终已安装包CLI/MCP/Web/原生窗口/退出、F103原ELF双下载器切换/采集中24写入5766周期零错误通过。Gitee Skill已真实镜像并验证GitHub不可达回退；Windows因Gitee单附件100MB限制被拒，使用GitHub链接；其他平台仅GitHub。详见v034-release-handoff.md。Mac/Linux物理USB及原地升级后验边界保留。
+- 状态：`verified`
 
 ## 里程碑
 
-- **0.3.4 采集与下载器切换修复** — `verified`。源ddda89c5/4c1227b9/50eb6c52，Web504e690d；采集启动与稳定外设ID保留，最终改为窗口持有固定后台、原地切换探针。先前跨后台跳转方案被用户明确否定并取代。双实物/生产Web验证通过；PR40待整合，未发布或安装器验收。
+- **0.3.4正式版** — `complete`。PR40，源a8fd3fab0403；实际覆盖安装/Skill更新、五份更新验签、三平台原生CI38144587775、三渠道正式发布完成。后续交接与正式Web另走PR，标签不移动。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
 - **0.3.1正式版** — `complete`。PR33合并，源1d61159d；签名NSIS/Skill/SiteAgent与三端索引完成，最终提取包检查通过。见v031-release-handoff.md。
@@ -23,7 +23,7 @@
 
 ## 验证证据
 
-- **0.3.4 发布准备与体积审计**：候选源63e167147656，Web cea309bc，清单4745ae08、夹具dc510df6。NSIS176582099字节，仅比0.3.3多24730；2299资源逐字节一致，Pack引用/SHA/许可/CRC通过。Python第二轮4794通过2跳过2失败4准备错误，修正版本清单及事件夹具后受影响126全通过，合计4800通过2跳过；GUI两轮941通过。Windows冻结CLI/MCP/38 Web文件、独立数据目录原生窗口及退出通过；三平台native CI38140979596全成功。真机双探针同后台切换和双后台隔离均通过，24次写应答/5667周期0错误。Skill98101931字节资源完整。提取包检查不等于NSIS实装/覆盖升级；未发布，详见v034-release-preparation.md。
+- **0.3.4 正式发布与本地升级**：最终源a8fd3fab0403；正式NSIS176582092字节，实装载荷哈希匹配；冻结CLI/MCP/38 Web文件/原生窗口及退出通过。F103双探针固定后台、采集中24写应答、5766周期零读错误通过；SystemView54字节仅证生命周期。三平台native CI38144587775、五份签名实际验签、17附件匿名下载及三渠道索引、本地Skill逐文件/CLI/MCP通过。见v034-release-handoff.md，早期准备与体积审计证据仍保留原报告。
 - **0.3.4 明确断开与切换自动收尾**：源34834d08/5f4b9728，协议52，生产Web已构建。830项相关Python通过，随后队列/SDK115、最后迟到请求71通过；87项GUI/TypeScript/构建通过。V3/F103原ELF、30MHz/1ms、RTT+Watch双AI订阅直接断开成功；共享AI下采集中切到第二只、旧会话拒绝，AI断开和SDK A→B→A均保持后台身份。最终代码再次完整真机复核通过且读错误0。两个真实页面自动同步断开/切换，额外页已关。SystemView短程54字节/0解码事件，AI断开成功，仅证明生命周期不宣称解码性能。异步烧录和迟到请求用确定性夹具覆盖，未中断实物烧录。见v034-explicit-connection-control.md。
 - **0.3.4 SuperWatch取消回读校验**：源267b175f及其生产Web。旧版真实复现自增变量写入readback mismatch并停止采集。385项Python、72项GUI、TypeScript和生产构建通过。V3.6.4/F103原ELF、30MHz/1ms两波形+RTT，24次写入应答全部成功，4450周期零读错误、RTT31行；独立测试读确认静态字变化再恢复，70605周期零读错误。真实浏览器动态变量写12后显示已写入且运行中，最新GUI保留。旧SW01/HPM仅源码及模拟协议验证，无新固件修改。见v034-superwatch-write.md。
 - **0.3.4 窗口固定后台与原地切换**：源50eb6c52/Web504e690d。Python全量初跑4771通过/2跳过，1旧参数断言失败及4缺FLM资源夹具错误；更新断言后相关1177通过，最后双页面保护29通过。指定既有本地资源后干净实包5通过，冻结后台用runtime_id发现后复用新实包重跑1通过。GUI全量938通过/2旧导航夹具失败，补充状态及换目标清空表单断言后2通过，最终940项覆盖；生产构建通过。两只实物、两个独立代理/Web：A→B→A后台身份不变，RTT+Watch及Trace运行中切换清空旧目标。独立窗口占用B时拒绝切入而A采集继续；双方释放/接手均不重启后台。最终代码再次A→B→A保持PID/端口。原位置ELF5365变量；3秒RTT30行/Watch283周期读错误0，Trace14093事件。B无目标板。保留一最终WebGUI供用户测试。见v034-window-owned-backend.md。
@@ -47,21 +47,21 @@
 
 ## 真机环境
 
-- **state**：0.3.4冻结候选：V3/F103原工程Obj ELF，30MHz/1ms两波形+RTT，24次写入应答、5667周期0读错误；同后台双探针切换、旧AI失效、物理断开及两个独立后台隔离均通过。第二只无目标板。SystemView首轮6230事件，末轮54字节0事件仅证生命周期。测试后台正常退出，已恢复最新0.3.4生产WebGUI连接第一只原板，采集停止。未复制工程、改供电或升级探针固件。
-- **installer**：0.3.4未签名NSIS候选已构建，提取包Windows-only PATH、冻结CLI/MCP/生产Web/原生WebView/退出通过；尚未实际NSIS安装或覆盖升级。0.3.3既有实装证据保留，不能替代0.3.4新验收。
+- **state**：最终0.3.4已安装程序：V3/F103原工程ELF，30MHz/1ms，24写应答/5766周期零读错误、RTT47行；双探针同后台切换/旧AI失效/共享采集断开通过，最终SystemView54字节仅证生命周期。未改供电或探针固件。测试后台正常退出。
+- **installer**：正式0.3.4主线NSIS已实际覆盖安装，退出0，安装载荷哈希与正式包匹配；原生窗口/Web显示a8fd3fab0403，CLI/MCP/资源/正常退出及真机复核通过。
 - **backups**：原Git根.build/artifacts/v033-official保存17正式文件、archive-manifest及qualification（含候选实装/F103、正式冻结/签名/渠道/Skill证据）；旧0.3.2正式归档及用户备份保持。F盘保留共享缓存；联接测试目录和旧安装器占用文件不强删。
 
 ## 下一动作
 
-1. 完成实际安装验收及PR40精确头CI，合并clean main后重建最终签名载荷，更新本地正式安装和Skill，验证所有发布附件后最后更新渠道索引。
+1. 0.3.4已正式发布。合入本次交接与保存的正式Web资源后继续原工作空间维护；已运行AI进程需重启加载本地0.3.4 Skill。保留客户现场/跨平台实物验证边界。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
-4. 检查 Gitee 镜像容量与可达性；缺失附件沿用 GitHub 兜底，不宣称国内镜像完整。历史联接/占用目录留人工处理。
+4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史联接/占用目录留人工处理。
 5. 收集 Mac/Linux USB/MSC 和原地升级反馈、外置 Flash 多算法实物验证；完整 SES/芯片/拔插断电组合仍待补充。供电每次确认具体电压，长期验证仍暂停。
 
 ## 已知限制
 
-- 原始30MHz/1µs CDC失败、首次启动离线和客户F405 PROGRAM100%后读线程退出仍未复现；诊断与保护不等于根因闭环。客户Python3.12/受限AI/GD32仍待复测。F103校验约0.30秒无显著加速；外置Flash多FLM缺少实物验证。历史unknown任务不得改判或重放。0.3.3候选曾覆盖安装；0.3.4当前仅完成提取包原生运行验收，不能继承为新安装通过。 本轮修复可复现的RTT主机缺陷；两客户版本/目标ELF/IDE占用尚不全，未证明所有后续MUX超时同根因，按新增opcode/request/epoch继续核实。
+- 原始30MHz/1µs CDC失败、首次启动离线和客户F405 PROGRAM100%后读线程退出仍未复现；诊断与保护不等于根因闭环。客户Python3.12/受限AI/GD32仍待复测。F103校验约0.30秒无显著加速；外置Flash多FLM缺少实物验证。历史unknown任务不得改判或重放。0.3.4正式主线包现已实际覆盖安装并完成运行及真机复核。 本轮修复可复现的RTT主机缺陷；两客户版本/目标ELF/IDE占用尚不全，未证明所有后续MUX超时同根因，按新增opcode/request/epoch继续核实。
 - V4.6.8 30MHz RTT8/Watch4/UART并行目标读错1kHz +1、最大+273；10MHz0。旧V4.6.6原始+1/+224，报告此前漏记已更正。采集不停止、不误断、UART完整；用户明确继续发布，限制交接下版处理，不写公开发布说明。
 - HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4/V4.6.8仿真中新启采集及负载读回通过，V4.6.8已完成Keil及相关矩阵。详见release handoff；长期目标暂停。
 - 性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。
