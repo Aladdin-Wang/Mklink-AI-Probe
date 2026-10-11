@@ -6,13 +6,33 @@ The maintainer's latest 2026-09-15 policy removes mandatory second-person
 approval for all PRs. No temporary approval change or restoration is needed.
 Explicit merge/publication authorization, diff review, required CI and release
 qualification remain mandatory; see `docs/ai/repository-governance.md`.
-The application publisher sends identical signed assets and immutable tags to
-MicroKeen, legacy Aladdin-Wang GitHub, and the existing Gitee repository. It
-does not push source branches. See `docs/ai/repository-governance.md` before publication.
+The application publisher sends identical signed assets to MicroKeen and legacy
+Aladdin-Wang GitHub, and immutable tags to both GitHub repositories and Gitee.
+Gitee attachment scope follows the maintainer policy below. The publisher does
+not push source branches. See `docs/ai/repository-governance.md` before publication.
 
 GitHub is the primary source and collaboration repository. Gitee mirrors the
 official release for users who cannot access GitHub, but Gitee synchronization
 is performed only by the maintainer or maintainer-controlled CI.
+
+## Gitee Attachment Policy (0.3.4)
+
+The maintainer requests Windows NSIS and Skill ZIP on Gitee; other platform
+packages, signatures, Site Agent and integrity files stay on GitHub. Gitee's
+automatically generated tag source archives are not uploaded release payloads.
+
+For 0.3.4, Gitee rejected the 176582092-byte NSIS with HTTP 400 and the explicit
+reason that the file exceeds 100 MB. Its update index therefore uses the verified
+GitHub installer URL. The 98690236-byte Skill ZIP is actually hosted on Gitee;
+do not substitute a GitHub URL for this fallback, because AI clients need it when
+GitHub is unreachable. Verify the live Gitee Skill download and its size/hash,
+and exercise the installed updater with GitHub manifest requests unavailable.
+
+The generic publisher currently needs a maintainer-controlled adapter for this
+Gitee selection and the documented installer size rejection. The exact 0.3.4
+adapter and evidence are in the release qualification archive. Do not run its
+unmodified all-assets Gitee loop or treat every HTTP 400 as a size-limit error.
+See `docs/verification/v034-release-handoff.md` for the completed release.
 
 ## Authority And Secrets
 
@@ -122,11 +142,13 @@ The publisher verifies clean reviewed `main`, version agreement, source commit, 
 asset set, sizes, and hashes. It then:
 
 1. pushes only the immutable annotated version tag to both GitHub repositories and Gitee;
-2. creates or verifies all three Releases and uploads the same seven public files;
-3. anonymously downloads GitHub assets and the Gitee installer/Skill, verifying size and SHA-256;
+2. creates or verifies all three Releases, uploads the complete required asset set
+   to both GitHub repositories, and applies the Gitee attachment policy above;
+3. anonymously downloads GitHub assets and actual Gitee mirrors, verifying size and SHA-256;
 4. publishes indexes last: MicroKeen `release/latest.json`, legacy GitHub
    `updates/latest.json`, and unchanged Gitee `updates/latest.json`. GitHub
-   manifests point to MicroKeen release assets; Gitee uses its own mirror URLs.
+   manifests point to MicroKeen release assets; Gitee uses its own Skill URL and
+   the verified available installer URL under the policy above.
 
 0.2.0 clients retain their old endpoints and discover the compatibility index.
 The installed 0.2.1 application and Skill contain MicroKeen as their primary

@@ -1,26 +1,26 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-11T21:38:38+08:00",
+  "updated_at": "2026-10-11T23:05:48+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/0.3.4-fixes",
-    "head": "0.3.4 candidate source 63e167147656, Web cea309bc, Site Agent metadata 4745ae08, test fixture dc510df6; final evidence-only commit follows. Inspect Git for exact tip.",
-    "remote_head": "microkeen/codex/0.3.4-fixes; base microkeen/main 271af444. Verify current tip with Git.",
-    "working_tree": "Original workspace, codex/0.3.4-fixes / PR40; formal publication now explicitly authorized and in progress."
+    "branch": "codex/0.3.4-release-handoff",
+    "head": "Official v0.3.4 source a8fd3fab0403; follow-up handoff/Web commit follows. Inspect Git for exact tip.",
+    "remote_head": "microkeen/main after PR40; immutable release tag a8fd3fab0403.",
+    "working_tree": "Official publication completed; follow-up handoff and preserved generated Web assets through PR."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
-    "status": "in_progress",
-    "current_task": "维护者已明确授权覆盖本地安装、更新本地Skill、正式发布0.3.4，含必要PR整合和既有密钥签名。候选NSIS已从0.3.3覆盖安装成功，正在验证安装后运行。远端CI仅Modbus异常类型断言失败：pymodbus3.16将串口OSError包装为ConnectionException，测试兼容两类传输错误而保持恢复设置、一次请求、失败终止断言，3.13/3.16各15通过。待精确头CI通过后合并、最终源重建、签名及渠道发布。"
+    "status": "verified",
+    "current_task": "0.3.4正式发布、本地实际覆盖安装和Skill更新完成。PR40合并源a8fd3fab0403；17附件、5更新签名、3渠道索引均核对。最终已安装包CLI/MCP/Web/原生窗口/退出、F103原ELF双下载器切换/采集中24写入5766周期零错误通过。Gitee Skill已真实镜像并验证GitHub不可达回退；Windows因Gitee单附件100MB限制被拒，使用GitHub链接；其他平台仅GitHub。详见v034-release-handoff.md。Mac/Linux物理USB及原地升级后验边界保留。"
   },
   "milestones": [
     {
-      "name": "0.3.4 采集与下载器切换修复",
-      "status": "verified",
-      "notes": "源ddda89c5/4c1227b9/50eb6c52，Web504e690d；采集启动与稳定外设ID保留，最终改为窗口持有固定后台、原地切换探针。先前跨后台跳转方案被用户明确否定并取代。双实物/生产Web验证通过；PR40待整合，未发布或安装器验收。"
+      "name": "0.3.4正式版",
+      "status": "complete",
+      "notes": "PR40，源a8fd3fab0403；实际覆盖安装/Skill更新、五份更新验签、三平台原生CI38144587775、三渠道正式发布完成。后续交接与正式Web另走PR，标签不移动。"
     },
     {
       "name": "0.3.3正式版",
@@ -50,8 +50,8 @@
   ],
   "verification": [
     {
-      "area": "0.3.4 发布准备与体积审计",
-      "result": "候选源63e167147656，Web cea309bc，清单4745ae08、夹具dc510df6。NSIS176582099字节，仅比0.3.3多24730；2299资源逐字节一致，Pack引用/SHA/许可/CRC通过。Python第二轮4794通过2跳过2失败4准备错误，修正版本清单及事件夹具后受影响126全通过，合计4800通过2跳过；GUI两轮941通过。Windows冻结CLI/MCP/38 Web文件、独立数据目录原生窗口及退出通过；三平台native CI38140979596全成功。真机双探针同后台切换和双后台隔离均通过，24次写应答/5667周期0错误。Skill98101931字节资源完整。提取包检查不等于NSIS实装/覆盖升级；未发布，详见v034-release-preparation.md。"
+      "area": "0.3.4 正式发布与本地升级",
+      "result": "最终源a8fd3fab0403；正式NSIS176582092字节，实装载荷哈希匹配；冻结CLI/MCP/38 Web文件/原生窗口及退出通过。F103双探针固定后台、采集中24写应答、5766周期零读错误通过；SystemView54字节仅证生命周期。三平台native CI38144587775、五份签名实际验签、17附件匿名下载及三渠道索引、本地Skill逐文件/CLI/MCP通过。见v034-release-handoff.md，早期准备与体积审计证据仍保留原报告。"
     },
     {
       "area": "0.3.4 明确断开与切换自动收尾",
@@ -95,12 +95,12 @@
     "测试工程直接在用户指定原目录修改和构建，直接使用其 build/keil/Obj ELF，不再复制工程到其他目录；用户允许任意测试修改，不要求备份还原。详细硬件路径仅留本地。 用户明确要求SuperWatch变量写入取消回读校验，只认写应答；不取消烧录或显式内存校验，不掩盖真实写失败，不自动重放。 用户取消共享客户端/采集对断开与切换的拒绝：明确请求必须自动收尾处理。同后台PID固定，旧目标请求不得跨设备，MCP disconnect物理断开、detach只退出自身。"
   ],
   "hardware": {
-    "state": "0.3.4冻结候选：V3/F103原工程Obj ELF，30MHz/1ms两波形+RTT，24次写入应答、5667周期0读错误；同后台双探针切换、旧AI失效、物理断开及两个独立后台隔离均通过。第二只无目标板。SystemView首轮6230事件，末轮54字节0事件仅证生命周期。测试后台正常退出，已恢复最新0.3.4生产WebGUI连接第一只原板，采集停止。未复制工程、改供电或升级探针固件。",
-    "installer": "0.3.4未签名NSIS候选已构建，提取包Windows-only PATH、冻结CLI/MCP/生产Web/原生WebView/退出通过；尚未实际NSIS安装或覆盖升级。0.3.3既有实装证据保留，不能替代0.3.4新验收。",
+    "state": "最终0.3.4已安装程序：V3/F103原工程ELF，30MHz/1ms，24写应答/5766周期零读错误、RTT47行；双探针同后台切换/旧AI失效/共享采集断开通过，最终SystemView54字节仅证生命周期。未改供电或探针固件。测试后台正常退出。",
+    "installer": "正式0.3.4主线NSIS已实际覆盖安装，退出0，安装载荷哈希与正式包匹配；原生窗口/Web显示a8fd3fab0403，CLI/MCP/资源/正常退出及真机复核通过。",
     "backups": "原Git根.build/artifacts/v033-official保存17正式文件、archive-manifest及qualification（含候选实装/F103、正式冻结/签名/渠道/Skill证据）；旧0.3.2正式归档及用户备份保持。F盘保留共享缓存；联接测试目录和旧安装器占用文件不强删。"
   },
   "known_limits": [
-    "原始30MHz/1µs CDC失败、首次启动离线和客户F405 PROGRAM100%后读线程退出仍未复现；诊断与保护不等于根因闭环。客户Python3.12/受限AI/GD32仍待复测。F103校验约0.30秒无显著加速；外置Flash多FLM缺少实物验证。历史unknown任务不得改判或重放。0.3.3候选曾覆盖安装；0.3.4当前仅完成提取包原生运行验收，不能继承为新安装通过。 本轮修复可复现的RTT主机缺陷；两客户版本/目标ELF/IDE占用尚不全，未证明所有后续MUX超时同根因，按新增opcode/request/epoch继续核实。",
+    "原始30MHz/1µs CDC失败、首次启动离线和客户F405 PROGRAM100%后读线程退出仍未复现；诊断与保护不等于根因闭环。客户Python3.12/受限AI/GD32仍待复测。F103校验约0.30秒无显著加速；外置Flash多FLM缺少实物验证。历史unknown任务不得改判或重放。0.3.4正式主线包现已实际覆盖安装并完成运行及真机复核。 本轮修复可复现的RTT主机缺陷；两客户版本/目标ELF/IDE占用尚不全，未证明所有后续MUX超时同根因，按新增opcode/request/epoch继续核实。",
     "V4.6.8 30MHz RTT8/Watch4/UART并行目标读错1kHz +1、最大+273；10MHz0。旧V4.6.6原始+1/+224，报告此前漏记已更正。采集不停止、不误断、UART完整；用户明确继续发布，限制交接下版处理，不写公开发布说明。",
     "HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4/V4.6.8仿真中新启采集及负载读回通过，V4.6.8已完成Keil及相关矩阵。详见release handoff；长期目标暂停。",
     "性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。",
@@ -110,10 +110,10 @@
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。"
   ],
   "next_actions": [
-    "完成实际安装验收及PR40精确头CI，合并clean main后重建最终签名载荷，更新本地正式安装和Skill，验证所有发布附件后最后更新渠道索引。",
+    "0.3.4已正式发布。合入本次交接与保存的正式Web资源后继续原工作空间维护；已运行AI进程需重启加载本地0.3.4 Skill。保留客户现场/跨平台实物验证边界。",
     "收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。",
     "继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。",
-    "检查 Gitee 镜像容量与可达性；缺失附件沿用 GitHub 兜底，不宣称国内镜像完整。历史联接/占用目录留人工处理。",
+    "Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史联接/占用目录留人工处理。",
     "收集 Mac/Linux USB/MSC 和原地升级反馈、外置 Flash 多算法实物验证；完整 SES/芯片/拔插断电组合仍待补充。供电每次确认具体电压，长期验证仍暂停。"
   ],
   "continuation_protocol": [
