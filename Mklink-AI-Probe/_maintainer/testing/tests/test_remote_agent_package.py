@@ -779,12 +779,13 @@ def test_packaged_shared_backend_runs_without_python_and_detaches_clients(clean_
     env = _runtime_environment(runtime / 'environment', 'unused-agent-token')
     env['MKLINK_RUNTIME_DIR'] = str(runtime / 'runtime-state')
     project = runtime / 'project'; project.mkdir()
-    endpoint = Path(env['MKLINK_RUNTIME_DIR']) / 'probes' / 'lobby' / 'endpoint.json'
+    runtime_id = 'local-' + '1' * 24
+    endpoint = Path(env['MKLINK_RUNTIME_DIR']) / 'probes' / runtime_id / 'endpoint.json'
     info = None
     clients = []
     with (runtime / 'backend.log').open('w', encoding='utf-8') as log:
         process = subprocess.Popen([str(executable), 'runtime', 'serve', '--project-root', str(project),
-                                    '--port', '0', '--probe-id', 'lobby'], cwd=runtime, env=env,
+                                    '--port', '0', '--probe-id', 'lobby', '--runtime-id', runtime_id], cwd=runtime, env=env,
                                    stdout=log, stderr=subprocess.STDOUT, creationflags=_creation_flags())
         try:
             deadline = time.monotonic() + 45

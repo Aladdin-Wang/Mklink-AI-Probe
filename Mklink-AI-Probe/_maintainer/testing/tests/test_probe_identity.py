@@ -143,3 +143,27 @@ def test_startup_waits_for_owner_after_http_has_disappeared(monkeypatch, tmp_pat
     finally:
         if not released:
             owner.__exit__(None, None, None)
+
+
+def test_new_gui_windows_get_independent_backends(monkeypatch, tmp_path):
+    from mklink.runtime import ensure_runtime, request, running_runtimes, selected_runtime
+    monkeypatch.setenv('MKLINK_RUNTIME_DIR', str(tmp_path / 'registry'))
+    monkeypatch.setattr('serial.tools.list_ports.comports', lambda: [port('COM10', 'only-probe')])
+    windows = []
+    try:
+        for _ in range(2):
+            windows.append(ensure_runtime(project_root=str(tmp_path), port=0, new_window=True, allow_lobby=True))
+        assert len({info['pid'] for info in windows}) == 2
+        assert len({info['port'] for info in windows}) == 2
+        assert len({info['runtime_id'] for info in windows}) == 2
+        assert all(info['probe_id'] == 'lobby' for info in windows)
+        assert len(running_runtimes()) == 2
+        with pytest.raises(RuntimeErrorResponse, match='Multiple backends'):
+            selected_runtime('lobby')
+        assert selected_runtime(windows[0]['runtime_id'])['instance_id'] == windows[0]['instance_id']
+    finally:
+        for info in windows:
+            try:
+                request(info, 'POST', '/_runtime/stop', {'confirm': True})
+            except RuntimeErrorResponse:
+                pass

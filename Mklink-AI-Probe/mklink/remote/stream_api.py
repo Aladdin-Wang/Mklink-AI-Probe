@@ -137,6 +137,9 @@ async def stream_websocket(
     async def send_batches():
         next_status = time.monotonic() + HEARTBEAT_INTERVAL_SECONDS
         while True:
+            if registry.get(stream_name) is not hub:
+                await websocket.close(code=1012, reason='Probe changed; subscribe again')
+                return
             try:
                 batch = await asyncio.wait_for(
                     queue.get(), timeout=HEARTBEAT_INTERVAL_SECONDS,
@@ -148,6 +151,9 @@ async def stream_websocket(
                 next_status = time.monotonic() + HEARTBEAT_INTERVAL_SECONDS
                 continue
             try:
+                if registry.get(stream_name) is not hub:
+                    await websocket.close(code=1012, reason='Probe changed; subscribe again')
+                    return
                 if time.monotonic() >= next_status:
                     await websocket.send_bytes(_encoded_status_frame(stream_type, hub))
                     next_status = time.monotonic() + HEARTBEAT_INTERVAL_SECONDS

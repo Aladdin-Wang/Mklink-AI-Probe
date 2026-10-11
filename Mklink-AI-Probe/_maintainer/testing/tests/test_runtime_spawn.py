@@ -41,7 +41,7 @@ def test_runtime_spawn_does_not_depend_on_launchers_temporary_directory(tmp_path
     monkeypatch.setattr(runtime.subprocess, "Popen", spawn)
     assert runtime.ensure_runtime(project_root=str(tmp_path), allow_lobby=True) == info
     command, options = spawned[0]
-    root = runtime._private_dir("lobby")
+    root = runtime._private_dir(command[command.index("--runtime-id") + 1])
     assert Path(options["env"]["TEMP"]) == root / "tmp"
     assert Path(options["env"]["TMP"]) == root / "tmp"
     assert Path(options["env"]["TMPDIR"]) == root / "tmp"

@@ -82,7 +82,7 @@
       <DashboardView v-if="initialBackendReady && dashboardVisited" v-show="currentTab === 'dashboard'" />
       <router-view v-if="initialBackendReady" v-slot="{ Component, route: viewRoute }">
         <!-- Override the shared v-if branch key so cached flash pages stay distinct. -->
-        <KeepAlive include="OnlineFlashView,OfflineFlashView">
+        <KeepAlive :key="deviceStatus.device_generation || 0" include="OnlineFlashView,OfflineFlashView">
           <component :is="Component" v-if="viewRoute.name !== 'dashboard'" :key="viewRoute.path" />
         </KeepAlive>
       </router-view>
@@ -133,7 +133,7 @@ const router = useRouter()
 // Keep the dashboard attached (hidden) rather than detaching it with KeepAlive.
 const DashboardView = defineAsyncComponent(() => import('./views/DashboardView.vue'))
 const route = useRoute()
-const { startStatusPolling, stopStatusPolling } = useMklinkApi()
+const { startStatusPolling, stopStatusPolling, deviceStatus } = useMklinkApi()
 const { backendState, sharedRuntime, authenticationRequired, backendStartupError, startHealthPolling, stopHealthPolling, restart, refreshHealth, isTauri } = useBackendHealth()
 const recoveryTitle = computed(() => authenticationRequired.value
   ? tr('当前页面授权已失效', 'This page is no longer authorized')

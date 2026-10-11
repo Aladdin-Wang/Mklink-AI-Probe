@@ -4,8 +4,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
 
+const deviceStatus = ref({ device_generation: 0 })
 vi.mock('./composables/useMklinkApi', () => ({
-  useMklinkApi: () => ({ startStatusPolling: vi.fn(), stopStatusPolling: vi.fn() }),
+  useMklinkApi: () => ({ startStatusPolling: vi.fn(), stopStatusPolling: vi.fn(), deviceStatus }),
 }))
 vi.mock('./composables/useBackendHealth', () => ({
   useBackendHealth: () => ({ backendState: ref('alive'), startHealthPolling: vi.fn(),
@@ -62,6 +63,15 @@ describe('App route cache', () => {
         if (name === 'dashboard') expect(wrapper.get('[data-testid="dashboard-page"]').isVisible()).toBe(true)
       }
       expect(wrapper.get('[data-testid="dashboard-page"]').attributes('style')).toContain('display: none')
+      // Switching targets invalidates both cached flash forms, while ordinary
+      // route navigation above retains edits for the current device.
+      deviceStatus.value = { device_generation: deviceStatus.value.device_generation + 1 }
+      await flushPromises()
+      for (const name of ['online-flash', 'offline-flash']) {
+        await router.push({ name })
+        await flushPromises()
+        expect((wrapper.get(`[data-testid="${name.replace('-flash', '-page')}"] input`).element as HTMLInputElement).value).toBe('')
+      }
     } finally { wrapper.unmount() }
   })
 })

@@ -21,6 +21,18 @@ DEPLOYMENT_PATHS = {'offline_deploy': '/api/offline-download/deploy',
                     'flm_copy': '/api/offline-download/algorithm'}
 
 
+def prepare_probe_journal(control, probe_id):
+    """Retain uncertainty and request IDs across switches, before hardware moves."""
+    from types import SimpleNamespace
+    from mklink.runtime import _private_dir
+    path = _private_dir(probe_id) / 'jobs.json'
+    restored = RuntimeJobs(SimpleNamespace(info={'jobs_path': str(path)}))
+    restored.jobs.update(control.jobs.jobs)
+    restored.jobs = dict(sorted(restored.jobs.items(), key=lambda pair: pair[1]['started'])[-64:])
+    restored.save()
+    return path, restored.jobs
+
+
 class RuntimeJobs:
     def __init__(self, control):
         self.control = control

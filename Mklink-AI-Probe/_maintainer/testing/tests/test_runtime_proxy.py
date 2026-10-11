@@ -5,99 +5,24 @@ import httpx
 from mklink.runtime_proxy import create_proxy
 
 
-def test_two_windows_switch_independently_and_failed_selection_keeps_current_backend(monkeypatch):
+def test_switch_keeps_proxy_endpoint_auth_and_presence(monkeypatch):
     import json
     from mklink import runtime
-
-    runtimes = {
-        'a': {'port': 9001, 'token': 'a-token', 'probe_id': 'a'},
-        'b': {'port': 9002, 'token': 'b-token', 'probe_id': 'b'},
-    }
+    monkeypatch.setattr(runtime, 'discover', lambda *_: (_ for _ in ()).throw(AssertionError('No backend handoff')))
     seen = []
-    class ReplyStream(httpx.AsyncByteStream):
-        def __init__(self, payload):
-            self.payload = json.dumps(payload).encode()
-
-        async def __aiter__(self):
-            yield self.payload
-
-    def reply(status, payload):
-        return httpx.Response(status, stream=ReplyStream(payload), headers={'Content-Type': 'application/json'})
-
     def handle(request):
-        probe = 'a' if request.url.port == 9001 else 'b'
-        assert request.headers['x-auth-token'] == runtimes[probe]['token']
-        seen.append((probe, request.url.path))
+        seen.append((request.url.port, request.headers['x-auth-token'], request.url.path))
         if request.url.path == '/api/runtime/select':
-            selected = json.loads(request.content)['probe']
-            if selected == 'missing':
-                return reply(409, {'detail': 'Probe unavailable'})
-            return reply(200, {'runtime_url': runtime.browser_url(runtimes[selected]), 'probe_id': selected})
-        if request.url.path == '/api/runtime/control/view':
-            return reply(200, {'registered': True})
-        return reply(200, {'probe': probe})
-    monkeypatch.setattr(runtime, 'discover', lambda probe: dict(runtimes[probe]))
-    transport = httpx.MockTransport(handle)
-    first = create_proxy(dict(runtimes['a']), port=8766, instance_id='first', transport=transport)
-    second = create_proxy(dict(runtimes['a']), port=8767, instance_id='second', transport=transport)
-    with TestClient(first, base_url='http://127.0.0.1:8766') as a, TestClient(second, base_url='http://127.0.0.1:8767') as b:
-        assert a.post('/api/runtime/select', json={'probe': 'b'}).json()['reload']
-        assert a.get('/api/device/status').json() == {'probe': 'b'}
-        assert b.get('/api/device/status').json() == {'probe': 'a'}
-        assert a.post('/api/runtime/select', json={'probe': 'missing'}).status_code == 409
-        assert a.get('/api/device/status').json() == {'probe': 'b'}
-        assert b.get('/api/device/status').json() == {'probe': 'a'}
-        assert a.post('/api/runtime/select', json={'probe': 'a'}).json()['reload']
-        assert a.get('/api/device/status').json() == {'probe': 'a'}
-        assert b.get('/api/device/status').json() == {'probe': 'a'}
-    assert all(path not in {'/api/device/disconnect', '/_runtime/stop'} for _, path in seen)
-
-
-def test_selection_closes_all_old_device_sockets_and_new_connections_use_new_backend(monkeypatch):
-    import asyncio
-    from contextlib import asynccontextmanager
-    from mklink import runtime
-    import websockets.legacy.client
-
-    targets = []
-
-    class Upstream:
-        async def send(self, message):
-            pass
-
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            await asyncio.Future()
-
-    @asynccontextmanager
-    async def connect(target, **kwargs):
-        targets.append((target, kwargs['extra_headers']))
-        yield Upstream()
-
-    monkeypatch.setattr(websockets.legacy.client, 'connect', connect)
-    selected = {'port': 9002, 'token': 'second', 'probe_id': 'second-probe'}
-    monkeypatch.setattr(runtime, 'discover', lambda probe: dict(selected))
-    upstream = FastAPI()
-
-    @upstream.post('/api/runtime/select')
-    async def select():
-        return {'runtime_url': 'http://127.0.0.1:9002', 'probe_id': 'second-probe'}
-
-    app = create_proxy({'port': 9001, 'token': 'first'}, port=8766, instance_id='desktop',
-                       transport=httpx.ASGITransport(app=upstream))
+            return httpx.Response(200, json={'same_runtime': True, 'switched': True, 'probe_id': 'b'})
+        return httpx.Response(200, json={'registered': True})
+    info = {'port': 9001, 'token': 'original', 'probe_id': 'a'}
+    app = create_proxy(info, port=8766, instance_id='window', transport=httpx.MockTransport(handle))
     with TestClient(app, base_url='http://127.0.0.1:8766') as client:
-        with client.websocket_connect('ws://127.0.0.1:8766/api/runtime/control/view/a') as presence:
-            with client.websocket_connect('ws://127.0.0.1:8766/ws/stream') as stream:
-                assert client.post('/api/runtime/select', json={}).json()['reload'] is True
-                for socket in (presence, stream):
-                    assert socket.receive() == {'type': 'websocket.close', 'code': 1012, 'reason': 'runtime changed'}
-        with client.websocket_connect('ws://127.0.0.1:8766/api/runtime/control/view/b') as current:
-            assert targets[-1] == ('ws://127.0.0.1:9002/api/runtime/control/view/b', {'X-Auth-Token': 'second'})
-            assert client.post('/api/runtime/select', json={}).status_code == 200
-            assert current.receive()['code'] == 1012
-        assert all('9001' in target for target, _ in targets[:2])
+        result = client.post('/api/runtime/select', json={'probe': 'b'}).json()
+        assert result == {'same_runtime': True, 'switched': True, 'probe_id': 'b'}
+        assert info['port'] == 9001 and info['token'] == 'original'
+        assert client.post('/api/runtime/control/view', json={'client_id': 'page'}).status_code == 200
+    assert all(port == 9001 and token == 'original' for port, token, _ in seen)
 
 
 def test_proxy_server_reuses_runtime_and_sansio_without_device_connect(tmp_path, monkeypatch):
@@ -129,7 +54,7 @@ def test_proxy_server_reuses_runtime_and_sansio_without_device_connect(tmp_path,
                            desktop_port_end=0, desktop_instance_id='test',
                            desktop_runtime_info=str(tmp_path / 'endpoint.json'))
     runtime_proxy.serve_desktop_proxy(args)
-    ensure.assert_called_once_with(project_root=str(tmp_path), port=0, allow_lobby=True)
+    ensure.assert_called_once_with(project_root=str(tmp_path), port=0, allow_lobby=True, new_window=True)
     assert servers[0].config.ws == 'websockets-sansio'
     assert servers[0].config.ws_per_message_deflate is False
     connect.assert_not_called()

@@ -7,7 +7,7 @@ import json
 import os
 
 
-# One immutable physical selection per backend, shared by CDC and MSC workers.
+# One active physical selection per backend, shared by CDC and MSC workers.
 _bound_probe = None
 
 
@@ -16,6 +16,14 @@ def bind_runtime(probe_id):
     if _bound_probe is not None and _bound_probe != probe_id:
         raise RuntimeError('A runtime cannot change its physical probe identity')
     _bound_probe = probe_id
+
+
+def rebind_runtime(previous, selected):
+    """Called only by the runtime ownership transaction after workers drain."""
+    global _bound_probe
+    if _bound_probe != previous:
+        raise RuntimeError('Probe binding changed during the switch')
+    _bound_probe = selected
 
 
 def bound_probe():

@@ -41,16 +41,27 @@ describe('RTT API contracts', () => {
     navigate.mockRestore()
   })
 
-  it('marks a probe handoff and does not reconnect the previous device', async () => {
+  it('switches in place and refreshes target generation without navigation or duplicate connect', async () => {
     sharedRuntime.value = true
     const navigate = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({
-      same_runtime: false, runtime_url: 'http://127.0.0.1:8766/_runtime/open#test-token',
+      same_runtime: true, switched: true, connection: { port: 'COM10' },
     }) })
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ port: 'COM10', device_generation: 2 }) })
     await useMklinkApi().connectDevice({ port: 'COM10' })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(navigate).toHaveBeenCalledWith('http://127.0.0.1:8766/_runtime/open?runtime_transition=probe#test-token')
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/api/runtime/select', '/api/device/status'])
+    expect(useMklinkApi().deviceStatus.value.device_generation).toBe(2)
+    expect(navigate).not.toHaveBeenCalled()
     navigate.mockRestore()
+  })
+
+  it('clears the previous device after the replacement connection fails', async () => {
+    sharedRuntime.value = true
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ detail: 'USB failed' }) })
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ connected: false, device_generation: 3 }) })
+    await expect(useMklinkApi().connectDevice({ port: 'COM10' })).rejects.toThrow('USB failed')
+    expect(useMklinkApi().deviceStatus.value).toMatchObject({ connected: false, device_generation: 3 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('queries an accepted shared reset job without issuing a second reset', async () => {

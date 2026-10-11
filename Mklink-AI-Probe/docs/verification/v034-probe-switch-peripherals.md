@@ -2,6 +2,8 @@
 
 日期：2026-10-11。开发分支：`codex/0.3.4-fixes`，PR40。
 
+外设恢复部分仍有效。本文中“跨后台跳转、第二窗口继续共享旧探针”的切换方案已被用户纠正并由[同一窗口原地切换方案](v034-window-owned-backend.md)取代；下方切换测试仅为旧方案的历史记录，不能作为当前架构验收。
+
 ## 问题与根因
 
 客户在同一窗口连接不同下载器时报 `Cannot restore peripheral selection`。后续客户定位到应用工作区的 `.mklink/peripheral-selection.json`，其中保存了旧 `target_id`。

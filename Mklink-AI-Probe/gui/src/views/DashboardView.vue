@@ -78,15 +78,15 @@
         </div>
       </div>
 
-      <RttViewTab v-show="tab === 'rtt'" :device-connected="deviceStatus.connected" />
+      <RttViewTab :key="'RttViewTab-' + (deviceStatus.device_generation || 0)" v-show="tab === 'rtt'" :device-connected="deviceStatus.connected" />
 
-      <HardFaultTab v-if="tab === 'hardfault'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" />
-      <MemoryTab v-if="tab === 'memory'" :device-connected="deviceStatus.connected" />
-      <SuperWatchTab v-show="tab === 'superwatch'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" :symbol-error="deviceStatus.axf?.error" />
+      <HardFaultTab :key="'HardFaultTab-' + (deviceStatus.device_generation || 0)" v-if="tab === 'hardfault'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" />
+      <MemoryTab :key="'MemoryTab-' + (deviceStatus.device_generation || 0)" v-if="tab === 'memory'" :device-connected="deviceStatus.connected" />
+      <SuperWatchTab :key="'SuperWatchTab-' + (deviceStatus.device_generation || 0)" v-show="tab === 'superwatch'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" :symbol-error="deviceStatus.axf?.error" />
       <SerialMonitorTab v-if="!IS_REMOTE" v-show="tab === 'serial'" />
       <ModbusTab v-if="!IS_REMOTE" v-show="tab === 'modbus'" />
-      <SystemViewTab v-show="tab === 'systemview'" :device-connected="deviceStatus.connected" />
-      <SymbolsTab v-if="tab === 'symbols'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" :symbol-error="deviceStatus.axf?.error" />
+      <SystemViewTab :key="'SystemViewTab-' + (deviceStatus.device_generation || 0)" v-show="tab === 'systemview'" :device-connected="deviceStatus.connected" />
+      <SymbolsTab :key="'SymbolsTab-' + (deviceStatus.device_generation || 0)" v-if="tab === 'symbols'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" :symbol-error="deviceStatus.axf?.error" />
     </div>
   </div>
 </template>

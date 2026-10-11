@@ -95,6 +95,15 @@ class RuntimeControl:
     def target_sessions(self):
         return {key: session for key, session in self.sessions.items() if session.scope == 'target'}
 
+    @property
+    def window_count(self):
+        # A desktop proxy lease and its WebView presentation socket belong to
+        # one window. A browser connected directly has its own identity.
+        represented = {view.get('owner') for view in self.views.values() if view.get('owner')}
+        # Remove only the parent lease. Two pages behind the same proxy are
+        # still two users of shared target state and must block rebinding.
+        return sum(key not in represented for key in self.views)
+
     def gui_active(self):
         agent = getattr(self.app.state, 'site_agent', None)
         remote = getattr(self.app.state, 'remote_window_activity', lambda: False)
@@ -182,8 +191,10 @@ class RuntimeControl:
         now = time.monotonic()
         clients = [{'id': s.public_id, 'kind': s.kind, 'name': s.name, 'scope': s.scope, 'streams': sorted(s.streams),
                     'age_seconds': now-s.joined, 'expires_in': max(0, s.expires-now)} for s in self.sessions.values()]
+        represented = {view.get('owner') for view in self.views.values() if view.get('live')}
         clients += [{'id': key, 'kind': 'gui', 'name': view['name'], 'streams': [],
-                     'age_seconds': now-view['joined'], 'expires_in': None if view.get('live') else max(0, view['expires']-now)} for key, view in self.views.items()]
+                     'age_seconds': now-view['joined'], 'expires_in': None if view.get('live') else max(0, view['expires']-now)}
+                    for key, view in self.views.items() if key not in represented]
         device = self.app.state.mklink_state.get('device')
         return {'protocol': PROTOCOL, 'version': VERSION, 'probe_id': self.info.get('probe_id'),
                 'instance_id': self.info['instance_id'], 'pid': self.info.get('pid'),
@@ -552,6 +563,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
                 "capabilities": sorted(CAPABILITIES)}
 
     def attached(body, scope, device_status):
+        if body.get('probe_id') is not None and body['probe_id'] != info.get('probe_id'):
+            raise HTTPException(409, 'Backend probe changed; rediscover the requested probe before attaching')
         session_id = body.get('session_id')
         session = control.sessions.get(session_id)
         axf = (device_status.get('axf') or {}).get('axf_path')
@@ -573,6 +586,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
 
     @api.post("/attach")
     async def attach(body: dict):
+        if body.get('probe_id') is not None and body['probe_id'] != info.get('probe_id'):
+            raise HTTPException(409, 'Backend probe changed; rediscover the requested probe before attaching')
         scope = body.get('scope', 'target')
         if scope not in ('target', 'uart'):
             raise HTTPException(422, 'Session scope must be target or uart')
