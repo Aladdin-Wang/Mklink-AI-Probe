@@ -80,6 +80,8 @@ class RuntimeControl:
         self.created_streams: dict[str, str] = {}
         self.attach_lock = asyncio.Lock()
         self.operation_lock = asyncio.Lock()
+        self.lifecycle_lock = asyncio.Lock()
+        self.lifecycle_pending = 0
         self.shutdown = None
         self.stopping = False
         self.views = {}
@@ -94,6 +96,15 @@ class RuntimeControl:
     @property
     def target_sessions(self):
         return {key: session for key, session in self.sessions.items() if session.scope == 'target'}
+
+    @property
+    def window_count(self):
+        # A desktop proxy lease and its WebView presentation socket belong to
+        # one window. A browser connected directly has its own identity.
+        represented = {view.get('owner') for view in self.views.values() if view.get('owner')}
+        # Remove only the parent lease. Two pages behind the same proxy are
+        # still two users of shared target state and must block rebinding.
+        return sum(key not in represented for key in self.views)
 
     def gui_active(self):
         agent = getattr(self.app.state, 'site_agent', None)
@@ -182,13 +193,16 @@ class RuntimeControl:
         now = time.monotonic()
         clients = [{'id': s.public_id, 'kind': s.kind, 'name': s.name, 'scope': s.scope, 'streams': sorted(s.streams),
                     'age_seconds': now-s.joined, 'expires_in': max(0, s.expires-now)} for s in self.sessions.values()]
+        represented = {view.get('owner') for view in self.views.values() if view.get('live')}
         clients += [{'id': key, 'kind': 'gui', 'name': view['name'], 'streams': [],
-                     'age_seconds': now-view['joined'], 'expires_in': None if view.get('live') else max(0, view['expires']-now)} for key, view in self.views.items()]
+                     'age_seconds': now-view['joined'], 'expires_in': None if view.get('live') else max(0, view['expires']-now)}
+                    for key, view in self.views.items() if key not in represented]
         device = self.app.state.mklink_state.get('device')
         return {'protocol': PROTOCOL, 'version': VERSION, 'probe_id': self.info.get('probe_id'),
                 'instance_id': self.info['instance_id'], 'pid': self.info.get('pid'),
                 'project_root': self.app.state.mklink_state['project_root'], 'transport': 'cdc',
-                'uptime_seconds': now-self.started, 'clients': clients, 'busy': self.operation_lock.locked() or self.job_busy(),
+                'uptime_seconds': now-self.started, 'clients': clients, 'busy': bool(self.lifecycle_pending) or self.operation_lock.locked() or self.job_busy(),
+                'connection_changes_pending': self.lifecycle_pending,
                 'jobs': list(reversed(list(self.jobs.jobs.values())))[:8] if self.jobs else [], 'online_job': self.online_job(),
                 'operation': self.current_operation, 'last_operation': self.last_operation,
                 'acquisition_transition': self.app.state.mklink_state.get('acquisition_transition'),
@@ -271,6 +285,8 @@ class RuntimeControl:
                 return await settle(task)
             finally:
                 self.uart_operations.pop(task, None)
+        if self.lifecycle_pending and not own_job and not online_stop:
+            raise HTTPException(409, 'Device connection is changing; wait for completion')
         if self.operation_lock.locked() or (self.job_busy() and not own_job and not online_stop):
             raise HTTPException(409, 'Another shared operation or exclusive job is active')
         self.prune()
@@ -289,6 +305,47 @@ class RuntimeControl:
             finally:
                 self.last_operation = {**record, 'duration_seconds': time.monotonic() - started}
                 self.current_operation = None
+
+    async def run_lifecycle(self, name, operation, *, session_id=None):
+        """An explicit disconnect/switch drains admitted work, then retires it.
+
+        Reserve intent before waiting so incoming target work cannot starve the
+        transition. Already accepted jobs finish on their original device. Never
+        cancel a worker or release its device while it may still be accessing it.
+        """
+        if self.stopping:
+            raise HTTPException(503, 'Runtime is stopping')
+        if session_id:
+            self.session(session_id)  # Even a stale symbol catalog may disconnect.
+        self.lifecycle_pending += 1
+        async def transition():
+            try:
+                async with self.lifecycle_lock:
+                    async with self.attach_lock:
+                        while True:
+                            while self.job_busy():
+                                await asyncio.sleep(.025)
+                            await self.operation_lock.acquire()
+                            # The operation just drained may have started an
+                            # asynchronous flash job before releasing admission.
+                            if not self.job_busy():
+                                break
+                            self.operation_lock.release()
+                        token = active_operation.set((self, session_id))
+                        started = time.monotonic()
+                        record = {'path': name, 'client': 'GUI / API',
+                                  'started_at': time.time(), 'http_status': None}
+                        self.current_operation = record
+                        try:
+                            return await operation()
+                        finally:
+                            self.last_operation = {**record, 'duration_seconds': time.monotonic() - started}
+                            self.current_operation = None
+                            active_operation.reset(token)
+                            self.operation_lock.release()
+            finally:
+                self.lifecycle_pending -= 1
+        return await settle(asyncio.create_task(transition()))
 
     async def invoke(self, method, path, arguments=None, *, session_id=None):
         import httpx
@@ -381,6 +438,25 @@ class RuntimeGate:
         if not hardware or (method == 'POST' and path in LOCAL_IMAGE_INSPECTION_PATHS):
             return await self.app(scope, receive, send)
         session_id = headers.get(b"x-mklink-session", b"").decode()
+        expected_probe = headers.get(b'x-mklink-probe', b'').decode()
+        expected_generation = headers.get(b'x-mklink-device-generation', b'').decode()
+        def check_connection():
+            if not is_uart_path(path) and (
+                    (expected_probe and expected_probe != c.info.get('probe_id'))
+                    or (expected_generation and expected_generation != str(c.app.state.mklink_state.get('device_generation', 0)))):
+                raise HTTPException(409, 'Device connection changed; reconnect explicitly before accessing the target')
+        try:
+            check_connection()
+        except HTTPException as exc:
+            return await reject(exc.status_code, exc.detail)
+        if path == '/api/device/disconnect':
+            async def disconnect():
+                check_connection()
+                return await self.app(scope, receive, send)
+            try:
+                return await c.run_lifecycle(path, disconnect, session_id=session_id)
+            except HTTPException as exc:
+                return await reject(exc.status_code, exc.detail)
         if is_uart_path(path):
             try:
                 return await c.run_operation(path, lambda: self.app(scope, receive, send), session_id=session_id)
@@ -452,7 +528,7 @@ class RuntimeGate:
         if path == '/api/dash/superwatch/peripherals/select' and (
                 c.attach_lock.locked() or any(key != session_id for key in c.target_sessions)):
             return await reject(409, 'Detach other shared clients before changing the peripheral catalog')
-        if path in {"/api/device/disconnect", "/api/symbols/reparse", "/api/symbols/c-layout",
+        if path in {"/api/symbols/reparse", "/api/symbols/c-layout",
                     "/api/device/reboot", "/api/probe/firmware-upgrade"} and (c.target_sessions or c.attach_lock.locked()):
             return await reject(409, {
                 'reason': 'shared_clients_attached',
@@ -489,6 +565,9 @@ class RuntimeGate:
                     (key.lower().encode(), value.encode()) for key, value in submission_headers().items())
             await send(message)
         async def operation():
+            # Receiving a body may yield across a completed switch. Validate
+            # again under admission before any old request reaches hardware.
+            check_connection()
             if path in {'/api/offline-download/deploy', '/api/offline-download/trigger',
                         '/api/offline-download/algorithm', '/api/online-flash/memory/read',
                         '/api/online-flash/memory/read-stream'}:
@@ -552,6 +631,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
                 "capabilities": sorted(CAPABILITIES)}
 
     def attached(body, scope, device_status):
+        if body.get('probe_id') is not None and body['probe_id'] != info.get('probe_id'):
+            raise HTTPException(409, 'Backend probe changed; rediscover the requested probe before attaching')
         session_id = body.get('session_id')
         session = control.sessions.get(session_id)
         axf = (device_status.get('axf') or {}).get('axf_path')
@@ -573,6 +654,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
 
     @api.post("/attach")
     async def attach(body: dict):
+        if body.get('probe_id') is not None and body['probe_id'] != info.get('probe_id'):
+            raise HTTPException(409, 'Backend probe changed; rediscover the requested probe before attaching')
         scope = body.get('scope', 'target')
         if scope not in ('target', 'uart'):
             raise HTTPException(422, 'Session scope must be target or uart')
@@ -596,7 +679,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
                 raise HTTPException(422, 'UART-only attachment does not accept target connection settings')
             return attached(body, scope, {'attached': True})
         async with control.attach_lock:
-            if control.operation_lock.locked() or control.job_busy():
+            if control.lifecycle_pending or control.operation_lock.locked() or control.job_busy():
                 raise HTTPException(409, 'Wait for the active operation before attaching a client')
             control.require_identity(reconnect=True)
             dev = state.get("device")

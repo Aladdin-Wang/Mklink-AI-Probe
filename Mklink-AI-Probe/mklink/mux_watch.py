@@ -145,10 +145,10 @@ class MuxWatchSession:
     def write(self, address, data, future):
         try:
             self.transport.write_memory(address, data)
-            readback = self.transport.read_memory(address, len(data))
-            if readback != data:
-                raise RuntimeError('Multiplex write readback mismatch')
-            future.set_result({'data': readback, 'mode': 'cdc-mux', 'timestamp_us': None})
+            # A running target may immediately change the value. The write ACK
+            # completes this operation; do not add a read or replay the write.
+            future.set_result({'data': data, 'acknowledged': True, 'verified': False,
+                               'mode': 'cdc-mux', 'timestamp_us': None})
         except Exception as exc:
             future.set_exception(exc)
             raise

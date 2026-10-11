@@ -417,6 +417,7 @@ class RttStreamManager(RttChannelDecoder):
         self._start_failure_callback = None
         self._device = None
         self._start_info: dict = {}
+        self._startup_started = None
         self._active_generation = None
         self._capture_session = None
         self._write_lock = threading.RLock()
@@ -493,6 +494,7 @@ class RttStreamManager(RttChannelDecoder):
         self._history.clear()
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
         self._error = None
+        self._startup_started = time.monotonic()
         with self._decode_lock:
             self._line_assembler.reset(encoding)
             self._terminal_decoder = codecs.getincrementaldecoder(
@@ -537,10 +539,12 @@ class RttStreamManager(RttChannelDecoder):
                         and not stop_event.is_set()
                     ):
                         self._device = device
-                        self._start_info = (
-                            dict(start_info) if isinstance(start_info, dict) else {}
-                        )
-                        self._start_info["channel"] = channel
+                        # Publish one immutable snapshot for lock-free status
+                        # reads; hardware writes/stops retain _write_lock.
+                        self._start_info = {
+                            **(start_info if isinstance(start_info, dict) else {}),
+                            "channel": channel,
+                        }
                         self._active_generation = generation
                 start_time = time.time()
                 while not stop_event.is_set():
@@ -594,6 +598,11 @@ class RttStreamManager(RttChannelDecoder):
                 else:
                     terminal_failure = e
             finally:
+                failure = start_failure or terminal_failure
+                if failure is not None and getattr(self, "_generation", None) is generation:
+                    # Report the reason before potentially slow device cleanup.
+                    # Keep the worker alive/owned until cleanup actually ends.
+                    self._error = str(failure)
                 with self._write_lock:
                     try:
                         device.rtt_stop()
@@ -700,22 +709,27 @@ class RttStreamManager(RttChannelDecoder):
             return len(data)
 
     def get_status(self) -> dict:
-        with self._write_lock:
-            down_buffers = [
-                dict(item)
-                for item in self._start_info.get("down_buffers", [])
-                if isinstance(item, dict)
-            ]
-            control_block_addr = self._start_info.get("control_block_addr")
-            down_buffer_source = self._start_info.get("down_buffer_source")
-            down_buffer_probe_count = self._start_info.get(
-                "down_buffer_probe_count", 0
-            )
-            from mklink.mux import MuxTransport
-            transport = getattr(getattr(self._device, '_bridge', None), '_mux', None)
-            transport_stats = transport.stats() if isinstance(transport, MuxTransport) else None
+        # Never wait for target I/O or stop recovery on an HTTP status request.
+        # _start_info is replaced as a whole, never mutated after publication.
+        start_info = self._start_info
+        device = self._device
+        down_buffers = [
+            dict(item)
+            for item in start_info.get("down_buffers", [])
+            if isinstance(item, dict)
+        ]
+        control_block_addr = start_info.get("control_block_addr")
+        down_buffer_source = start_info.get("down_buffer_source")
+        down_buffer_probe_count = start_info.get("down_buffer_probe_count", 0)
+        from mklink.mux import MuxTransport
+        transport = getattr(getattr(device, '_bridge', None), '_mux', None)
+        transport_stats = transport.stats() if isinstance(transport, MuxTransport) else None
         return {
             "running": self.running,
+            "progress_state": ('error' if self._error else 'streaming' if self.running and control_block_addr
+                               else 'starting' if self.running else 'idle'),
+            "startup_elapsed_ms": (round((time.monotonic()-self._startup_started)*1000, 1)
+                                   if self.running and not control_block_addr and self._startup_started is not None else None),
             "paused": self.paused,
             "clients": self._bridge.client_count,
             "stats": self._stats,
@@ -726,13 +740,14 @@ class RttStreamManager(RttChannelDecoder):
                 "encoding": d._line_assembler.encoding, "stats": dict(d._stats),
                 "line_parser": d._line_assembler.status()} for ch, d in self._channel_decoders.items()},
             "transport_stats": transport_stats,
-            "transport": self._start_info.get("transport", "legacy"),
+            "transport": start_info.get("transport", "legacy"),
             "numeric_channels": list(self._numeric_channels),
             "encoding": self._line_assembler.encoding,
             "line_parser": self._line_assembler.status(),
             "down_buffers": down_buffers,
             "session": self._capture_session,
             "control_block_addr": control_block_addr,
+            "startup_timings_ms": dict(start_info.get("startup_timings_ms", {})),
             "down_buffer_source": down_buffer_source,
             "down_buffer_probe_count": down_buffer_probe_count,
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
@@ -1796,24 +1811,37 @@ class SuperWatchStreamManager:
     def running(self) -> bool:
         return self._running and not self._stop_event.is_set()
 
+    def _restore_peripheral_catalog(self, device):
+        from zipfile import BadZipFile
+        from mklink.peripheral_watch import load_catalog
+
+        self._peripheral_restore_error = None
+        try:
+            catalog = load_catalog(getattr(device, "_project_root", "."))
+        except (OSError, ValueError, KeyError, BadZipFile) as error:
+            # An optional, stale SVD preference must not prevent connecting the
+            # probe or using RAM symbols. Keep the saved file for explicit repair.
+            self._peripheral_restore_error = str(error)
+            catalog = None
+        self._peripheral_selection = (
+            {**catalog.selection, "skipped_registers": catalog.skipped}
+            if catalog else None
+        )
+        return catalog
+
     def prepare(self, device) -> None:
         """Build runtime from DWARF info so search/add work before collection starts."""
         with self._read_lock:
-            if self._device is not device and self._runtime is not None:
-                from mklink.peripheral_watch import load_catalog
+            device_changed = self._device is not device
+            if device_changed and self._runtime is not None:
                 from mklink.superwatch import catalog_registers
 
-                restored = load_catalog(getattr(device, "_project_root", "."))
+                restored = self._restore_peripheral_catalog(device)
                 for item in list(self._runtime.items):
                     if item.source == "peripheral":
                         self._runtime.remove(item.name)
                 self._runtime.peripheral_items = restored.items if restored else {}
                 self._runtime.svd_registers = catalog_registers(restored)
-                self._peripheral_selection = (
-                    {**restored.selection, "skipped_registers": restored.skipped}
-                    if restored
-                    else None
-                )
             if self._runtime is not None:
                 runtime = self._runtime
                 new_catalog = getattr(device, "symbol_catalog", None)
@@ -1848,26 +1876,15 @@ class SuperWatchStreamManager:
                 else:
                     runtime.port = getattr(device, "_port", None)
                     runtime.dwarf_info = getattr(device, "_dwarf_info", None)
+                    if device_changed:
+                        self._flush_binary_batch_locked()
+                        self._rebuild_metadata_cache_locked(publish=True)
                 self._device = device
                 return
             dwarf_info = getattr(device, "_dwarf_info", None)
-            svd_registers = {}
-            try:
-                from mklink.superwatch import catalog_registers
-                from mklink.peripheral_watch import load_catalog
-
-                project_root = getattr(device, "_project_root", ".")
-                catalog = load_catalog(project_root)
-                svd_registers = catalog_registers(catalog)
-                if catalog:
-                    self._peripheral_selection = {
-                        **catalog.selection,
-                        "skipped_registers": catalog.skipped,
-                    }
-            except (OSError, ValueError, KeyError) as error:
-                raise ValueError(
-                    f"Cannot restore peripheral selection: {error}"
-                ) from error
+            from mklink.superwatch import catalog_registers
+            catalog = self._restore_peripheral_catalog(device)
+            svd_registers = catalog_registers(catalog)
             from mklink.superwatch import SuperWatchRuntime
             self._runtime = SuperWatchRuntime(
                 items=[],
@@ -2119,9 +2136,6 @@ class SuperWatchStreamManager:
                                                 write_error = None
                                                 try:
                                                     device.write_memory(address, payload)
-                                                    data = self._readback_once(address, len(payload))
-                                                    if data != payload:
-                                                        raise RuntimeError("SuperWatch readback mismatch")
                                                 except Exception as exc:
                                                     write_error = exc
                                                 finally:
@@ -2129,7 +2143,8 @@ class SuperWatchStreamManager:
                                                 if write_error is not None:
                                                     future.set_exception(write_error)
                                                 else:
-                                                    future.set_result({"data": data, "mode": "legacy-gap", "timestamp_us": None})
+                                                    future.set_result({"data": payload, "acknowledged": True, "verified": False,
+                                                                       "mode": "legacy-gap", "timestamp_us": None})
                                             except Exception as exc:
                                                 if not future.done():
                                                     future.set_exception(exc)
@@ -2182,8 +2197,18 @@ class SuperWatchStreamManager:
                                         if completed:
                                             self._completed_read_cycles += completed
                                             self._record_sample_rate_locked(completed)
+                        except Exception as exc:
+                            if getattr(self, "_generation", None) is generation:
+                                self._error = str(exc)
+                            raise
                         finally:
-                            session.stop()
+                            failure = sys.exc_info()[1]
+                            try:
+                                session.stop()
+                            except Exception as stop_error:
+                                if failure is None:
+                                    raise
+                                logger.warning("SuperWatch cleanup after %s also failed: %s", failure, stop_error)
                             self._stream_integrity = _sum_counter_snapshots(
                                 completed_integrity, session.stats,
                             )
@@ -2224,13 +2249,6 @@ class SuperWatchStreamManager:
             self._thread = None
         return True
 
-    def _readback_once(self, address: int, size: int) -> bytes:
-        if self._device is None:
-            raise RuntimeError("SuperWatch device is unavailable")
-        # The continuous dump stream is already stopped. Re-entering dump mode
-        # for a one-shot read can leave firmware unable to restart streaming.
-        return self._device.read_memory(address, size)
-
     def write_symbol(self, path: str, *, generation: int, value: object) -> dict:
         from mklink.symbol_catalog import decode_descriptor, encode_descriptor
 
@@ -2270,7 +2288,8 @@ class SuperWatchStreamManager:
                 with self._read_lock:
                     origin = self._origin_us
                 result = {"path": path, "generation": catalog.generation,
-                          "value": decode_descriptor(descriptor, ack["data"]), "verified": True,
+                          "value": decode_descriptor(descriptor, ack["data"]),
+                          "acknowledged": True, "verified": False,
                           "mode": ack["mode"], "timestamp_us": timestamp,
                           "time_ms": (timestamp - origin) / 1000 if timestamp is not None and origin is not None else None,
                           "request_id": ack.get("request_id")}
@@ -2285,18 +2304,12 @@ class SuperWatchStreamManager:
                 device.write_memory(descriptor.address, payload)
             except Exception as exc:
                 raise SuperWatchTransactionError("write", exc) from exc
-            try:
-                actual_raw = self._readback_once(descriptor.address, descriptor.size)
-                if actual_raw[: descriptor.size] != payload:
-                    raise RuntimeError(f"SuperWatch readback mismatch for {path}")
-                actual = decode_descriptor(descriptor, actual_raw)
-            except Exception as exc:
-                raise SuperWatchTransactionError("readback", exc) from exc
             return {
                 "path": path,
                 "generation": catalog.generation,
-                "value": actual,
-                "verified": True,
+                "value": decode_descriptor(descriptor, payload),
+                "acknowledged": True,
+                "verified": False,
             }
 
     def reparse_symbols(
@@ -2454,6 +2467,7 @@ class SuperWatchStreamManager:
 
                 self._runtime.svd_registers = catalog_registers(catalog)
                 self._peripheral_selection = {**catalog.selection, "skipped_registers": skipped}
+                self._peripheral_restore_error = None
                 self._rebuild_metadata_cache_locked(publish=True)
             return self.peripheral_catalog()
 
@@ -2465,6 +2479,7 @@ class SuperWatchStreamManager:
                      if query.casefold() in item.name.casefold()]
             metadata = make_channel_metadata(items)
             return {"selection": getattr(self, "_peripheral_selection", None),
+                    "restore_error": getattr(self, "_peripheral_restore_error", None),
                     "items": [{"name": item.name, **metadata[item.name]} for item in items]}
 
     def add_watch(self, name: str) -> dict:

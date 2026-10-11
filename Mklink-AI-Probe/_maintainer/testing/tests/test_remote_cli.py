@@ -191,13 +191,18 @@ def test_generic_flash_call_returns_nonzero_for_completion_unknown(
     assert '"state": "completion-unknown"' in capsys.readouterr().out
 
 
-def test_packaged_entry_routes_only_runtime_serve_to_existing_backend(monkeypatch, tmp_path):
+@pytest.mark.parametrize('runtime_id', [None, 'local-test-window'])
+def test_packaged_entry_routes_only_runtime_serve_to_existing_backend(monkeypatch, tmp_path, runtime_id):
     from mklink.remote import package_agent
     calls = []
     monkeypatch.setattr('mklink.runtime.serve_runtime', lambda **kwargs: calls.append(kwargs))
-    assert package_agent.main(['runtime', 'serve', '--project-root', str(tmp_path),
-                               '--port', '0', '--probe-id', 'lobby']) == 0
-    assert calls == [{'project_root': str(tmp_path), 'port': 0, 'probe_id': 'lobby'}]
+    args = ['runtime', 'serve', '--project-root', str(tmp_path),
+            '--port', '0', '--probe-id', 'lobby']
+    if runtime_id:
+        args.extend(['--runtime-id', runtime_id])
+    assert package_agent.main(args) == 0
+    assert calls == [{'project_root': str(tmp_path), 'port': 0, 'probe_id': 'lobby',
+                      'runtime_id': runtime_id}]
 
 
 def test_packaged_runtime_entry_keeps_direct_secret_rejection(capsys):

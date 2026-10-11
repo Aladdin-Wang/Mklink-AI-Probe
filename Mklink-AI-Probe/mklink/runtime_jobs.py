@@ -21,6 +21,18 @@ DEPLOYMENT_PATHS = {'offline_deploy': '/api/offline-download/deploy',
                     'flm_copy': '/api/offline-download/algorithm'}
 
 
+def prepare_probe_journal(control, probe_id):
+    """Retain uncertainty and request IDs across switches, before hardware moves."""
+    from types import SimpleNamespace
+    from mklink.runtime import _private_dir
+    path = _private_dir(probe_id) / 'jobs.json'
+    restored = RuntimeJobs(SimpleNamespace(info={'jobs_path': str(path)}))
+    restored.jobs.update(control.jobs.jobs)
+    restored.jobs = dict(sorted(restored.jobs.items(), key=lambda pair: pair[1]['started'])[-64:])
+    restored.save()
+    return path, restored.jobs
+
+
 class RuntimeJobs:
     def __init__(self, control):
         self.control = control
@@ -87,7 +99,7 @@ class RuntimeJobs:
             return previous
         c = self.control
         c.require_identity()
-        if self.active or c.operation_lock.locked() or c.attach_lock.locked() or c.online_job():
+        if c.lifecycle_pending or self.active or c.operation_lock.locked() or c.attach_lock.locked() or c.online_job():
             raise HTTPException(409, 'Another operation is active; no job was queued')
         from mklink.remote.dashboards import active_bridge_dashboards
         if active_bridge_dashboards() and action != 'flash':

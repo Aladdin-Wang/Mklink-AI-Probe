@@ -51,7 +51,7 @@ class SharedTarget:
             info = bootstrap.info
         finally:
             bootstrap.close()
-        self.info = info
+        self.info = dict(info)
         return self
 
     def client_closed(self, client_id):

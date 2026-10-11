@@ -318,8 +318,8 @@ python -m mklink remote --site field-a stop-agent --yes
 
 ### 0.3.0 脱机部署的设备身份限制
 
-`offline.preview` 仍可在无探针时生成脚本。`offline.deploy` 仅允许具有不可变探针
-身份绑定的后台执行，并通过 USB 身份匹配唯一卷 GUID；不会按 MICROKEEN 卷标、
+`offline.preview` 仍可在无探针时生成脚本。`offline.deploy` 仅允许独占所选探针
+且在整个操作期间保持身份绑定的后台执行，并通过 USB 身份匹配唯一卷 GUID；不会按 MICROKEEN 卷标、
 盘符、环境变量或列表首项选盘。身份缺失、设备不在或磁盘映射不唯一时拒绝部署。
 
 远程服务先通过 `agent.reconnect` 接入所选物理探针后台，再消费上传完成的

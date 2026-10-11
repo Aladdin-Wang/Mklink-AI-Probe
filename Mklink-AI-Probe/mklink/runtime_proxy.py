@@ -46,7 +46,6 @@ def create_proxy(info, *, port, instance_id, transport=None):
     view_lock = asyncio.Lock()
     view_registered = False
     closing = False
-    runtime_changed = asyncio.Event()
 
     async def renew_view():
         nonlocal view_registered
@@ -160,7 +159,6 @@ def create_proxy(info, *, port, instance_id, transport=None):
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
     async def forward(request: Request, path: str):
-        nonlocal runtime_changed
         headers = {key: value for key, value in request.headers.items() if key.lower() not in HOP_HEADERS}
         headers["X-Auth-Token"] = info["token"]
         url = httpx.URL(f"http://127.0.0.1:{info['port']}/{path}").copy_with(query=request.url.query.encode())
@@ -173,21 +171,8 @@ def create_proxy(info, *, port, instance_id, transport=None):
             await response.aread()
             selection = response.json()
             await response.aclose()
-            if selection.get("runtime_url"):
-                from mklink.runtime import discover
-                selected = await asyncio.to_thread(discover, selection["probe_id"])
-                if not selected:
-                    return JSONResponse({"detail": "Selected runtime unavailable"}, status_code=503)
-                async with view_lock:
-                    if closing:
-                        return JSONResponse({'detail': 'Desktop is closing'}, status_code=409)
-                    await release_view()
-                    info.clear()
-                    info.update(selected)
-                    previous = runtime_changed
-                    runtime_changed = asyncio.Event()
-                    previous.set()
-                return {"same_runtime": False, "reload": True, "probe_id": selected["probe_id"]}
+            if selection.get("switched"):
+                info['probe_id'] = selection['probe_id']
             return selection
         headers = {key: value for key, value in response.headers.items()
                    if key.lower() not in HOP_HEADERS and key.lower() != "set-cookie"}
@@ -204,12 +189,12 @@ def create_proxy(info, *, port, instance_id, transport=None):
         # Legacy client also supports the declared websockets>=11 baseline and
         # never routes loopback IPC through environment-configured proxies.
         from websockets.legacy.client import connect
-        selected_generation = runtime_changed
         target = f"ws://127.0.0.1:{info['port']}/{path}"
         if websocket.url.query:
             target += "?" + websocket.url.query
         try:
-            async with connect(target, extra_headers={"X-Auth-Token": info["token"]},
+            async with connect(target, extra_headers={"X-Auth-Token": info["token"],
+                               "X-MKLink-View-Owner": view_id},
                                compression=None, max_size=4 * 1024 * 1024) as upstream:
                 await websocket.accept()
 
@@ -227,16 +212,16 @@ def create_proxy(info, *, port, instance_id, transport=None):
                         else:
                             await websocket.send_text(message)
 
-                changed = asyncio.create_task(selected_generation.wait())
-                tasks = [asyncio.create_task(to_runtime()), asyncio.create_task(to_gui()), changed]
+                tasks = [asyncio.create_task(to_runtime()), asyncio.create_task(to_gui())]
                 try:
                     await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                    if tasks[1].done():
+                        await websocket.close(code=getattr(upstream, 'close_code', None) or 1000,
+                                              reason=getattr(upstream, 'close_reason', '') or '')
                 finally:
                     for task in tasks:
                         task.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
-                    if selected_generation.is_set():
-                        await websocket.close(code=1012, reason='runtime changed')
         except Exception:
             try:
                 await websocket.close(code=1011)
@@ -250,7 +235,7 @@ def serve_desktop_proxy(args):
     import uvicorn
     from mklink.runtime import ensure_runtime
     from mklink.remote.api import _bind_desktop_server_socket, _write_desktop_runtime_info
-    info = ensure_runtime(project_root=args.project_root, port=args.port, allow_lobby=True)
+    info = ensure_runtime(project_root=args.project_root, port=args.port, allow_lobby=True, new_window=True)
     listener, selected = _bind_desktop_server_socket(args.host, args.port, args.desktop_port_end)
     try:
         app = create_proxy(info, port=selected, instance_id=args.desktop_instance_id)

@@ -394,10 +394,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.add_argument("--project-root", default=".")
         parser.add_argument("--port", type=int, default=8765)
         parser.add_argument("--probe-id", default="lobby")
+        parser.add_argument("--runtime-id", default=None)
         runtime_args = parser.parse_args(values[1:])
         from mklink.runtime import serve_runtime
         serve_runtime(project_root=runtime_args.project_root, port=runtime_args.port,
-                      probe_id=runtime_args.probe_id)
+                      probe_id=runtime_args.probe_id, runtime_id=runtime_args.runtime_id)
         return 0
     args = build_parser().parse_args(values)
     try:

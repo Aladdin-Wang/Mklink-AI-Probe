@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   writeSymbol: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
+  toastInfo: vi.fn(),
   stale: { value: false },
   items: null as any,
   containers: null as any,
@@ -101,7 +102,7 @@ vi.mock('../../composables/useSymbolCatalog', () => ({
 }))
 
 vi.mock('../../composables/useToast', () => ({
-  useToast: () => ({ error: mocks.toastError, success: mocks.toastSuccess }),
+  useToast: () => ({ error: mocks.toastError, success: mocks.toastSuccess, info: mocks.toastInfo }),
 }))
 
 import SymbolVariablePanel from './SymbolVariablePanel.vue'
@@ -162,7 +163,7 @@ describe('SymbolVariablePanel', () => {
     mocks.applyingLayout.value = false
     mocks.ensureLoaded.mockResolvedValue(undefined)
     mocks.reparse.mockResolvedValue({ preserved: ['gain'], updated: [], removed: [] })
-    mocks.writeSymbol.mockResolvedValue({ path: 'gain', generation: 1, value: 1.3, verified: true })
+    mocks.writeSymbol.mockResolvedValue({ path: 'gain', generation: 1, value: 1.3, verified: false, acknowledged: true })
     mocks.applyCLayout.mockResolvedValue({
       layout: { leaf_count: 3 },
       rebind: { preserved: [], updated: [], removed: [] },
@@ -458,7 +459,7 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.get('[data-testid="latest-gain"]').text()).toContain('1.25')
   })
 
-  it('writes a float from the variable row and shows the verified value', async () => {
+  it('writes a float from the variable row and shows the written value', async () => {
     const wrapper = mount(SymbolVariablePanel, {
       props: { deviceConnected: true, latestValues: { gain: 1.25 } },
     })
@@ -481,6 +482,23 @@ describe('SymbolVariablePanel', () => {
 
     expect(wrapper.get('[data-testid="edit-gain"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('AXF 已变化')
+  })
+
+  it('shows a write acknowledgement without claiming verification or retrying', async () => {
+    mocks.writeSymbol.mockResolvedValueOnce({ path: 'gain', generation: 1, value: 1.3,
+      acknowledged: true, verified: false, mode: 'cdc-mux' })
+    const wrapper = mount(SymbolVariablePanel, {
+      props: { deviceConnected: true, latestValues: { gain: 1.25 } },
+    })
+    await flushPromises()
+    await wrapper.get('[data-testid="edit-gain"]').trigger('click')
+    await wrapper.get('[data-testid="write-input-gain"]').setValue('1.3')
+    await wrapper.get('[data-testid="write-gain"]').trigger('click')
+    await flushPromises()
+    expect(mocks.writeSymbol).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="write-ok-gain"]').text()).toBe('已写入: 1.300000')
+    expect(mocks.toastInfo).not.toHaveBeenCalled()
+    expect(mocks.toastError).not.toHaveBeenCalled()
   })
 
   it('expands search matches and restores the previous expansion state when cleared', async () => {

@@ -3,6 +3,7 @@ import threading
 from types import SimpleNamespace
 
 import pytest
+from pymodbus.exceptions import ConnectionException
 
 from mklink.modbus._client import ModbusClient, ModbusError
 from mklink.modbus._scanner import scan_slaves
@@ -52,8 +53,14 @@ def test_probe_uses_real_rtu_codec_once_and_restores_all_timing(monkeypatch, tmp
     worker = ModbusWorker(client, 1)
     worker.start()
     try:
-        if reply in ('io_error', 'restore_error'):
-            with pytest.raises(OSError, match='port lost|restore failure'): worker.probe_slave(7, 2)
+        if reply == 'io_error':
+            # Newer pymodbus closes the failed transport and wraps OSError.
+            # Either form must escape the scan, never report an absent slave.
+            with pytest.raises((OSError, ConnectionException), match='port lost|Connection'):
+                worker.probe_slave(7, 2)
+        elif reply == 'restore_error':
+            with pytest.raises(OSError, match='restore failure'):
+                worker.probe_slave(7, 2)
         else:
             result = worker.probe_slave(7, 2)
             assert result['responded'] == (reply != 'absent')
@@ -67,7 +74,6 @@ def test_probe_uses_real_rtu_codec_once_and_restores_all_timing(monkeypatch, tmp
         assert raw.transaction.count_until_disconnect == countdown
         assert worker.slave == 1
         if reply == 'restore_error':
-            from pymodbus.exceptions import ConnectionException
             from mklink.local_resources import _PortLock
             assert not wire.is_open and raw.socket is None
             contender = _PortLock('TEST')

@@ -74,7 +74,6 @@ def test_uart_state_survives_symbol_changes_and_does_not_block_device_release(ru
     assert call(client, target, 'device_status').status_code == 409
     assert call(client, target, 'serial_status').status_code == 200
     assert call(client, uart, 'modbus_status').status_code == 200
-    assert client.post('/api/device/disconnect').status_code == 409
     client.post('/_runtime/detach', json={'session_id': target})
     control.require_symbol_change()
     assert client.post('/api/runtime/control/release-device', json={'confirm': True}).status_code == 200
@@ -210,7 +209,7 @@ def test_active_mcp_and_sdk_can_attach_uart_without_target(runtime, monkeypatch)
             assert result.data['scope'] == 'uart'
             assert (await mcp.call_tool('gui_call', {'capability': 'uart_ports'})).data == [{'device': 'TEST_UART'}]
             assert (await mcp.call_tool('gui_call', {'capability': 'modbus_status'})).data == {'running': False}
-            await mcp.call_tool('disconnect', {})
+            await mcp.call_tool('detach', {})
     asyncio.run(scenario())
     assert not control.sessions and calls == [] and app.state.mklink_state['device'] is None
 
@@ -467,7 +466,7 @@ def test_mcp_loop_survives_detach_and_peer_stops_same_worker(uart_app, monkeypat
             result = await mcp.call_tool('gui_call', {'capability': 'modbus_loop_start',
                 'arguments': {'fc': 3, 'start': 8, 'quantity': 1, 'interval': 3600}})
             assert not result.is_error and result.data['running']
-            await mcp.call_tool('disconnect', {})
+            await mcp.call_tool('detach', {})
     asyncio.run(scenario())
     manager = managers['modbus']
     assert not control.sessions and manager.running and manager.get_status()['loop']['running']
@@ -677,7 +676,7 @@ def test_uart_mcp_shared_writes_use_existing_workers(uart_app, monkeypatch):
                 ('serial_stop', {}), ('modbus_stop', {})]:
                 result = await mcp.call_tool('gui_call', {'capability': capability, 'arguments': arguments})
                 assert not result.is_error, result
-            await mcp.call_tool('disconnect', {})
+            await mcp.call_tool('detach', {})
     asyncio.run(scenario())
     assert monitor.sent == [('TEST_SERIAL', b'\x00A\xff')]
     assert len(factory.instances) == 1 and factory.instances[0].calls == [('write', 2, 17, 7)]

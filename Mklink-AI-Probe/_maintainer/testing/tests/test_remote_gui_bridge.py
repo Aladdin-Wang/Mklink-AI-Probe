@@ -122,3 +122,15 @@ def test_binary_stream_preserves_frames_and_closes_only_its_transport():
                 await asyncio.to_thread(exercise)
         assert seen==['viewer-control']
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('change', ['probe_id', 'device_generation'])
+def test_target_transition_invalidates_remote_gui_before_upstream(change):
+    info={'instance_id':'fixed','port':1,'token':'private','probe_id':'a','device_generation':0}
+    bridge=GuiBridge(info)
+    info[change]='b' if change=='probe_id' else 1
+    request=SimpleNamespace(params={'mode':'http','path':'/api/device/write-memory','method':'POST',
+        'instance_id':'fixed'},request_id=1)
+    with pytest.raises(RequestValidationError,match='target connection changed'):
+        asyncio.run(bridge(None,request))
+    assert bridge.active==0

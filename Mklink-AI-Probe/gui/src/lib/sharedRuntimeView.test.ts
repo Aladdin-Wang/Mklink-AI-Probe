@@ -62,13 +62,12 @@ describe('shared window transport presence', () => {
     expect(Socket.all).toHaveLength(2)
     expect(Socket.all[1]!.url).toContain('/api/runtime/control/view/')
   })
-  it('reloads device state when another desktop window changes the selected runtime', () => {
+  it('does not reload the page on a presence transport restart', () => {
     const reload = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
     Socket.all[0]!.onclose?.({ code: 1012, reason: 'runtime changed' })
-    expect(reload).toHaveBeenCalledOnce()
-    expect(reload.mock.calls[0]![0]).toContain('runtime_transition=probe')
+    expect(reload).not.toHaveBeenCalled()
     vi.advanceTimersByTime(60000)
-    expect(Socket.all).toHaveLength(1)
+    expect(Socket.all).toHaveLength(2)
     reload.mockRestore()
   })
   it('keeps windows independent and stops permanently on normal pagehide', () => {

@@ -816,7 +816,7 @@ def test_device_exact_rtt_start_uses_control_block_down_buffer_fallback():
     assert bridge.state is DeviceState.RTT_STREAM
 
 
-def test_device_dynamic_exact_address_still_performs_bounded_host_scan():
+def test_device_dynamic_exact_address_validates_without_reading_scan_window():
     control_block_addr = 0x20000000
     header, down = _rtt_control_block_memory()
     scan_size = 1024 + len(b"SEGGER RTT") - 1
@@ -846,7 +846,8 @@ def test_device_dynamic_exact_address_still_performs_bounded_host_scan():
 
     assert result["control_block_addr"] == f"0x{control_block_addr:08x}"
     assert result["down_buffer_source"] == "target-control-block"
-    assert (control_block_addr, scan_size) in reads
+    assert (control_block_addr, scan_size) not in reads
+    assert reads[0] == (control_block_addr, 24)
 
 
 class CorruptDescriptorBridge(StopSensitiveBridge):
@@ -1234,7 +1235,7 @@ def test_implicit_rtt_scan_clips_at_trusted_ram_boundary(base):
     device.validate_rtt_stream_request(base, search_size=0, mode=0)
     span = device._rtt_bounded_search_size(base, 0)
     assert device._find_rtt_control_block(base, span) == base
-    assert reads == [(base, 96), (base, 24), (base + 24, 24)]
+    assert reads == [(base, 24), (base + 24, 24)]
     with pytest.raises(DeviceError, match="scan window"):
         device.validate_rtt_stream_request(base, search_size=1024, mode=0)
 
@@ -1273,7 +1274,7 @@ def test_rtt_scan_does_not_swallow_candidate_memory_read_failure(error):
     device.read_memory = read
     with pytest.raises(type(error), match=str(error)):
         device._find_rtt_control_block(base, 256)
-    assert len(reads) == 2
+    assert reads == [(base, 24)]
 
 
 def test_implicit_rtt_scan_still_rejects_short_control_block():

@@ -61,6 +61,25 @@ async function freshCatalog() {
 }
 
 describe('useSymbolCatalog', () => {
+  it('discards an old device response and reloads even when the next ELF generation matches', async () => {
+    vi.resetModules()
+    const { useSymbolCatalog, resetDeviceSymbolCatalog } = await import('./useSymbolCatalog')
+    const catalog = useSymbolCatalog()
+    let finishOld!: (value: Response) => void
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>(resolve => { finishOld = resolve }))
+      .mockResolvedValueOnce(jsonResponse({ ...firstPage, items: [firstPage.items[1]], total: 1 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const pending = catalog.ensureLoaded().catch(error => error)
+    resetDeviceSymbolCatalog()
+    await catalog.ensureLoaded()
+    finishOld(jsonResponse(firstPage))
+    expect(await pending).toBeInstanceOf(Error)
+    expect(catalog.items.value.map(item => item.path)).toEqual(['gain'])
+    expect(catalog.error.value).toBeNull()
+    expect(catalog.loading.value).toBe(false)
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()

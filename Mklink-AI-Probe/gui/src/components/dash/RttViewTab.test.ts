@@ -541,6 +541,27 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('accepts a backend ready after 18 seconds without cancelling preparation', async () => {
+    vi.useFakeTimers()
+    mocks.dash.start.mockImplementationOnce(async () => {
+      mocks.status = { running: true, control_block_addr: null, down_buffers: [] }
+      return true
+    })
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    const toolbar = wrapper.findComponent({ name: 'ControlToolbar' })
+    toolbar.vm.$emit('start')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(18_000)
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
+    expect(toolbar.text()).toContain('启动中')
+    mocks.status = { running: true, control_block_addr: '0x20000108', down_buffers: [] }
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    expect(mocks.binary.start).toHaveBeenCalled()
+    expect(toolbar.props('state')).not.toBe('error')
+    wrapper.unmount()
+  })
+
   it('stops a timed-out RTT start and ignores a late running status', async () => {
     vi.useFakeTimers()
     mocks.dash.stop
@@ -560,7 +581,7 @@ describe('RttViewTab binary migration', () => {
 
     toolbar.vm.$emit('start')
     await flushPromises()
-    await vi.advanceTimersByTimeAsync(12_000)
+    await vi.advanceTimersByTimeAsync(61_000)
     await flushPromises()
 
     expect(mocks.dash.stop).toHaveBeenCalledTimes(2)

@@ -21,7 +21,7 @@ def stop_backend(control, body):
     confirm_idle(control, body)
     if control.uart_operations:
         raise HTTPException(409, 'Independent UART operations are still running; wait for completion')
-    if control.sessions or len(control.views) > 1:
+    if control.sessions or control.window_count > 1:
         raise HTTPException(409, 'Detach AI/CLI/SDK clients and close other GUI windows first')
     from mklink.remote.dashboards import get_managers
     from mklink.remote.api import _dashboard_worker_alive
@@ -72,6 +72,9 @@ def install_management(app, control):
             await socket.close(code=1008)
             return
         record = {'joined': time.monotonic(), 'expires': float('inf'), 'name': 'GUI window', 'live': True}
+        owner = socket.headers.get('x-mklink-view-owner')
+        if owner and owner.startswith('desktop-') and len(owner) <= 128:
+            record['owner'] = owner
         record.update(socket=socket, presentation=socket.query_params.get('presentation') == '1')
         control.views[key] = record
         try:
@@ -135,11 +138,8 @@ def install_management(app, control):
 
     @api.post('/release-device')
     async def release_device(body: dict):
-        confirm_idle(control, body)
-        if control.target_sessions:
-            raise HTTPException(409, 'Detach AI/CLI/SDK clients before releasing the physical device')
-        no_capture()
-        return await control.invoke('POST', '/api/device/disconnect')
+        confirm_idle(control, body, target=False)
+        return await control.invoke('POST', '/api/device/disconnect', session_id=body.get('session_id'))
 
     @api.post('/stop-backend')
     async def stop(body: dict):

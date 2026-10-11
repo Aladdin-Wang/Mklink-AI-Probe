@@ -26,7 +26,7 @@ def test_protocol_entry_uses_persistent_workspace_not_shell_cwd(tmp_path, monkey
     monkeypatch.setattr('mklink.runtime.handoff_gui', lambda info, prepare: (prepare(None), True)[1])
     web_entry.start_web_entry(browser_open=lambda url: None)
     assert calls == [{'project_root': str((tmp_path / 'web-entry/workspace').resolve()),
-                      'port': web_entry.DEFAULT_PORT, 'allow_lobby': True}]
+                      'port': web_entry.DEFAULT_PORT, 'allow_lobby': True, 'new_window': True}]
     assert not (shell_cwd / '.mklink').exists()
 
 

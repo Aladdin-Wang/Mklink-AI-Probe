@@ -109,7 +109,7 @@ def test_write_preserves_worker_epoch_origin_and_paused_state(tmp_path, live, pa
         if paused: manager.pause()
         before = (manager._thread, manager._origin_us, manager._metadata_version)
         result = manager.write_symbol('gain', generation=1, value=1.5)
-        assert result['verified'] and result['value'] == 1.5
+        assert result['acknowledged'] and not result['verified'] and result['value'] == 1.5
         assert result['mode'] == ('live' if live else 'legacy-gap')
         assert (manager._thread, manager._origin_us, manager._metadata_version) == before
         assert manager.get_status()['state'] == ('paused' if paused else 'running')
@@ -127,7 +127,7 @@ def test_write_preserves_worker_epoch_origin_and_paused_state(tmp_path, live, pa
 @pytest.mark.parametrize('live', [True, False])
 def test_rejected_write_does_not_reset_or_stop_capture(tmp_path, live):
     manager, peer, _ = manager_peer(tmp_path, live, RuntimeError('flush failed') if not live else None)
-    peer.ack_status = 3
+    peer.ack_status = 2
     try:
         before = manager._metadata_version
         manager.pause()
@@ -184,7 +184,7 @@ def test_hpm_capability_and_target_ram_intersection(tmp_path, live):
         epoch = (manager._thread, manager._origin_us, manager._metadata_version)
         result = manager.write_symbol('gain', generation=1, value=3.125)
         assert result['mode'] == ('live' if live else 'legacy-gap')
-        assert result['verified'] and result['value'] == 3.125
+        assert result['acknowledged'] and not result['verified'] and result['value'] == 3.125
         assert manager._live_write_ranges == ((0x01200020, 0x01200024),)
         assert manager.get_status()['live_write_supported'] is live
         assert epoch == (manager._thread, manager._origin_us, manager._metadata_version)
@@ -214,4 +214,86 @@ def test_hpm_session_rejects_unsupported_ranges_before_transmit(address, size, a
         with pytest.raises(ValueError):
             session.request_write(address, bytes(size), Future())
         assert len(peer.writes) == before
+    session.stop()
+
+
+@pytest.mark.parametrize('mode', ['cdc-mux', 'legacy-gap'])
+def test_write_without_readback_preserves_worker_and_next_write(tmp_path, monkeypatch, mode):
+    from mklink.mux_watch import MuxWatchSession
+    manager, peer, operations = manager_peer(tmp_path, live=mode == 'cdc-mux')
+    writes = []
+    def read(address, size):
+        pytest.fail('write must not read back')
+    if mode == 'cdc-mux':
+        def write(address, data):
+            writes.append(data)
+            peer.value = struct.unpack('<f', data)[0]
+        transport = SimpleNamespace(write_memory=write, read_memory=read)
+        mux = MuxWatchSession(transport, [(0x20000020, 4)], .001)
+        monkeypatch.setattr(DumpMemoryStreamSession, 'request_write',
+                            lambda self, address, data, future: mux.write(address, data, future))
+    else:
+        manager._device.read_memory = read
+    try:
+        identity = (manager._thread, manager._origin_us, manager._metadata_version)
+        result = manager.write_symbol('gain', generation=1, value=1.5)
+        assert result['acknowledged'] and result['verified'] is False and result['value'] == 1.5
+        assert result['mode'] == mode
+        assert len(writes if mode == 'cdc-mux' else operations) == 1
+        assert manager.running and manager.get_status()['error'] is None
+        cycles = manager.get_status()['read_cycles']
+        deadline = time.monotonic() + 1
+        while manager.get_status()['read_cycles'] <= cycles and time.monotonic() < deadline:
+            time.sleep(.001)
+        assert manager.get_status()['read_cycles'] > cycles
+        result = manager.write_symbol('gain', generation=1, value=3.5)
+        assert result['acknowledged'] and not result['verified'] and result['value'] == 3.5
+        assert identity == (manager._thread, manager._origin_us, manager._metadata_version)
+        assert [event['verified'] for event in manager.get_status()['write_events']] == [False, False]
+    finally:
+        manager.stop()
+
+
+def test_mux_write_transport_failure_remains_fatal_and_is_not_retried():
+    from mklink.mux_watch import MuxWatchSession
+    from mklink.mux import MuxError
+    calls = []
+    def write(address, data):
+        calls.append(data)
+        raise MuxError('outcome unknown')
+    def read(address, size):
+        pytest.fail('write must not read back')
+    session = MuxWatchSession(SimpleNamespace(write_memory=write, read_memory=read), [(0x20000020,4)], .001)
+    future = Future()
+    with pytest.raises((RuntimeError, MuxError), match='unknown') as error:
+        session.write(0x20000020, b'1234', future)
+    assert future.exception() is error.value and len(calls) == 1
+
+
+def test_idle_write_acknowledges_without_readback(tmp_path):
+    device, operations = _symbol_write_device(tmp_path)
+    device.read_memory = lambda *args: pytest.fail('write must not read back')
+    manager = SuperWatchStreamManager()
+    manager._device = device
+    result = manager.write_symbol('gain', generation=1, value=1.5)
+    assert result['acknowledged'] and result['verified'] is False and result['value'] == 1.5
+    assert len(operations) == 1
+
+
+@pytest.mark.parametrize('status', [0, 1, 2, 3, 4, 5, 255])
+def test_sw01_write_status_is_distinct_from_builtin_readback(status):
+    peer = Peer(); peer.suppress_ack = True
+    session = DumpMemoryStreamSession(peer, [(0x20000020, 4)], .001)
+    session.start(); future = Future()
+    session.request_write(0x20000020, struct.pack('<f', 2), future)
+    request = session._write_pending[0]
+    # Deliberately different legacy firmware readback must not change the ACK value.
+    peer.chunks.append(ack(request_id=request, value=99, status=status))
+    session.read_frames()
+    if status in (0, 3, 5):
+        assert future.result()['data'] == struct.pack('<f', 2)
+        assert future.result()['acknowledged'] and not future.result()['verified']
+    else:
+        with pytest.raises(RuntimeError, match='Live write failed'): future.result()
+    assert sum(x.startswith(b'\x1e') for x in peer.writes) == 1
     session.stop()

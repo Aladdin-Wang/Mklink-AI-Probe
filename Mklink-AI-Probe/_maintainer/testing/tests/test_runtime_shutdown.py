@@ -35,6 +35,7 @@ def test_backend_exits_and_releases_owner_after_stream_clients(tmp_path, monkeyp
                     break
                 time.sleep(.02)
             assert info is not None, 'Backend never became ready'
+            endpoint = tmp_path / 'runtime/probes' / info['runtime_id'] / 'endpoint.json'
             for _ in range(30):
                 peer = socket.create_connection(('127.0.0.1', info['port']), timeout=3)
                 peers.append(peer)
@@ -98,4 +99,4 @@ serve_runtime(project_root=%r,port=0,probe_id='lobby')
             with runtime_lock('owner.lock','lobby'):pass
         finally:
             if process.poll() is None:process.terminate();process.wait(5)
-    assert 'Application shutdown complete' in (tmp_path/'runtime/probes/lobby/runtime.log').read_text(encoding='utf-8')
+    assert 'Application shutdown complete' in (tmp_path/'runtime/probes'/info['runtime_id']/'runtime.log').read_text(encoding='utf-8')

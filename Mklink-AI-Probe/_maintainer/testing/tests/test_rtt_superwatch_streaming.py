@@ -1100,6 +1100,33 @@ def test_superwatch_subscribe_replays_cached_metadata_without_waiting_for_read(m
     asyncio.run(scenario())
 
 
+def test_superwatch_publishes_original_failure_during_cleanup(monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    class FailedSession:
+        stats = {}
+        def __init__(self, *args, **kwargs): pass
+        def start(self): pass
+        def read_frames(self, **kwargs): raise RuntimeError('original acquisition timeout')
+        def stop(self):
+            entered.set()
+            assert release.wait(2)
+            raise RuntimeError('secondary stop timeout')
+
+    monkeypatch.setattr('mklink.dump_memory.DumpMemoryStreamSession', FailedSession)
+    manager = SuperWatchStreamManager()
+    manager._runtime = _MutableWatchRuntime()
+    manager.start(SimpleNamespace(_bridge=_SuperWatchDumpBridge()))
+    try:
+        assert entered.wait(1)
+        status = manager.get_status()
+        assert status['error'] == 'original acquisition timeout'
+        assert manager._thread.is_alive() and manager.running
+    finally:
+        release.set()
+        manager.stop()
+    assert manager.get_status()['error'] == 'original acquisition timeout'
+
+
 def test_superwatch_layout_change_does_not_wait_for_read_and_discards_stale_cycle(monkeypatch):
     hub = _RecordingHub()
     manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=1)
@@ -1490,22 +1517,14 @@ def test_superwatch_prepare_rebinds_existing_runtime_to_reconnected_device(
     manager._device = old_device
 
     manager.prepare(new_device)
-    monkeypatch.setattr(
-        manager,
-        "_readback_once",
-        lambda address, size: new_operations.append(("readback", address, size))
-        or struct.pack("<f", 1.5),
-        raising=False,
-    )
 
     result = manager.write_symbol("gain", generation=1, value=1.5)
 
     assert old_operations == []
     assert new_operations == [
         ("write", 0x20000020, struct.pack("<f", 1.5)),
-        ("readback", 0x20000020, 4),
     ]
-    assert result["verified"] is True
+    assert result["acknowledged"] and result["verified"] is False
 
 
 def test_superwatch_prepare_rebinds_selected_items_to_new_device_catalog(tmp_path):
@@ -1560,15 +1579,6 @@ def test_superwatch_prepare_rebinds_selected_items_to_new_device_catalog(tmp_pat
     assert [(block.address, block.size) for block in manager._runtime.blocks] == [
         (0x20000040, 4),
     ]
-
-
-def test_superwatch_readback_uses_command_mode_after_dump_stream_stops():
-    manager = SuperWatchStreamManager()
-    device = SimpleNamespace(read_memory=Mock(return_value=b"\x00"))
-    manager._device = device
-
-    assert manager._readback_once(0x20000020, 1) == b"\x00"
-    device.read_memory.assert_called_once_with(0x20000020, 1)
 
 
 def test_superwatch_adds_catalog_array_leaves_and_merges_contiguous_reads(tmp_path):

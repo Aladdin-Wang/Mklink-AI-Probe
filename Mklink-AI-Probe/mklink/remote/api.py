@@ -1642,7 +1642,7 @@ def create_app(
         if not _state.get("shared_runtime"):
             return {"same_runtime": True}
         from mklink.probes import select_probe
-        from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime, connect_gui_target
+        from mklink.runtime import RuntimeErrorResponse
         selector = body.get("probe") or body.get("port")
         if "connect" in body and not isinstance(body["connect"], dict):
             raise HTTPException(422, "connect must be an object")
@@ -1650,18 +1650,47 @@ def create_app(
             raise HTTPException(422, "probe must be a string")
         if not selector and _state.get("shared_probe_id") != "lobby":
             return {"same_runtime": True}
+        if not selector and (body.get('connect') or {}).get('restore_last'):
+            selector = (_state.get('last_device_connection') or {}).get('port')
         try:
             selected = select_probe(selector)
-            if selected["probe_id"] == _state.get("shared_probe_id") and not body.get("open_browser"):
-                return {"same_runtime": True}
-            target = await run_in_threadpool(ensure_runtime, project_root=_state["project_root"], probe=selected["probe_id"])
-            if "connect" in body:
-                await run_in_threadpool(connect_gui_target, target, body["connect"])
-            if body.get("open_browser") is True:
-                import webbrowser
-                await run_in_threadpool(webbrowser.open, browser_url(target))
-                return {"opened": True, "probe_id": selected["probe_id"]}
-            return {"same_runtime": False, "probe_id": selected["probe_id"], "runtime_url": browser_url(target)}
+            runtime = app.state.shared_runtime
+            async def switch():
+                runtime.prune()
+                if selected['probe_id'] == _state.get('shared_probe_id'):
+                    return {'same_runtime': True}
+                binding = getattr(runtime, 'binding', None)
+                if binding is None:
+                    raise HTTPException(503, 'Backend does not support in-place probe switching; restart it')
+                # Reserve the destination before touching the current device.
+                # Cancellation remains inside run_operation until cleanup ends.
+                with binding.reserve(selected['probe_id']) as commit:
+                    from mklink.runtime_jobs import prepare_probe_journal
+                    journal = prepare_probe_journal(runtime, selected['probe_id'])
+                    # Wait for deferred target initialization, then stop the
+                    # capture owners before requesting any new target lease.
+                    async with _async_target_lock():
+                        await _disconnect_shared_device()
+                    _retire_target_connection(runtime)
+                    commit()
+                    _state['shared_probe_id'] = selected['probe_id']
+                    runtime.jobs.path, runtime.jobs.jobs = journal
+                    runtime.info['jobs_path'] = str(journal[0])
+                    # Host symbols may be reused when explicitly requested;
+                    # target-specific MCU guesses must not cross devices.
+                    previous = _state.get('last_device_connection') or {}
+                    _state['last_device_connection'] = {
+                        k: previous[k] for k in ('axf', 'elf_backend') if k in previous}
+                result = None
+                if 'connect' in body:
+                    options = {k: v for k, v in body['connect'].items()
+                               if k in {'axf', 'mcu', 'elf_backend', 'restore_last'}}
+                    result = await connect_device(port=selected['port'], axf=options.get('axf'),
+                        mcu=options.get('mcu'), elf_backend=options.get('elf_backend'),
+                        restore_last=options.get('restore_last', False), reuse_connected=False)
+                return {'same_runtime': True, 'switched': True, 'connection': result,
+                        'probe_id': selected['probe_id'], 'device_generation': _state['device_generation']}
+            return await runtime.run_lifecycle('/api/runtime/select', switch, session_id=body.get('session_id'))
         except RuntimeErrorResponse as exc:
             raise HTTPException(409, str(exc)) from exc
 
@@ -1761,6 +1790,36 @@ def create_app(
                     _state["dispatcher"] = None
                 return {"status": "disconnected", "stopped": stopped}
 
+    def _reset_probe_dashboards():
+        """Retire all target data after workers stop, retaining independent UART."""
+        from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
+        from mklink.remote.stream_hub import StreamHub
+        for name in BRIDGE_DASHBOARD_TYPES:
+            old = dashboard_managers[name]
+            old._bridge.stop()
+            manager = type(old)()
+            dashboard_managers[name] = manager
+            stream_registry[name] = StreamHub(stream_api.MAX_BATCHES_PER_CLIENT)
+            manager.set_stream_hub(stream_registry[name])
+        for name in list(stream_registry):
+            if name.startswith('rtt-'):
+                stream_registry[name] = StreamHub(stream_api.MAX_BATCHES_PER_CLIENT)
+        dashboard_managers['rtt'].set_terminal_stream_hub(stream_registry['rtt-terminal'])
+        dashboard_managers['rtt'].set_channel_stream_hubs(stream_registry)
+
+    def _retire_target_connection(runtime):
+        # GUI pages observe the generation; AI/SDK must explicitly reattach.
+        # Independent UART sessions and their acquisition owners stay intact.
+        from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
+        _reset_probe_dashboards()
+        _state['device_generation'] = _state.get('device_generation', 0) + 1
+        if runtime is not None:
+            runtime.info['device_generation'] = _state['device_generation']
+            for key in list(runtime.target_sessions):
+                runtime.sessions.pop(key, None)
+            for name in BRIDGE_DASHBOARD_TYPES:
+                runtime.created_streams.pop(name, None)
+
     @app.post("/api/device/connect")
     async def connect_device(
         port: str | None = Body(default=None),
@@ -1768,6 +1827,7 @@ def create_app(
         mcu: str | None = Body(default=None),
         elf_backend: str | None = Body(default=None),
         restore_last: bool = Body(default=False),
+        reuse_connected: bool = Body(default=False),
     ):
         runtime = getattr(app.state, "shared_runtime", None)
         port_changed = False
@@ -1787,6 +1847,8 @@ def create_app(
             port_changed = bool(current and current.port and current.port.casefold() != port.casefold())
             if current and current.connected and not port_changed:
                 restore_last = False  # Reuse live symbols; never reparse on an implicit reconnect.
+                if reuse_connected:
+                    axf = mcu = elf_backend = None
             if runtime.target_sessions and current and current.connected and not port_changed and any(value is not None for value in (axf, mcu, elf_backend)):
                 raise HTTPException(status_code=409, detail="Detach shared clients before changing device configuration or symbols")
         preferred_port = None
@@ -1911,15 +1973,27 @@ def create_app(
 
     @app.post("/api/device/disconnect")
     async def disconnect_device():
-        return await _disconnect_shared_device()
+        runtime = getattr(app.state, 'shared_runtime', None)
+        async with _async_target_lock():
+            result = await _disconnect_shared_device()
+        _retire_target_connection(runtime)
+        if runtime is not None and getattr(runtime, 'binding', None) is not None:
+            # Keep the window and last connection preferences, release physical
+            # ownership so another independent window can connect this probe.
+            with runtime.binding.reserve('lobby') as commit:
+                commit()
+            _state['shared_probe_id'] = 'lobby'
+        return {**result, 'device_generation': _state['device_generation']}
 
     @app.get("/api/device/status")
     async def device_status():
         if not _state["device"]:
-            return {"connected": False, "state": "disconnected", "axf": {"loaded": False}}
+            return {"connected": False, "state": "disconnected", "axf": {"loaded": False},
+                    "device_generation": _state.get('device_generation', 0)}
         dev = _state["device"]
         return {
             "connected": dev.connected,
+            "device_generation": _state.get('device_generation', 0),
             "state": dev.state.name if dev.state else "disconnected",
             "mcu": dev.mcu_name if dev.connected else None,
             "idcode": hex(dev.idcode) if dev.connected else None,

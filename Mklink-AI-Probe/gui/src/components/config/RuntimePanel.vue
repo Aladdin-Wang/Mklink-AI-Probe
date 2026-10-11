@@ -90,7 +90,7 @@ async function act(action: string, parameters: Record<string, string> = {}) {
   const prompts: Record<string, string> = {
     'detach-client': tr('结束此 AI/CLI/SDK 会话？采集和设备连接将保留。', 'End this AI/CLI/SDK session? Acquisition and device connection will remain.'),
     'stop-acquisition': tr('停止选定采集？有其他订阅者时会拒绝。', 'Stop this capture? Other subscribers will prevent it.'),
-    'release-device': tr('释放此下载器的物理连接？其他设备不受影响。', 'Release this probe connection? Other devices are unaffected.'),
+    'release-device': tr('停止此下载器的采集并断开所有目标会话？正在执行的硬件操作会先完成收尾。', 'Stop this probe’s captures and disconnect its target sessions? Admitted hardware operations finish first.'),
     'stop-backend': tr('退出此下载器后台？本窗口随后将离线。', 'Exit this probe backend? This window will go offline.'),
   }
   if (!window.confirm(prompts[action])) return
@@ -154,7 +154,7 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
       </div>
       <div class="runtime-actions">
         <button class="btn" :disabled="acting" @click="checkVolume">{{ tr('核对下载器磁盘', 'Check probe volume') }}</button><span>{{ volume }}</span>
-        <button class="btn" :disabled="acting || state.busy" data-testid="runtime-release" @click="act('release-device')">{{ tr('释放下载器', 'Release probe') }}</button>
+        <button class="btn" :disabled="acting" data-testid="runtime-release" @click="act('release-device')">{{ tr('释放下载器', 'Release probe') }}</button>
         <button class="btn" :disabled="acting || state.busy" @click="act('stop-backend')">{{ tr('退出后台', 'Exit backend') }}</button>
       </div>
       <template v-if="state.jobs?.length">

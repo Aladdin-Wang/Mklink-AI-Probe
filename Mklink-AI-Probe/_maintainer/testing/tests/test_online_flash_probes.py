@@ -1025,14 +1025,19 @@ def test_rtt_encoding_routes_validate_and_update_the_shared_manager():
     managers["rtt"].set_encoding.assert_called_once_with("gbk")
 
 
-def test_disconnect_stops_only_mklink_dashboards_and_preserves_serial_resources():
+def test_disconnect_stops_only_mklink_dashboards_and_preserves_serial_resources(monkeypatch):
+    from mklink.remote import dashboards
     from mklink.remote.resource_manager import ResourceGroup
 
-    managers = {
-        name: SimpleNamespace(running=name in ("rtt", "serial", "modbus"), start=MagicMock(), stop=MagicMock())
-        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
-    }
-    managers["rtt"].stop.side_effect = lambda: setattr(managers["rtt"], "running", False)
+    # Disconnect now retires target histories and stream hubs as well as workers.
+    # Exercise real target managers so this covers that lifecycle contract.
+    monkeypatch.setattr(dashboards, "_managers", {})
+    managers = dashboards.get_managers()
+    for name in ("serial", "modbus"):
+        managers[name] = SimpleNamespace(running=True, start=MagicMock(), stop=MagicMock())
+    original = dict(managers)
+    original["rtt"]._running = True
+    original["rtt"].stop = MagicMock(wraps=original["rtt"].stop)
     client, state = _dashboard_client(managers)
     device = MagicMock()
     device.connected = True
@@ -1046,9 +1051,16 @@ def test_disconnect_stops_only_mklink_dashboards_and_preserves_serial_resources(
 
     response = client.post("/api/device/disconnect")
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     device.close.assert_called_once()
-    managers["rtt"].stop.assert_called_once_with()
+    original["rtt"].stop.assert_called_once_with()
+    assert not original["rtt"].running
+    for name in dashboards.BRIDGE_DASHBOARD_TYPES:
+        assert managers[name] is not original[name]
+        assert not managers[name].running
+    assert state["device_generation"] == 1
+    assert managers["serial"] is original["serial"]
+    assert managers["modbus"] is original["modbus"]
     managers["serial"].stop.assert_not_called()
     managers["modbus"].stop.assert_not_called()
     status = state["resource_manager"].get_status()
@@ -1860,39 +1872,49 @@ def test_rtt_stop_timeout_preserves_lease_and_prevents_overlapping_generation():
             try:
                 if not read_entered.is_set():
                     read_entered.set()
-                    assert unblock_read.wait(timeout=2)
+                    # Only the test releases the in-flight read. A wall-clock
+                    # expiry can end it before stop() on a busy build machine.
+                    unblock_read.wait()
                 return ""
             finally:
                 with read_lock:
                     active_reads -= 1
 
+        def rtt_stop(self):
+            pass
+
     device = Device()
-    manager.start(device)
-    assert read_entered.wait(timeout=1)
     original_stop = manager.stop
-    manager.stop = lambda: original_stop(timeout=0.01)
-
-    with pytest.raises(Exception) as stopped:
-        stop_dashboard_manager(state, "rtt", manager)
-
-    assert getattr(stopped.value, "detail", {})["code"] == "stop_pending"
-    assert state["resource_manager"].get_active_lease(
-        ResourceGroup.TARGET_DEBUG
-    ).owner == "user:dashboard:rtt"
-    with pytest.raises(RuntimeError, match="still active"):
+    try:
         manager.start(device)
-    assert start_calls == 1
+        assert read_entered.wait(timeout=5)
+        manager.stop = lambda: original_stop(timeout=0.01)
 
-    unblock_read.set()
-    manager._thread.join(timeout=1)
-    stop_dashboard_manager(state, "rtt", manager)
-    manager.stop = original_stop
-    assert state["resource_manager"].get_status() == {}
+        with pytest.raises(Exception) as stopped:
+            stop_dashboard_manager(state, "rtt", manager)
 
-    manager.start(device)
-    assert start_calls == 2
-    manager.stop(timeout=1)
-    assert max_active_reads == 1
+        assert getattr(stopped.value, "detail", {})["code"] == "stop_pending"
+        assert state["resource_manager"].get_active_lease(
+            ResourceGroup.TARGET_DEBUG
+        ).owner == "user:dashboard:rtt"
+        with pytest.raises(RuntimeError, match="still active"):
+            manager.start(device)
+        assert start_calls == 1
+
+        unblock_read.set()
+        manager._thread.join(timeout=5)
+        stop_dashboard_manager(state, "rtt", manager)
+        manager.stop = original_stop
+        assert state["resource_manager"].get_status() == {}
+
+        manager.start(device)
+        assert start_calls == 2
+        manager.stop(timeout=5)
+        assert max_active_reads == 1
+    finally:
+        unblock_read.set()
+        manager.stop = original_stop
+        manager.stop(timeout=5)
 
 
 class _AlwaysAliveThread:

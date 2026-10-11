@@ -246,18 +246,18 @@ def test_watch_split_and_gaps_do_not_mix_rounds():
     assert not transport.watch_running
 
 
-def test_watch_bound_and_memory_write_no_retry_after_verification_mismatch():
+def test_watch_bound_and_memory_write_without_readback_or_retry():
     transport, _ = peer()
     with pytest.raises(ValueError, match='15 regions'):
         MuxWatchSession(transport, [(0x20000000, 2048)], .1)
     watch = MuxWatchSession(transport, [(0x20000000, 4)], .1)
     calls = []
     transport.write_memory = lambda address, data: calls.append((address, data))
-    transport.read_memory = lambda address, size: b'bad!'
+    transport.read_memory = lambda *args: pytest.fail('write must not read back')
     future = Future()
-    with pytest.raises(RuntimeError, match='mismatch'):
-        watch.write(0x20000000, b'good', future)
-    assert future.exception() and len(calls) == 1
+    watch.write(0x20000000, b'good', future)
+    assert future.result()['verified'] is False
+    assert future.result()['data'] == b'good' and len(calls) == 1
 
 
 @pytest.mark.parametrize('channel', range(8))

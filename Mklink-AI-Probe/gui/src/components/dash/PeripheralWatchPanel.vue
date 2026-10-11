@@ -14,6 +14,7 @@
     <p v-if="chipQuery.trim() && !searching && !matchingSvds.length" data-testid="peripheral-no-match">{{ tr('已安装的芯片包中没有匹配的 SVD，请检查型号或安装对应 Pack。', 'No matching SVD in installed packs. Check the model or install its Pack.') }}</p>
     <button class="btn btn-primary" data-testid="peripheral-load" :disabled="!deviceConnected || !targetId || busy" @click="loadChip">{{ tr('加载外设', 'Load peripherals') }}</button>
     <p v-if="selection" data-testid="peripheral-source">{{ tr('当前已加载：', 'Currently loaded: ') }}{{ selection.target }} · {{ selection.pack }} · {{ selection.svd }} · {{ items.length }} {{ tr('项（只读）', 'items (read only)') }}</p>
+    <p v-if="restoreError" role="status" data-testid="peripheral-restore-warning">{{ tr('上次的外设选择已失效，请重新选择实际芯片和 Pack。下载器连接及其他功能可继续使用。', 'The previous peripheral selection is unavailable. Select the actual chip and Pack again. The probe connection and other features remain available.') }} <span>{{ restoreError }}</span></p>
     <p>{{ tr('GPIO 引脚读取 IDR 电平；ODR 为输出锁存值。采样可能漏掉短脉冲，GPIO 时钟须由程序开启。', 'GPIO pins sample IDR levels; ODR is the output latch. Short pulses may be missed. Firmware must enable the GPIO clock.') }}</p>
     <select v-model="group" class="form-input" data-testid="peripheral-group"><option value="">{{ tr('所有外设', 'All peripherals') }}</option><option v-for="name in groups" :key="name">{{ name }}</option></select>
     <input v-model="query" class="form-input" data-testid="peripheral-search" :placeholder="tr('搜索，如 GPIOB.12', 'Search, e.g. GPIOB.12')" />
@@ -41,6 +42,7 @@ const items = ref<Peripheral[]>([])
 const selected = ref(new Set<string>())
 const query = ref('')
 const error = ref('')
+const restoreError = ref('')
 const busy = ref(false)
 type Target = { id: string; target: string; pack: string; svd: string }
 const targets = ref<Target[]>([])
@@ -77,6 +79,7 @@ async function loadTargets() {
   finally { if (epoch === targetRequest) searching.value = false }
 }
 function applyCatalog(payload: any) {
+  restoreError.value = payload.restore_error ?? ''
   items.value = payload.items ?? []
   selection.value = payload.selection ?? null
 }
@@ -188,6 +191,7 @@ watch(() => props.deviceConnected, async connected => {
   clearTimeout(timer)
   items.value = []
   selection.value = null
+  restoreError.value = ''
   selected.value = new Set()
   error.value = ''
   if (!connected) return

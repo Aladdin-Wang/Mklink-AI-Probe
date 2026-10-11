@@ -317,7 +317,7 @@
             class="write-success"
             :data-testid="`write-ok-${row.node.descriptor.path}`"
           >
-            {{ tr('已验证:', 'Verified:') }} {{ formatValue(writeSuccess[row.node.descriptor.path]) }}
+            {{ tr('已写入:', 'Written:') }} {{ formatValue(writeSuccess[row.node.descriptor.path]) }}
           </div>
         </div>
       </template>
@@ -890,12 +890,14 @@ function typedValue(symbol: SymbolDescriptor): unknown {
 
 async function writeValue(symbol: SymbolDescriptor): Promise<void> {
   writing.value = withSet(writing.value, symbol.path, true)
+  delete writeSuccess[symbol.path]
   try {
-    const result = await catalog.writeSymbol(symbol.path, typedValue(symbol))
+    const requestedValue = typedValue(symbol)
+    const result = await catalog.writeSymbol(symbol.path, requestedValue)
     writeSuccess[symbol.path] = result.value
     if (result.mode === 'legacy-gap') {
-      toast.info(tr('已写入并校验。当前固件或目标地址使用兼容写入，期间有采样空档，曲线历史已保留。',
-        'Written and verified. Compatibility writes for this firmware or target address have a sampling gap; curve history is preserved.'))
+      toast.info(tr('已写入。当前固件或目标地址使用兼容写入，期间有采样空档，曲线历史已保留。',
+        'Written. Compatibility writes for this firmware or target address have a sampling gap; curve history is preserved.'))
     }
     editing.value = null
   } catch (cause) {

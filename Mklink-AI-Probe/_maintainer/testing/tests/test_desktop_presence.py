@@ -24,7 +24,7 @@ def upstream_views():
 
     @upstream.post('/api/runtime/select')
     async def select():
-        return {'runtime_url': 'http://127.0.0.1:8775', 'probe_id': 'second'}
+        return {'same_runtime': True, 'switched': True, 'probe_id': 'second'}
 
     return httpx.ASGITransport(app=upstream), views
 
@@ -76,7 +76,7 @@ def test_native_close_releases_only_its_view_before_shutdown_callback():
     assert views[8765] == {'browser-peer'}  # Lifespan cleanup also releases second.
 
 
-def test_probe_switch_releases_old_record_and_registers_only_new_backend(monkeypatch):
+def test_probe_switch_preserves_backend_presence(monkeypatch):
     from mklink import runtime
     transport, views = upstream_views()
     monkeypatch.setattr(runtime, 'discover', lambda _: {'port': 8775, 'token': 'two', 'probe_id': 'second'})
@@ -84,11 +84,12 @@ def test_probe_switch_releases_old_record_and_registers_only_new_backend(monkeyp
     with TestClient(app, base_url='http://127.0.0.1:8766') as client:
         client.post('/api/runtime/control/view', json={'client_id': 'page'})
         assert len(views[8765]) == 2
-        assert client.post('/api/runtime/select', json={'probe_id': 'second'}).json()['reload']
-        assert views[8765] == {'browser-peer'}
+        assert client.post('/api/runtime/select', json={'probe_id': 'second'}).json()['switched']
+        assert len(views[8765]) == 2
         client.post('/api/runtime/control/view', json={'client_id': 'new-page'})
         client.post('/api/runtime/control/view', json={'client_id': 'page', 'release': True})
-        assert len(views[8775]) == 2
+        assert len(views[8765]) == 2
+        assert views[8775] == {'other-probe-peer'}
     assert views[8775] == {'other-probe-peer'}
 
 

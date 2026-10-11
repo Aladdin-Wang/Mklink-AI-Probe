@@ -14,8 +14,8 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 50  # Explicit same-probe reconnect invalidates stale target sessions.
-VERSION = "0.3.3"
+PROTOCOL = 52  # Explicit lifecycle requests drain work and retire target sessions.
+VERSION = "0.3.4"
 STARTUP_TIMEOUT_SECONDS = 60
 
 
@@ -87,6 +87,8 @@ def request(info: dict, method: str, path: str, payload=None, *, timeout=35, for
         data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {"X-Auth-Token": info["token"], "Content-Type":
                "application/x-www-form-urlencoded" if form else "application/json"}
+    if info.get('probe_id'):
+        headers['X-MKLink-Probe'] = info['probe_id']
     req = Request(f"http://127.0.0.1:{port}{path}", data=data, headers=headers, method=method)
     # Local IPC must never travel through environment-configured HTTP proxies.
     try:
@@ -106,6 +108,11 @@ def request(info: dict, method: str, path: str, payload=None, *, timeout=35, for
 
 
 def discover(probe_id=None) -> dict | None:
+    if probe_id == 'lobby':
+        entries = [info for info in running_runtimes() if info.get('probe_id') == 'lobby']
+        if len(entries) > 1:
+            raise RuntimeErrorResponse('Multiple unbound backends; select a runtime identity explicitly')
+        return entries[0] if entries else None
     if probe_id is None:
         entries = running_runtimes()
         if len(entries) > 1:
@@ -120,14 +127,18 @@ def discover(probe_id=None) -> dict | None:
         return None
     if health.get("protocol") != PROTOCOL or health.get("version") != VERSION:
         raise RuntimeErrorResponse("Runtime version differs; stop the old runtime explicitly before upgrading")
-    return info
+    if probe_id not in {health.get('probe_id'), info.get('runtime_id')}:
+        return None
+    return {**info, 'probe_id': health.get('probe_id', info.get('probe_id'))}
 
 
 def running_runtimes() -> list[dict]:
     result = []
     for path in (runtime_dir() / "probes").glob("*/endpoint.json"):
+        if path.parent.name == 'lobby':  # Legacy endpoint, before window-owned backends.
+            continue
         info = discover(path.parent.name)
-        if info:
+        if info and not any(row['instance_id'] == info['instance_id'] for row in result):
             result.append(info)
     return result
 
@@ -138,36 +149,49 @@ def selected_runtime(selector=None) -> dict | None:
         return discover()
     from mklink.probes import load_aliases, select_probe
     aliases = load_aliases()
-    for info in running_runtimes():
-        if str(selector).casefold() in {info["probe_id"].casefold(), aliases.get(info["probe_id"], "").casefold()}:
-            return info
+    matches = [info for info in running_runtimes()
+               if str(selector).casefold() in {info['probe_id'].casefold(), info.get('runtime_id', '').casefold(),
+                                              aliases.get(info['probe_id'], '').casefold()}]
+    if len(matches) > 1:
+        raise RuntimeErrorResponse('Multiple backends match; select a runtime identity explicitly')
+    if matches:
+        return matches[0]
     return discover(select_probe(selector)["probe_id"])
 
 
-def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, device_port=None, allow_lobby=False) -> dict:
+def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, device_port=None, allow_lobby=False, new_window=False) -> dict:
     from mklink.probes import select_probe
     selected = select_probe(probe or device_port, allow_lobby=allow_lobby)
     probe_id = selected["probe_id"]
-    info = discover(probe_id)
+    # A newly opened window gets its own backend. It starts unbound if no
+    # physical selection was explicit, without stealing another window's probe.
+    if new_window and not (probe or device_port):
+        probe_id = 'lobby'
+    if new_window and probe_id != 'lobby' and discover(probe_id):
+        raise RuntimeErrorResponse('This probe is already owned by another window; disconnect it there or open a window without a probe selection')
+    runtime_id = 'local-' + secrets.token_hex(12)
+    discovery_id = runtime_id if new_window else probe_id
+    info = discover(discovery_id)
     if info:
         return info
     deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         try:
-            with runtime_lock("startup.lock", probe_id):
-                info = discover(probe_id)
+            with runtime_lock("startup.lock", discovery_id):
+                info = discover(discovery_id)
                 if info:
                     return info
                 # HTTP can disappear before shutdown finishes closing the
                 # device and diagnostics. Wait using the existing owner lock
                 # before spawning a replacement that would immediately exit.
-                with runtime_lock("owner.lock", probe_id):
-                    pass
-                root = _private_dir(probe_id)
+                if probe_id != 'lobby':
+                    with runtime_lock("owner.lock", probe_id):
+                        pass
+                root = _private_dir(runtime_id)
                 command = [sys.executable]
                 if not getattr(sys, "frozen", False):
                     command += ["-m", "mklink"]
-                command += ["runtime", "serve", "--project-root", str(Path(project_root).resolve()), "--port", str(port), "--probe-id", probe_id]
+                command += ["runtime", "serve", "--project-root", str(Path(project_root).resolve()), "--port", str(port), "--probe-id", probe_id, "--runtime-id", runtime_id]
                 kwargs = {"cwd": str(Path(__file__).resolve().parent.parent), "stdin": subprocess.DEVNULL}
                 if os.name == "nt":
                     kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
@@ -191,7 +215,7 @@ def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, dev
                 with (root / "startup.log").open("wb") as output:
                     process = subprocess.Popen(command, stdout=output, stderr=output, **kwargs)
                 while time.monotonic() < deadline:
-                    info = discover(probe_id)
+                    info = discover(runtime_id)
                     if info:
                         return info
                     if process.poll() is not None:
@@ -222,7 +246,11 @@ def connect_gui_target(info: dict, options: dict):
         client.connect(scope='uart')
         payload = {key: value for key, value in options.items()
                    if key in {'axf', 'mcu', 'elf_backend', 'restore_last'}}
-        # The backend resolves its immutable probe ID. Never forward a COM
+        # Navigating to a probe joins its current workspace. Connection options
+        # initialize a fresh target only; they must not reparse another client's
+        # live symbols or stop its acquisition when returning to that probe.
+        payload['reuse_connected'] = True
+        # The backend resolves its currently owned probe ID. Never forward a COM
         # selector from the previous window to the new device.
         return request(info, 'POST', '/api/device/connect', payload)
     finally:
@@ -314,15 +342,16 @@ class RuntimeClient:
         if scope == 'uart' and any(value is not None for value in (port, axf, mcu, elf_backend)):
             raise ValueError('UART-only attachment accepts a probe selector, not target connection settings')
         with self._lock:
+            existing = self.info is not None
             if self.info is None:
                 options = {'allow_lobby': True} if scope == 'uart' else {}
                 self.info = ensure_runtime(project_root=project_root or self.project_root, probe=probe, device_port=port, **options)
-            elif probe or port:
+            # Only explicit connect may rediscover or select a target. Ordinary
+            # calls retain the original session and never replay hardware work.
+            selected = None
+            if existing and (probe or port):
                 from mklink.probes import select_probe
-                if select_probe(probe or port, allow_lobby=scope == 'uart')["probe_id"] != self.info.get("probe_id"):
-                    raise RuntimeErrorResponse("This client is bound to another probe; disconnect and create a new client")
-            # Only explicit connect may rediscover a dead backend. Keep the
-            # physical identity: an unplugged probe must never select a neighbor.
+                selected = select_probe(probe or port, allow_lobby=scope == 'uart')
             if self.info.get('probe_id'):
                 try:
                     health = request(self.info, 'GET', '/_runtime/status', timeout=2)
@@ -332,12 +361,28 @@ class RuntimeClient:
                     self._stop_heartbeat()
                     self.session_id = None
                     self.info = ensure_runtime(project_root=project_root or self.project_root,
-                                               probe=self.info['probe_id'], allow_lobby=scope == 'uart')
-                elif health.get('protocol') != PROTOCOL or health.get('version') != VERSION:
-                    raise RuntimeErrorResponse('Runtime version differs; stop the old runtime explicitly before upgrading')
+                        probe=selected['probe_id'] if selected else self.info['probe_id'], allow_lobby=scope == 'uart')
+                else:
+                    if health.get('protocol') != PROTOCOL or health.get('version') != VERSION:
+                        raise RuntimeErrorResponse('Runtime version differs; stop the old runtime explicitly before upgrading')
+                    actual = health.get('probe_id', self.info['probe_id'])
+                    if actual != self.info['probe_id']:
+                        self._stop_heartbeat()
+                        self.session_id = None
+                        self.info = {**self.info, 'probe_id': actual}
+                        if selected is None:
+                            raise RuntimeErrorResponse('Backend target changed; explicitly select the intended probe before reconnecting')
+                    if selected and selected['probe_id'] != actual:
+                        if scope == 'uart':
+                            raise RuntimeErrorResponse('Select another target with a target-scoped connection')
+                        request(self.info, 'POST', '/api/runtime/select', {'probe': selected['probe_id']}, timeout=300)
+                        self._stop_heartbeat()
+                        self.session_id = None
+                        self.info = {**self.info, 'probe_id': selected['probe_id']}
             result = request(self.info, "POST", "/_runtime/attach", {
                 "project_root": project_root, "port": port, "axf": axf,
                 "mcu": mcu, "elf_backend": elf_backend, "session_id": self.session_id,
+                'probe_id': self.info.get('probe_id'),
                 'kind': self.kind, 'name': self.name, 'scope': scope,
             })
             self.session_id = result["session_id"]
@@ -431,14 +476,28 @@ class RuntimeClient:
             if session_id:
                 request(self.info, "POST", "/_runtime/detach", {"session_id": session_id})
 
+    def disconnect(self):
+        """Explicit physical disconnect; close() remains attachment-only cleanup."""
+        with self._lock:
+            if self.info is None:
+                return {'status': 'disconnected', 'device_closed': False}
+            result = request(self.info, 'POST', '/api/runtime/control/release-device',
+                             {'confirm': True, 'session_id': self.session_id}, timeout=300)
+            if self.session_id:
+                request(self.info, 'POST', '/_runtime/detach', {'session_id': self.session_id})
+            self.session_id = None
+            self._stop_heartbeat()
+            return {**result, 'device_closed': True}
 
-def serve_runtime(*, project_root=".", port=8765, probe_id="lobby"):
+
+def serve_runtime(*, project_root=".", port=8765, probe_id="lobby", runtime_id=None):
     from mklink.runtime_logging import runtime_diagnostics
-    with runtime_lock("owner.lock", probe_id), runtime_diagnostics(_private_dir(probe_id)):
-        _serve_runtime(project_root=project_root, port=port, probe_id=probe_id)
+    runtime_id = runtime_id or 'local-' + secrets.token_hex(12)
+    with runtime_lock("backend.lock", runtime_id), runtime_diagnostics(_private_dir(runtime_id)):
+        _serve_runtime(project_root=project_root, port=port, probe_id=probe_id, runtime_id=runtime_id)
 
 
-def _serve_runtime(*, project_root, port, probe_id):
+def _serve_runtime(*, project_root, port, probe_id, runtime_id):
     from mklink.probes import bind_runtime
     bind_runtime(probe_id)
     import uvicorn
@@ -455,8 +514,8 @@ def _serve_runtime(*, project_root, port, probe_id):
         listener.listen(128)
         info = {"port": listener.getsockname()[1], "token": secrets.token_urlsafe(32),
                 "instance_id": secrets.token_hex(16), "protocol": PROTOCOL, "version": VERSION, "pid": os.getpid(),
-                "probe_id": probe_id}
-        info['jobs_path'] = str(_private_dir(probe_id) / 'jobs.json')
+                "probe_id": probe_id, "runtime_id": runtime_id}
+        info['jobs_path'] = str(_private_dir(probe_id if probe_id != 'lobby' else runtime_id) / 'jobs.json')
         app = create_app(project_root=str(Path(project_root).resolve()), backend_port=info["port"])
         control = install_runtime(app, info)
         from mklink.observe_bridge import configure_stream_observation
@@ -469,15 +528,14 @@ def _serve_runtime(*, project_root, port, probe_id):
                                               timeout_graceful_shutdown=2,
                                               ws="websockets-sansio", ws_per_message_deflate=False))
         control.shutdown = lambda: setattr(server, "should_exit", True)
-        path = _private_dir(probe_id) / "endpoint.json"
-        temporary = path.with_suffix(".tmp")
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as output:
-            json.dump(info, output)
-        temporary.replace(path)
+        from mklink.runtime_binding import RuntimeBinding
+        binding = RuntimeBinding(info)
+        control.binding = binding
         try:
+            with binding.reserve(probe_id) as commit:
+                commit()
             server.run(sockets=[listener])
         finally:
-            path.unlink(missing_ok=True)
+            binding.close()
     finally:
         listener.close()

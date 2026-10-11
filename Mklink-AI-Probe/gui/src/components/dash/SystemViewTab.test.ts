@@ -231,6 +231,36 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     wrapper.unmount()
   })
 
+  it('requires explicit stop of conflicting captures without promising takeover', async () => {
+    mocks.checkConflict.mockResolvedValue(['rtt', 'superwatch'])
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.dash.start).not.toHaveBeenCalled()
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请先停止 rtt、superwatch 采集')
+    wrapper.unmount()
+  })
+
+  it('accepts backend preparation taking 18 seconds', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    mocks.dash.getStatus.mockResolvedValue({ running: true, progress_state: 'starting' })
+    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(18_000)
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
+    mocks.dash.getStatus.mockResolvedValue({ running: true, progress_state: 'streaming', stats: { bytes: 64 } })
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    expect(mocks.binary.start).toHaveBeenCalled()
+    expect(mocks.dash.error.value).toBeNull()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('starts with the shared RTT address and SystemView channel', async () => {
     mocks.dash.getStatus
       .mockResolvedValueOnce({ running: false })

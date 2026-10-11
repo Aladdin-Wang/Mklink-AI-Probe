@@ -25,7 +25,7 @@ import { API_BASE, IS_REMOTE } from '../lib/runtimeEndpoint'
 import { sharedRuntime } from './useBackendHealth'
 import { trackSymbolSource } from '../lib/trackedSymbolSource'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
-import { navigateToRuntime } from '../lib/runtimeNavigation'
+import { resetDeviceSymbolCatalog } from './useSymbolCatalog'
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers)
@@ -61,6 +61,7 @@ const deviceStatus = ref<DeviceStatus>({
 })
 
 let statusInterval: ReturnType<typeof setInterval> | null = null
+let statusRequest = 0
 
 export function useMklinkApi() {
   async function exclusiveJob(action: string, args: object = {}) {
@@ -186,16 +187,19 @@ export function useMklinkApi() {
 
   async function connectDevice(req: ConnectRequest): Promise<DeviceStatus> {
     if (sharedRuntime.value) {
-      const selection = await api<{ same_runtime: boolean; runtime_url?: string; reload?: boolean }>('/api/runtime/select', {
-        method: 'POST', body: JSON.stringify({ port: req.port, connect: req }),
-      })
-      if (selection.runtime_url) {
-        navigateToRuntime(selection.runtime_url)
-        return deviceStatus.value
+      let selection: { switched?: boolean; connection?: DeviceStatus }
+      try {
+        selection = await api('/api/runtime/select', {
+          method: 'POST', body: JSON.stringify({ port: req.port, connect: req }),
+        })
+      } catch (error) {
+        // Also clear the old target after a switch whose new connection failed.
+        await refreshStatus()
+        throw error
       }
-      if (selection.reload) {
-        navigateToRuntime()
-        return deviceStatus.value
+      if (selection.switched) {
+        await refreshStatus()
+        return selection.connection || deviceStatus.value
       }
     }
     const result = await api<DeviceStatus>('/api/device/connect', {
@@ -216,13 +220,17 @@ export function useMklinkApi() {
   }
 
   async function refreshStatus(): Promise<DeviceStatus> {
+    const request = ++statusRequest
     try {
       const s = await api<DeviceStatus>('/api/device/status')
-      deviceStatus.value = s
+      if (request === statusRequest) {
+        if (s.device_generation !== deviceStatus.value.device_generation) resetDeviceSymbolCatalog()
+        deviceStatus.value = s
+      }
       return s
     } catch {
       // The remote window is made inert by backend health; keep the last snapshot visible.
-      if (IS_REMOTE) return deviceStatus.value
+      if (IS_REMOTE || request !== statusRequest) return deviceStatus.value
       deviceStatus.value = {
         connected: false,
         state: 'disconnected',
@@ -230,6 +238,7 @@ export function useMklinkApi() {
         idcode: null,
         port: null,
         axf: { loaded: false },
+        device_generation: deviceStatus.value.device_generation,
       }
       return deviceStatus.value
     }

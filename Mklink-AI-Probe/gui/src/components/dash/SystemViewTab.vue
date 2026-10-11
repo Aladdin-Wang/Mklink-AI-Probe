@@ -284,6 +284,7 @@
 </template>
 
 <script setup lang="ts">
+import { CAPTURE_START_TIMEOUT_MS } from '../../lib/captureStartup'
 import { ref, shallowRef, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Circle, Pause, Play, RotateCcw, Search, Square } from '@lucide/vue'
 import { useDashboard } from '../../composables/useDashboard'
@@ -1426,7 +1427,7 @@ function isAbortError(value: unknown): boolean {
   return value instanceof Error && /aborted/i.test(value.message)
 }
 
-async function waitForSystemViewReady(generation: number, timeoutMs = 8_000): Promise<boolean> {
+async function waitForSystemViewReady(generation: number, timeoutMs = CAPTURE_START_TIMEOUT_MS): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (operationIsActive(generation) && Date.now() < deadline) {
     try {
@@ -1452,9 +1453,13 @@ async function waitForSystemViewReady(generation: number, timeoutMs = 8_000): Pr
   }
   if (operationIsActive(generation)) {
     runtimeError.value = tr(
-      'SystemView 启动超时，请检查 RTT 地址、通道和下位机配置',
-      'SystemView startup timed out. Check the RTT address, channel, and target configuration',
+      'SystemView 后台准备超时；请查看后台错误、连接状态和目标跟踪配置',
+      'SystemView backend preparation timed out. Check backend errors, connection status, and target trace configuration',
     )
+    const stopped = await dash.stop()
+    if (operationIsActive(generation) && !stopped) {
+      runtimeError.value += tr('；后台仍在停止，请检查状态', '; backend is still stopping; check its status')
+    }
   }
   return false
 }
@@ -1486,8 +1491,12 @@ async function onStart() {
   const conflicts = await checkConflict('systemview')
   if (!operationIsActive(generation)) return
   if (conflicts.length > 0) {
-    const names = conflicts.map(c => c).join('、')
-    if (!confirm(tr(`启动 SystemView 将停止当前运行的 ${names} 会话。确认？`, `Starting SystemView will stop the active ${names} session. Continue?`))) return
+    const names = conflicts.join('、')
+    runtimeError.value = tr(
+      `请先停止 ${names} 采集，再启动 SystemView。共享后台不会自动停止其他采集。`,
+      `Stop ${names} before starting SystemView. The shared backend does not automatically stop other captures.`,
+    )
+    return
   }
   clearAll()
   renderPaused.value = false

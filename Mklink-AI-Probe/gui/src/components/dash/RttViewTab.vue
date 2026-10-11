@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Search } from '@lucide/vue'
+import { CAPTURE_START_TIMEOUT_MS } from '../../lib/captureStartup'
 import { useDashboard } from '../../composables/useDashboard'
 import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useDashboardSetup } from '../../composables/useDashboardSetup'
@@ -221,7 +222,7 @@ async function pollStatus(): Promise<void> {
   if (!disposed) statusTimer = setTimeout(pollStatus, 1_000)
 }
 
-async function waitForRttReady(timeoutMs = 11_000): Promise<boolean> {
+async function waitForRttReady(timeoutMs = CAPTURE_START_TIMEOUT_MS): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (!disposed && Date.now() < deadline) {
     const status = await refreshStatus()
@@ -232,7 +233,7 @@ async function waitForRttReady(timeoutMs = 11_000): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 100))
   }
   if (!disposed) {
-    runtimeError.value = tr('RTT 启动超时，请检查地址后重试', 'RTT startup timed out. Check the address and retry.')
+    runtimeError.value = tr('RTT 后台准备超时；请查看后台错误和连接状态，地址不一定有误', 'RTT backend preparation timed out. Check backend errors and connection status; the address may be valid.')
     const stopped = await stopTimedOutRtt()
     statusRunning.value = false
     downBuffers.value = []

@@ -37,6 +37,17 @@ const error = ref<string | null>(null)
 
 let loadingPromise: Promise<void> | null = null
 let forcedRefreshPromise: Promise<void> | null = null
+let deviceEpoch = 0
+
+export function resetDeviceSymbolCatalog(): void {
+  deviceEpoch++
+  items.value = []; containers.value = []; generation.value = 0
+  axfPath.value = ''; parsedAt.value = 0; fingerprint.value = null
+  stale.value = false; total.value = 0; truncatedRoots.value = []
+  browseRoots.value = []; browseChildren.value = new Map(); browseLoading.value = new Set()
+  loading.value = reparsing.value = applyingLayout.value = false
+  error.value = null; loadingPromise = forcedRefreshPromise = null
+}
 
 function errorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== 'object') return fallback
@@ -50,6 +61,7 @@ function errorMessage(payload: unknown, fallback: string): string {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const epoch = deviceEpoch
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -61,7 +73,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const payload = await response.json().catch(() => null)
     throw new Error(errorMessage(payload, response.statusText || 'Request failed'))
   }
-  return response.json() as Promise<T>
+  const payload = await response.json() as T
+  if (epoch !== deviceEpoch) throw new Error('Device changed; discard previous symbol response')
+  return payload
 }
 
 async function fetchCatalog(): Promise<SymbolCatalogPage> {
@@ -128,6 +142,7 @@ function setBrowseLoading(key: string, enabled: boolean): void {
 }
 
 async function loadBrowseChildren(node: SymbolBrowseNode): Promise<void> {
+  const epoch = deviceEpoch
   if (node.kind !== 'branch' && node.kind !== 'range') return
   if (browseChildren.value.has(node.key)) return
   if (browseLoading.value.has(node.key)) return
@@ -152,7 +167,7 @@ async function loadBrowseChildren(node: SymbolBrowseNode): Promise<void> {
     next.set(node.key, page.nodes)
     browseChildren.value = next
   } finally {
-    setBrowseLoading(node.key, false)
+    if (epoch === deviceEpoch) setBrowseLoading(node.key, false)
   }
 }
 
@@ -178,22 +193,24 @@ async function searchSymbols(query: string): Promise<SymbolDescriptor[]> {
 }
 
 async function loadCatalog(): Promise<void> {
+  const epoch = deviceEpoch
   loading.value = true
   error.value = null
   try {
     publishCatalog(await fetchCatalog())
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
+    if (epoch === deviceEpoch) error.value = cause instanceof Error ? cause.message : String(cause)
     throw cause
   } finally {
-    loading.value = false
+    if (epoch === deviceEpoch) loading.value = false
   }
 }
 
 function startLoad(): Promise<void> {
   if (loadingPromise) return loadingPromise
+  const epoch = deviceEpoch
   loadingPromise = loadCatalog().finally(() => {
-    loadingPromise = null
+    if (epoch === deviceEpoch) loadingPromise = null
   })
   return loadingPromise
 }
@@ -205,12 +222,13 @@ async function ensureLoaded(force = false): Promise<void> {
   }
   if (!force) return startLoad()
   if (forcedRefreshPromise) return forcedRefreshPromise
+  const epoch = deviceEpoch
   forcedRefreshPromise = (async () => {
     const existingLoad = loadingPromise
     if (existingLoad) await existingLoad.catch(() => undefined)
-    await startLoad()
+    if (epoch === deviceEpoch) await startLoad()
   })().finally(() => {
-    forcedRefreshPromise = null
+    if (epoch === deviceEpoch) forcedRefreshPromise = null
   })
   return forcedRefreshPromise
 }
@@ -241,6 +259,7 @@ async function refreshStatus(): Promise<SymbolCatalogStatus> {
 }
 
 async function reparse(): Promise<SymbolRebindSummary> {
+  const epoch = deviceEpoch
   reparsing.value = true
   error.value = null
   try {
@@ -255,10 +274,10 @@ async function reparse(): Promise<SymbolRebindSummary> {
       removed: response.removed ?? [],
     }
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
+    if (epoch === deviceEpoch) error.value = cause instanceof Error ? cause.message : String(cause)
     throw cause
   } finally {
-    reparsing.value = false
+    if (epoch === deviceEpoch) reparsing.value = false
   }
 }
 
@@ -267,6 +286,7 @@ async function applyCLayout(
   definition: string,
   pack: number | null,
 ): Promise<SymbolCLayoutResult> {
+  const epoch = deviceEpoch
   applyingLayout.value = true
   error.value = null
   try {
@@ -277,10 +297,10 @@ async function applyCLayout(
     publishCatalog(await fetchCatalog())
     return response
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
+    if (epoch === deviceEpoch) error.value = cause instanceof Error ? cause.message : String(cause)
     throw cause
   } finally {
-    applyingLayout.value = false
+    if (epoch === deviceEpoch) applyingLayout.value = false
   }
 }
 
