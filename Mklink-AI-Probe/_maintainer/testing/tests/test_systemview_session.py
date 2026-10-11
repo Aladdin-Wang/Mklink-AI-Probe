@@ -530,7 +530,7 @@ def test_device_systemview_start_clears_old_session_when_stop_raises(
     ("offset", "requested_search_size", "effective_search_size"),
     ((0, 0, 1024), (0x10, 64, 64)),
 )
-def test_device_dynamic_systemview_primes_host_scan_and_uses_found_address(
+def test_device_dynamic_systemview_checks_exact_address_before_scanning(
     monkeypatch,
     offset,
     requested_search_size,
@@ -550,6 +550,8 @@ def test_device_dynamic_systemview_primes_host_scan_and_uses_found_address(
             return bytes(scan)
         if (address, size) == (actual_addr, 24):
             return header
+        if offset and (address, size) == (requested_addr, 24):
+            return bytes(scan[:24])
         if (address, size) == (actual_addr + 24, len(descriptors)):
             return descriptors
         raise AssertionError((address, size))
@@ -562,8 +564,8 @@ def test_device_dynamic_systemview_primes_host_scan_and_uses_found_address(
         search_size=requested_search_size,
     )
 
-    assert reads == [
-        (requested_addr, scan_size),
+    expected_scan = [(requested_addr, 24), (requested_addr, scan_size)] if offset else []
+    assert reads == expected_scan + [
         # Validate candidates during search, then recheck the selected block
         # before starting a target stream.
         (actual_addr, 24),

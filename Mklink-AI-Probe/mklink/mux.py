@@ -62,6 +62,9 @@ class MuxTransport:
         self.dropped_bytes = {}
         self.event_gaps = 0
         self._event_id = None
+        self._last_receive = None
+        self._last_reply = None
+        self._last_timeout = None
 
     @property
     def sampling(self):
@@ -120,7 +123,7 @@ class MuxTransport:
         self._check()
         remaining = self._pending[2]-time.monotonic()
         if remaining <= 0:
-            self.fail('Multiplex command timed out; outcome unknown, no replay')
+            self._expire_pending('command')
             self._check()
         self._condition.wait(min(remaining, .1))
         self._check()
@@ -140,14 +143,35 @@ class MuxTransport:
             if self._error:
                 return
             if self._pending and time.monotonic() >= self._pending[2]:
-                self.fail('Multiplex response timed out; outcome unknown')
+                self._expire_pending('response')
             elif self.ready and not self._pending and self._reply is None and time.monotonic()-self._last_command >= 1:
                 self._send(2, b'', heartbeat=True)
+
+    def _expire_pending(self, source):
+        """Keep the failed request identity; never replay uncertain operations."""
+        op, request, deadline, heartbeat = self._pending
+        now = time.monotonic()
+        self._last_timeout = {
+            'opcode': f'0x{op:02X}', 'request': request, 'epoch': self.epoch,
+            'heartbeat': heartbeat, 'overdue_ms': round(max(0, now-deadline)*1000, 1),
+            'last_receive_age_ms': None if self._last_receive is None else round((now-self._last_receive)*1000, 1),
+            'last_reply_age_ms': None if self._last_reply is None else round((now-self._last_reply)*1000, 1),
+            'buffered_bytes': len(self._rx),
+        }
+        self.fail(
+            f'Multiplex {source} timed out; outcome unknown, no replay '
+            f'(opcode=0x{op:02X}, request={request}, epoch={self.epoch}, '
+            f'heartbeat={heartbeat}, overdue_ms={self._last_timeout["overdue_ms"]}, '
+            f'last_receive_age_ms={self._last_timeout["last_receive_age_ms"]}, '
+            f'buffered_bytes={len(self._rx)})'
+        )
 
     def feed(self, data):
         with self._condition:
             if self._error:
                 return
+            if data:
+                self._last_receive = time.monotonic()
             self._rx.extend(data)
             while True:
                 at = self._rx.find(b'MLX1')
@@ -186,6 +210,7 @@ class MuxTransport:
                     if hello:
                         self.epoch = epoch
                     heartbeat = self._pending[3]
+                    self._last_reply = time.monotonic()
                     self._reply = payload
                     self._pending = None
                     if heartbeat and payload != b'\0':
@@ -218,6 +243,7 @@ class MuxTransport:
     def stats(self):
         with self._condition:
             return {'event_gaps': self.event_gaps,
+                    'last_timeout': dict(self._last_timeout) if self._last_timeout else None,
                     'rtt_dropped_bytes': {ch: self.dropped_bytes.get((0x40, ch), 0) for ch in range(8)},
                     'watch_dropped_bytes': self.dropped_bytes.get((0x41, 255), 0)}
 

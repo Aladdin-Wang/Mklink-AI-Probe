@@ -895,9 +895,6 @@ class MKLinkSerialBridge:
 
         while self._running:
             try:
-                mux = self._mux
-                if mux is not None:
-                    mux.tick()
                 # ``Serial.read(4096)`` waits for all 4096 bytes or the 10 ms
                 # timeout. Read exactly what the driver already has; when it
                 # is empty, block for one byte and drain the remainder on the
@@ -906,6 +903,15 @@ class MKLinkSerialBridge:
                 waiting = self._serial.in_waiting
                 read_size = min(65536, waiting) if isinstance(waiting, int) and waiting > 0 else 1
                 data = self._serial.read(read_size)
+                mux = self._mux
+                if mux is not None:
+                    if data:
+                        mux.feed(data)
+                    # Drain replies before checking deadlines after a scheduler
+                    # pause. Keep heartbeat writes inside the transport failure
+                    # boundary and retain the sole reader/no-replay contract.
+                    mux.tick()
+                    continue
             except (serial.SerialException, ConnectionError, OSError) as error:
                 if self._running:
                     mux = self._mux
@@ -916,11 +922,6 @@ class MKLinkSerialBridge:
                     self._prompt_event.set()  # 唤醒等待者
                 break
 
-            mux = self._mux
-            if mux is not None:
-                if data:
-                    mux.feed(data)
-                continue
             if not data:
                 continue
 

@@ -1100,6 +1100,33 @@ def test_superwatch_subscribe_replays_cached_metadata_without_waiting_for_read(m
     asyncio.run(scenario())
 
 
+def test_superwatch_publishes_original_failure_during_cleanup(monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    class FailedSession:
+        stats = {}
+        def __init__(self, *args, **kwargs): pass
+        def start(self): pass
+        def read_frames(self, **kwargs): raise RuntimeError('original acquisition timeout')
+        def stop(self):
+            entered.set()
+            assert release.wait(2)
+            raise RuntimeError('secondary stop timeout')
+
+    monkeypatch.setattr('mklink.dump_memory.DumpMemoryStreamSession', FailedSession)
+    manager = SuperWatchStreamManager()
+    manager._runtime = _MutableWatchRuntime()
+    manager.start(SimpleNamespace(_bridge=_SuperWatchDumpBridge()))
+    try:
+        assert entered.wait(1)
+        status = manager.get_status()
+        assert status['error'] == 'original acquisition timeout'
+        assert manager._thread.is_alive() and manager.running
+    finally:
+        release.set()
+        manager.stop()
+    assert manager.get_status()['error'] == 'original acquisition timeout'
+
+
 def test_superwatch_layout_change_does_not_wait_for_read_and_discards_stale_cycle(monkeypatch):
     hub = _RecordingHub()
     manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=1)

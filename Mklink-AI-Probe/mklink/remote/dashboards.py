@@ -417,6 +417,7 @@ class RttStreamManager(RttChannelDecoder):
         self._start_failure_callback = None
         self._device = None
         self._start_info: dict = {}
+        self._startup_started = None
         self._active_generation = None
         self._capture_session = None
         self._write_lock = threading.RLock()
@@ -493,6 +494,7 @@ class RttStreamManager(RttChannelDecoder):
         self._history.clear()
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
         self._error = None
+        self._startup_started = time.monotonic()
         with self._decode_lock:
             self._line_assembler.reset(encoding)
             self._terminal_decoder = codecs.getincrementaldecoder(
@@ -537,10 +539,12 @@ class RttStreamManager(RttChannelDecoder):
                         and not stop_event.is_set()
                     ):
                         self._device = device
-                        self._start_info = (
-                            dict(start_info) if isinstance(start_info, dict) else {}
-                        )
-                        self._start_info["channel"] = channel
+                        # Publish one immutable snapshot for lock-free status
+                        # reads; hardware writes/stops retain _write_lock.
+                        self._start_info = {
+                            **(start_info if isinstance(start_info, dict) else {}),
+                            "channel": channel,
+                        }
                         self._active_generation = generation
                 start_time = time.time()
                 while not stop_event.is_set():
@@ -594,6 +598,11 @@ class RttStreamManager(RttChannelDecoder):
                 else:
                     terminal_failure = e
             finally:
+                failure = start_failure or terminal_failure
+                if failure is not None and getattr(self, "_generation", None) is generation:
+                    # Report the reason before potentially slow device cleanup.
+                    # Keep the worker alive/owned until cleanup actually ends.
+                    self._error = str(failure)
                 with self._write_lock:
                     try:
                         device.rtt_stop()
@@ -700,22 +709,27 @@ class RttStreamManager(RttChannelDecoder):
             return len(data)
 
     def get_status(self) -> dict:
-        with self._write_lock:
-            down_buffers = [
-                dict(item)
-                for item in self._start_info.get("down_buffers", [])
-                if isinstance(item, dict)
-            ]
-            control_block_addr = self._start_info.get("control_block_addr")
-            down_buffer_source = self._start_info.get("down_buffer_source")
-            down_buffer_probe_count = self._start_info.get(
-                "down_buffer_probe_count", 0
-            )
-            from mklink.mux import MuxTransport
-            transport = getattr(getattr(self._device, '_bridge', None), '_mux', None)
-            transport_stats = transport.stats() if isinstance(transport, MuxTransport) else None
+        # Never wait for target I/O or stop recovery on an HTTP status request.
+        # _start_info is replaced as a whole, never mutated after publication.
+        start_info = self._start_info
+        device = self._device
+        down_buffers = [
+            dict(item)
+            for item in start_info.get("down_buffers", [])
+            if isinstance(item, dict)
+        ]
+        control_block_addr = start_info.get("control_block_addr")
+        down_buffer_source = start_info.get("down_buffer_source")
+        down_buffer_probe_count = start_info.get("down_buffer_probe_count", 0)
+        from mklink.mux import MuxTransport
+        transport = getattr(getattr(device, '_bridge', None), '_mux', None)
+        transport_stats = transport.stats() if isinstance(transport, MuxTransport) else None
         return {
             "running": self.running,
+            "progress_state": ('error' if self._error else 'streaming' if self.running and control_block_addr
+                               else 'starting' if self.running else 'idle'),
+            "startup_elapsed_ms": (round((time.monotonic()-self._startup_started)*1000, 1)
+                                   if self.running and not control_block_addr and self._startup_started is not None else None),
             "paused": self.paused,
             "clients": self._bridge.client_count,
             "stats": self._stats,
@@ -726,13 +740,14 @@ class RttStreamManager(RttChannelDecoder):
                 "encoding": d._line_assembler.encoding, "stats": dict(d._stats),
                 "line_parser": d._line_assembler.status()} for ch, d in self._channel_decoders.items()},
             "transport_stats": transport_stats,
-            "transport": self._start_info.get("transport", "legacy"),
+            "transport": start_info.get("transport", "legacy"),
             "numeric_channels": list(self._numeric_channels),
             "encoding": self._line_assembler.encoding,
             "line_parser": self._line_assembler.status(),
             "down_buffers": down_buffers,
             "session": self._capture_session,
             "control_block_addr": control_block_addr,
+            "startup_timings_ms": dict(start_info.get("startup_timings_ms", {})),
             "down_buffer_source": down_buffer_source,
             "down_buffer_probe_count": down_buffer_probe_count,
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
@@ -2182,8 +2197,18 @@ class SuperWatchStreamManager:
                                         if completed:
                                             self._completed_read_cycles += completed
                                             self._record_sample_rate_locked(completed)
+                        except Exception as exc:
+                            if getattr(self, "_generation", None) is generation:
+                                self._error = str(exc)
+                            raise
                         finally:
-                            session.stop()
+                            failure = sys.exc_info()[1]
+                            try:
+                                session.stop()
+                            except Exception as stop_error:
+                                if failure is None:
+                                    raise
+                                logger.warning("SuperWatch cleanup after %s also failed: %s", failure, stop_error)
                             self._stream_integrity = _sum_counter_snapshots(
                                 completed_integrity, session.stats,
                             )
