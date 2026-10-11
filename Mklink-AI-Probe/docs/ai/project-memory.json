@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-11T19:59:19+08:00",
+  "updated_at": "2026-10-11T20:24:22+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/0.3.4-fixes",
-    "head": "Sources 267b175f (SuperWatch write-only), 50eb6c52 (window backend), ddda89c5 (capture), 4c1227b9 (peripherals). Production Web rebuilt from 267b175f. Inspect Git for handoff tip.",
+    "head": "Source 34834d08 + 5f4b9728 (explicit connection control, protocol 52); production Web rebuilt from 5f4b9728. Prior SuperWatch write-only 267b175f. Inspect Git for handoff tip.",
     "remote_head": "microkeen/codex/0.3.4-fixes; base microkeen/main 271af444. Verify current tip with Git.",
     "working_tree": "Original maintenance workspace; codex/0.3.4-fixes. Source and production Web committed. One final WebGUI left open for user testing; other test backend released."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "0.3.4追加修复SuperWatch采集中写入：用户明确取消回读校验，源267b175f，三条主机写入路径仅等待写应答，返回acknowledged=true/verified=false，界面已写入。SW01旧固件内置回读3/5仅代表写成功后读失败/不等，按协议接受，MUX status5仍失败。385项Python、72项GUI、生产构建通过；V3/F103原位置ELF、30MHz/1ms、RTT并行24次写应答成功且采集不中断；独立测试读取确认静态RAM变化，真实页面写12后仍运行。当前保留WebGUI和SuperWatch，RTT测试已停止。此前窗口固定后台及外设/采集修复保留，PR40待整合，未重建安装器或发布。"
+    "current_task": "按用户纠正完成明确断开/切换策略：源34834d08+5f4b9728，协议52。同后台共享AI/页面与采集不再阻止请求；生命周期排队、已接收硬件操作/异步烧录先收尾，再停采集、释放设备、注销旧目标会话及清历史，独立UART保留，PID/端口不变。MCP disconnect物理断开、detach仅退出自身；SDK明确选择在原后台切换。迟到请求与旧远程目标隔离。830项相关Python、后续115与71项边界、87项GUI及生产构建通过；双实物+双AI+双真实页面断开/采集中切换与SDK来回切换真机通过。见v034-explicit-connection-control.md。PR40待整合，未发布或重建安装器。"
   },
   "milestones": [
     {
@@ -50,6 +50,10 @@
   ],
   "verification": [
     {
+      "area": "0.3.4 明确断开与切换自动收尾",
+      "result": "源34834d08/5f4b9728，协议52，生产Web已构建。830项相关Python通过，随后队列/SDK115、最后迟到请求71通过；87项GUI/TypeScript/构建通过。V3/F103原ELF、30MHz/1ms、RTT+Watch双AI订阅直接断开成功；共享AI下采集中切到第二只、旧会话拒绝，AI断开和SDK A→B→A均保持后台身份。最终代码再次完整真机复核通过且读错误0。两个真实页面自动同步断开/切换，额外页已关。SystemView短程54字节/0解码事件，AI断开成功，仅证明生命周期不宣称解码性能。异步烧录和迟到请求用确定性夹具覆盖，未中断实物烧录。见v034-explicit-connection-control.md。"
+    },
+    {
       "area": "0.3.4 SuperWatch取消回读校验",
       "result": "源267b175f及其生产Web。旧版真实复现自增变量写入readback mismatch并停止采集。385项Python、72项GUI、TypeScript和生产构建通过。V3.6.4/F103原ELF、30MHz/1ms两波形+RTT，24次写入应答全部成功，4450周期零读错误、RTT31行；独立测试读确认静态字变化再恢复，70605周期零读错误。真实浏览器动态变量写12后显示已写入且运行中，最新GUI保留。旧SW01/HPM仅源码及模拟协议验证，无新固件修改。见v034-superwatch-write.md。"
     },
@@ -76,10 +80,6 @@
     {
       "area": "0.3.3 SuperWatch工具栏与自动配置",
       "result": "源码5444d3a5/Web32c69bb7：两行44/42px；移除原始日志及保存/加载；触发弹窗、日志导出/回放菜单、本地自动偏好。GUI180、Python283+56、TypeScript/构建通过；真实浏览器模拟1600×900/1200×720验证布局、100k/10µs/触发参数刷新恢复和日志入口。启动间隔仅在已有共享启动事务首次应用，并发/资源冲突/独占恢复测试通过；不恢复旧目标地址或覆盖共享工作区。无硬件；未重建NSIS。见v033-superwatch-toolbar.md。"
-    },
-    {
-      "area": "0.3.3 SuperWatch目录与文件来源历史",
-      "result": "源码0ed75a71/Web b764ede3：三块独立折叠并本地记忆；搜索保留常用变量。四个GUI测试文件36项及TypeScript/生产构建通过。实际浏览器运行生产组件/样式加模拟API：三组信号、三个常用、80普通变量；500px目录/720px高收起上方后完整显示12行，滚动到80并勾选、常用搜索、刷新及键盘展开通过；280px/540px窄矮窗口可操作。无硬件、无锁或固件修改，未更新NSIS。见v033-superwatch-sections.md。 文件来源历史：源码132cb364/Web9f013b65：ConfigView/desktopSettings/filePicker 57通过，TypeScript/生产构建通过；实际浏览器无硬件lobby验证三条录入、最近排序、鼠标/键盘选择、筛选、删除和刷新保留。历史仅客户端本地保存，上传快照不混入；不自动解析/连接。见v033-symbol-path-history.md。未重建NSIS。"
     }
   ],
   "decisions": [
@@ -91,11 +91,11 @@
     "原Mklink-AI-Probe是唯一维护入口。0.3.3正式包/证据已回原.build/artifacts/v033-official；F盘为构建缓存。交接PR合入后删除startup-cdc临时工作树并记录结果，保留共享依赖和必要客户证据。",
     "mklink及既有长期跟进维持暂停；不得因旧交接自动接管硬件或重复发布。",
     "用户明确授权合并0.3.3修复分支、签名正式发布、更新本地Skill及清理临时工作树；PR38已合入并发布。探针连接/时钟不要求目标板；固件需要改动时另开会话。Gitee缺失镜像沿用此前GitHub兜底，渠道最后写入。",
-    "用户特别要求：锁相关修复必须结合整体共享架构，不能仅消除当前卡点。保留唯一串口所有权、USB身份绑定、会话/操作锁及未知结果不重放；审查读写控制顺序、epoch隔离、取消完成前缓冲寿命、背压错误传播和端口释放，再以跨客户端与真实进程/硬件验证。 父进程仅在worker真正退出后发布串口关闭，避免其他线程提前释放应用锁。 0.3.4 继续保留这些边界；单次调用上下文缓存 RAM，未知响应不重放，错误可见不提前释放采集所有权。 用户明确纠正：一个GUI客户端持有固定后台，同窗口切换不新建/跳转后台，RTT/Watch/Trace等必须跟随当前设备并清空旧目标状态。另开客户端才新建独立后台；占用目标先在原窗口断开，禁止偷取。SDK/AI按物理身份发现当前持有者；共享会话、多个页面及在途操作阻止改绑。外设ID使用Pack版本/型号/SVD相对路径，失效偏好仅禁用外设目录，不阻断设备；无法反推的旧ID由用户重选。",
-    "测试工程直接在用户指定原目录修改和构建，直接使用其 build/keil/Obj ELF，不再复制工程到其他目录；用户允许任意测试修改，不要求备份还原。详细硬件路径仅留本地。 用户明确要求SuperWatch变量写入取消回读校验，只认写应答；不取消烧录或显式内存校验，不掩盖真实写失败，不自动重放。"
+    "用户特别要求：锁相关修复必须结合整体共享架构，不能仅消除当前卡点。保留唯一串口所有权、USB身份绑定、会话/操作锁及未知结果不重放；审查读写控制顺序、epoch隔离、取消完成前缓冲寿命、背压错误传播和端口释放，再以跨客户端与真实进程/硬件验证。 父进程仅在worker真正退出后发布串口关闭，避免其他线程提前释放应用锁。 0.3.4 继续保留这些边界；单次调用上下文缓存 RAM，未知响应不重放，错误可见不提前释放采集所有权。 用户明确纠正：一个GUI客户端持有固定后台，同窗口切换不新建/跳转后台，RTT/Watch/Trace等必须跟随当前设备并清空旧目标状态。另开客户端才新建独立后台；占用目标先在原窗口断开，禁止偷取。SDK/AI按物理身份发现当前持有者；共享会话和多个页面不阻止明确断开/切换；在途操作先收尾，再自动处理。旧目标会话注销，独立UART保留。外设ID使用Pack版本/型号/SVD相对路径，失效偏好仅禁用外设目录，不阻断设备；无法反推的旧ID由用户重选。",
+    "测试工程直接在用户指定原目录修改和构建，直接使用其 build/keil/Obj ELF，不再复制工程到其他目录；用户允许任意测试修改，不要求备份还原。详细硬件路径仅留本地。 用户明确要求SuperWatch变量写入取消回读校验，只认写应答；不取消烧录或显式内存校验，不掩盖真实写失败，不自动重放。 用户取消共享客户端/采集对断开与切换的拒绝：明确请求必须自动收尾处理。同后台PID固定，旧目标请求不得跨设备，MCP disconnect物理断开、detach只退出自身。"
   ],
   "hardware": {
-    "state": "用户授权V3/F103及第二只下载器切换，原位置Obj ELF直接使用，5365变量；不复制工程，不改供电或探针固件。先前稳定外设ID恢复成功。最终同窗口RTT+Watch和SystemView采集切换均清空旧数据、PID/端口不变；双窗口各自独立后台，占用拒绝、断开释放、来回接手通过。第二只未接目标，仅验证连接与隔离。最终代码再次A→B→A通过，已恢复第一只测试板连接并保留一个生产WebGUI供用户复核；第二个测试窗口及后台已退出。详细本地端口、进程、身份和路径只存本地证据，不写公共交接。 追加SuperWatch写入修复真机通过，30MHz/1ms两波形持续运行，动态/静态24次写应答成功，额外测试读证实RAM变化；页面写12成功。测试RTT已停止，更新后的WebGUI仍开放。",
+    "state": "双实体/双AI/双真实页面的明确断开、采集中切换和SDK A→B→A通过，后台身份保持不变。V3/F103直接用原工程Obj ELF，30MHz/1ms，未复制工程、不改供电或探针固件。第二只无目标板；仅验证连接/切换。SystemView短程AI断开成功，未新做解码性能认证。当前保留最新生产WebGUI与第一只原测试板连接，测试AI会话和额外页面已清理；测试采集结束。硬件路径、进程、身份仅留本地证据。",
     "installer": "实际安装及F103回归来自77f56f20候选；正式11616f80运行时代码相同，已重建签名NSIS并验证提取包CLI/MCP/SVD/Web/原生界面/退出。本次再次覆盖安装UAC取消，未计新安装通过。详见v033-release-handoff.md。",
     "backups": "原Git根.build/artifacts/v033-official保存17正式文件、archive-manifest及qualification（含候选实装/F103、正式冻结/签名/渠道/Skill证据）；旧0.3.2正式归档及用户备份保持。F盘保留共享缓存；联接测试目录和旧安装器占用文件不强删。"
   },
@@ -105,12 +105,12 @@
     "HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4/V4.6.8仿真中新启采集及负载读回通过，V4.6.8已完成Keil及相关矩阵。详见release handoff；长期目标暂停。",
     "性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。",
     "V3无屏幕、不支持HPM；V3.6.4原生Keil先运行再采集、暂停/单步/继续/退出和OpenOCD均通过。V4最终无诊断固件完整SES矩阵未完成。",
-    "后台最后会话释放约5秒租约，加排空和退出开销；不保证硬实时5秒。每个GUI客户端一个后台，同窗口切换固定PID/端口；一个物理探针在任一时刻仅由一个后台独占。打开已有URL的额外页面仍共享该后台并阻止改绑，要独立操作应启动新客户端。",
+    "后台最后会话释放约5秒租约，加排空和退出开销；不保证硬实时5秒。每个GUI客户端一个后台，同窗口切换固定PID/端口；一个物理探针在任一时刻仅由一个后台独占。打开已有URL的额外页面共享当前后台并跟随明确切换；独立操作应启动新客户端。",
     "长期验证按用户要求暂停；跨物理主机Agent、Mac/Linux、真实Modbus从站及全部芯片组合未完整认证。模拟测试不得替代实体边界。",
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。"
   ],
   "next_actions": [
-    "用户继续测试源267b175f的最新WebGUI（SuperWatch写入只认应答），随后审查PR40。v034-superwatch-write.md记录本轮；v034-window-owned-backend.md记录最终窗口后台模型。合并、新安装器与正式发布须明确授权。",
+    "用户复核5f4b9728最新WebGUI；PR40待审查。明确断开/切换规则以v034-explicit-connection-control.md为准，取代旧共享会话拒绝策略；SuperWatch变量写入只认应答。合并、新安装器、正式发布须明确授权。",
     "收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。",
     "继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。",
     "检查 Gitee 镜像容量与可达性；缺失附件沿用 GitHub 兜底，不宣称国内镜像完整。历史联接/占用目录留人工处理。",
