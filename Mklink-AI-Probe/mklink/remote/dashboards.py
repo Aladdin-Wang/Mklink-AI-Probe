@@ -1811,24 +1811,37 @@ class SuperWatchStreamManager:
     def running(self) -> bool:
         return self._running and not self._stop_event.is_set()
 
+    def _restore_peripheral_catalog(self, device):
+        from zipfile import BadZipFile
+        from mklink.peripheral_watch import load_catalog
+
+        self._peripheral_restore_error = None
+        try:
+            catalog = load_catalog(getattr(device, "_project_root", "."))
+        except (OSError, ValueError, KeyError, BadZipFile) as error:
+            # An optional, stale SVD preference must not prevent connecting the
+            # probe or using RAM symbols. Keep the saved file for explicit repair.
+            self._peripheral_restore_error = str(error)
+            catalog = None
+        self._peripheral_selection = (
+            {**catalog.selection, "skipped_registers": catalog.skipped}
+            if catalog else None
+        )
+        return catalog
+
     def prepare(self, device) -> None:
         """Build runtime from DWARF info so search/add work before collection starts."""
         with self._read_lock:
-            if self._device is not device and self._runtime is not None:
-                from mklink.peripheral_watch import load_catalog
+            device_changed = self._device is not device
+            if device_changed and self._runtime is not None:
                 from mklink.superwatch import catalog_registers
 
-                restored = load_catalog(getattr(device, "_project_root", "."))
+                restored = self._restore_peripheral_catalog(device)
                 for item in list(self._runtime.items):
                     if item.source == "peripheral":
                         self._runtime.remove(item.name)
                 self._runtime.peripheral_items = restored.items if restored else {}
                 self._runtime.svd_registers = catalog_registers(restored)
-                self._peripheral_selection = (
-                    {**restored.selection, "skipped_registers": restored.skipped}
-                    if restored
-                    else None
-                )
             if self._runtime is not None:
                 runtime = self._runtime
                 new_catalog = getattr(device, "symbol_catalog", None)
@@ -1863,26 +1876,15 @@ class SuperWatchStreamManager:
                 else:
                     runtime.port = getattr(device, "_port", None)
                     runtime.dwarf_info = getattr(device, "_dwarf_info", None)
+                    if device_changed:
+                        self._flush_binary_batch_locked()
+                        self._rebuild_metadata_cache_locked(publish=True)
                 self._device = device
                 return
             dwarf_info = getattr(device, "_dwarf_info", None)
-            svd_registers = {}
-            try:
-                from mklink.superwatch import catalog_registers
-                from mklink.peripheral_watch import load_catalog
-
-                project_root = getattr(device, "_project_root", ".")
-                catalog = load_catalog(project_root)
-                svd_registers = catalog_registers(catalog)
-                if catalog:
-                    self._peripheral_selection = {
-                        **catalog.selection,
-                        "skipped_registers": catalog.skipped,
-                    }
-            except (OSError, ValueError, KeyError) as error:
-                raise ValueError(
-                    f"Cannot restore peripheral selection: {error}"
-                ) from error
+            from mklink.superwatch import catalog_registers
+            catalog = self._restore_peripheral_catalog(device)
+            svd_registers = catalog_registers(catalog)
             from mklink.superwatch import SuperWatchRuntime
             self._runtime = SuperWatchRuntime(
                 items=[],
@@ -2479,6 +2481,7 @@ class SuperWatchStreamManager:
 
                 self._runtime.svd_registers = catalog_registers(catalog)
                 self._peripheral_selection = {**catalog.selection, "skipped_registers": skipped}
+                self._peripheral_restore_error = None
                 self._rebuild_metadata_cache_locked(publish=True)
             return self.peripheral_catalog()
 
@@ -2490,6 +2493,7 @@ class SuperWatchStreamManager:
                      if query.casefold() in item.name.casefold()]
             metadata = make_channel_metadata(items)
             return {"selection": getattr(self, "_peripheral_selection", None),
+                    "restore_error": getattr(self, "_peripheral_restore_error", None),
                     "items": [{"name": item.name, **metadata[item.name]} for item in items]}
 
     def add_watch(self, name: str) -> dict:

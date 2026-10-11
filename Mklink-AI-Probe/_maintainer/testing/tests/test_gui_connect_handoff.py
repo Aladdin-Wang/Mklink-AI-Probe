@@ -28,7 +28,8 @@ def test_connect_target_uses_one_scoped_request_and_always_releases_presence(mon
     factory.assert_called_once_with(info=info, kind='cli', name='GUI connection handoff')
     lease.close.assert_called_once_with()
     request.assert_called_once_with(info, 'POST', '/api/device/connect',
-                                   {k: v for k, v in options.items() if k not in {'port', 'probe'}})
+                                   {**{k: v for k, v in options.items() if k not in {'port', 'probe'}},
+                                    'reuse_connected': True})
 
 
 @pytest.mark.parametrize('case', ['switch', 'same', 'failure', 'invalid', 'select_only'])

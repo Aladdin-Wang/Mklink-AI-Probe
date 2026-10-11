@@ -5,6 +5,54 @@ import httpx
 from mklink.runtime_proxy import create_proxy
 
 
+def test_two_windows_switch_independently_and_failed_selection_keeps_current_backend(monkeypatch):
+    import json
+    from mklink import runtime
+
+    runtimes = {
+        'a': {'port': 9001, 'token': 'a-token', 'probe_id': 'a'},
+        'b': {'port': 9002, 'token': 'b-token', 'probe_id': 'b'},
+    }
+    seen = []
+    class ReplyStream(httpx.AsyncByteStream):
+        def __init__(self, payload):
+            self.payload = json.dumps(payload).encode()
+
+        async def __aiter__(self):
+            yield self.payload
+
+    def reply(status, payload):
+        return httpx.Response(status, stream=ReplyStream(payload), headers={'Content-Type': 'application/json'})
+
+    def handle(request):
+        probe = 'a' if request.url.port == 9001 else 'b'
+        assert request.headers['x-auth-token'] == runtimes[probe]['token']
+        seen.append((probe, request.url.path))
+        if request.url.path == '/api/runtime/select':
+            selected = json.loads(request.content)['probe']
+            if selected == 'missing':
+                return reply(409, {'detail': 'Probe unavailable'})
+            return reply(200, {'runtime_url': runtime.browser_url(runtimes[selected]), 'probe_id': selected})
+        if request.url.path == '/api/runtime/control/view':
+            return reply(200, {'registered': True})
+        return reply(200, {'probe': probe})
+    monkeypatch.setattr(runtime, 'discover', lambda probe: dict(runtimes[probe]))
+    transport = httpx.MockTransport(handle)
+    first = create_proxy(dict(runtimes['a']), port=8766, instance_id='first', transport=transport)
+    second = create_proxy(dict(runtimes['a']), port=8767, instance_id='second', transport=transport)
+    with TestClient(first, base_url='http://127.0.0.1:8766') as a, TestClient(second, base_url='http://127.0.0.1:8767') as b:
+        assert a.post('/api/runtime/select', json={'probe': 'b'}).json()['reload']
+        assert a.get('/api/device/status').json() == {'probe': 'b'}
+        assert b.get('/api/device/status').json() == {'probe': 'a'}
+        assert a.post('/api/runtime/select', json={'probe': 'missing'}).status_code == 409
+        assert a.get('/api/device/status').json() == {'probe': 'b'}
+        assert b.get('/api/device/status').json() == {'probe': 'a'}
+        assert a.post('/api/runtime/select', json={'probe': 'a'}).json()['reload']
+        assert a.get('/api/device/status').json() == {'probe': 'a'}
+        assert b.get('/api/device/status').json() == {'probe': 'a'}
+    assert all(path not in {'/api/device/disconnect', '/_runtime/stop'} for _, path in seen)
+
+
 def test_selection_closes_all_old_device_sockets_and_new_connections_use_new_backend(monkeypatch):
     import asyncio
     from contextlib import asynccontextmanager

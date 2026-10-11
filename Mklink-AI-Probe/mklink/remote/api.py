@@ -1768,6 +1768,7 @@ def create_app(
         mcu: str | None = Body(default=None),
         elf_backend: str | None = Body(default=None),
         restore_last: bool = Body(default=False),
+        reuse_connected: bool = Body(default=False),
     ):
         runtime = getattr(app.state, "shared_runtime", None)
         port_changed = False
@@ -1787,6 +1788,8 @@ def create_app(
             port_changed = bool(current and current.port and current.port.casefold() != port.casefold())
             if current and current.connected and not port_changed:
                 restore_last = False  # Reuse live symbols; never reparse on an implicit reconnect.
+                if reuse_connected:
+                    axf = mcu = elf_backend = None
             if runtime.target_sessions and current and current.connected and not port_changed and any(value is not None for value in (axf, mcu, elf_backend)):
                 raise HTTPException(status_code=409, detail="Detach shared clients before changing device configuration or symbols")
         preferred_port = None

@@ -50,6 +50,15 @@ class SvdTarget:
 
     @property
     def key(self) -> str:
+        # Pack identity includes its version. Extraction/install directories are
+        # transport details and change between packaged application launches.
+        return hashlib.sha256(
+            f"svd-v2|{self.pack}|{self.target}|{_member(self.svd)}".encode()
+        ).hexdigest()[:24]
+
+    @property
+    def legacy_key(self) -> str:
+        """Accept old IDs only when their exact source still exists; never guess."""
         return hashlib.sha256(
             f"{self.source}|{self.target}|{self.svd}".encode()
         ).hexdigest()[:24]
@@ -354,11 +363,13 @@ def load_catalog(project_root=".", *, target_id=None, chip=None, svd=None, targe
         if target is None:
             targets = discover_svd_targets(project_root)
             matches = (
-                [t for t in targets if t.key == target_id]
+                [t for t in targets if target_id in (t.key, t.legacy_key)]
                 if target_id
                 else [t for t in targets if t.target.casefold() == chip.casefold()]
             )
             if len(matches) != 1:
+                if target_id:
+                    raise ValueError("Saved peripheral target is unavailable or ambiguous; select the chip and Pack again")
                 raise ValueError(
                     "Select an exact target_id: chip is missing or has multiple Packs"
                 )

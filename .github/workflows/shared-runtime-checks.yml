@@ -91,6 +91,7 @@ jobs:
           $tests += 'test_atomic_export'
           $tests += 'test_superwatch_alignment'
           $tests += 'test_gui_connect_handoff'
+          $tests += 'test_peripheral_restore'
           $arguments = @('-m', 'pytest', '-q', '--tb=short', "--junitxml=$($paths.reports)/shared-runtime.xml")
           $arguments += $tests | ForEach-Object { "_maintainer/testing/tests/$_.py" }
           ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList $arguments

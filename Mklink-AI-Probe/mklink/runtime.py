@@ -222,6 +222,10 @@ def connect_gui_target(info: dict, options: dict):
         client.connect(scope='uart')
         payload = {key: value for key, value in options.items()
                    if key in {'axf', 'mcu', 'elf_backend', 'restore_last'}}
+        # Navigating to a probe joins its current workspace. Connection options
+        # initialize a fresh target only; they must not reparse another client's
+        # live symbols or stop its acquisition when returning to that probe.
+        payload['reuse_connected'] = True
         # The backend resolves its immutable probe ID. Never forward a COM
         # selector from the previous window to the new device.
         return request(info, 'POST', '/api/device/connect', payload)
