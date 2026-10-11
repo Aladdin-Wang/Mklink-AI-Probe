@@ -67,7 +67,9 @@ V3 / V4 当前源代码的 `rtt_channels.c` 分别编译运行截图布局夹具
 - 最终后端故障处理边界调整后再次冷启动：RTT 0.328 秒就绪，20 秒仅状态查询期间心跳保活正常；随后 30 秒并行 Watch/内存读取，35209 个 Watch 周期、读错误 0；SystemView 0.354 秒就绪、15 秒接收 123150 个事件。停止后资源为空、共享后台退出。结果见本地 `final-hardware.json`。
 
 本地原始日志、截图、路径、设备身份及目标镜像保留在忽略的构建目录，不提交仓库。主要证据位于构建产物目录 `v034-rtt` 与早期调查目录 `v034-rtt-investigation`。
-板上保留 SystemView 测试镜像；配套 ELF 和派生 Keil 工程在同一 `v034-rtt/systemview-target` 产物目录。原测试工程的旧 ELF 对应先前 8 通道程序，不能混用其 RTT 地址。
+原工程复核补充：按用户要求直接使用原测试工程，在原目录启用已有 SystemView 测试开关并编译（0 错误 / 0 警告），输出 `build/keil/Obj/rt-thread.axf`；同次 HEX 烧录并校验通过。后台加载路径与该 AXF 一致。RTT 0.246 秒就绪；20 秒状态/心跳检查后并行 SuperWatch 与内存读取 30 秒，35225 个 Watch 周期、读错误 0；SystemView 0.379 秒就绪，15 秒收到 122139 个事件。停止后资源为空，后台退出。证据见本地 `original-project-hardware.json`。
+
+板上最终保留原测试工程本次编译的 SystemView 测试程序；后续直接使用原工程 `build/keil/Obj/rt-thread.axf`，不复制工程或继续使用此前派生目录中的 ELF。原始日志、哈希和设备身份仍只保留本地。
 
 ## 未关闭项
 
