@@ -341,3 +341,25 @@ def test_lifecycle_rechecks_async_job_created_by_draining_operation(window):
         await task
         assert transitioned==[True] and not control.operation_lock.locked()
     client.portal.call(scenario)
+
+
+
+def test_slow_old_request_body_cannot_cross_completed_switch(window):
+    import asyncio
+    import httpx
+    client,control,device,state=window
+    async def scenario():
+        receiving,release=asyncio.Event(),asyncio.Event()
+        async def body():
+            receiving.set(); await release.wait()
+            yield b'{"address":"0x20000020","data_hex":"01"}'
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=control.app),
+                base_url='http://127.0.0.1:8765',headers={'X-Auth-Token':'test'}) as http:
+            old=asyncio.create_task(http.post('/api/device/write-memory',content=body(),
+                headers={'X-MKLink-Probe':A,'Content-Type':'application/json'}))
+            await receiving.wait()
+            assert (await http.post('/api/runtime/select',json={'port':'COM2'})).status_code==200
+            release.set()
+            response=await old
+            assert response.status_code==409 and 'connection changed' in response.text
+    client.portal.call(scenario)

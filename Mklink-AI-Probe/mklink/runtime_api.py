@@ -440,13 +440,21 @@ class RuntimeGate:
         session_id = headers.get(b"x-mklink-session", b"").decode()
         expected_probe = headers.get(b'x-mklink-probe', b'').decode()
         expected_generation = headers.get(b'x-mklink-device-generation', b'').decode()
-        if not is_uart_path(path) and (
-                (expected_probe and expected_probe != c.info.get('probe_id'))
-                or (expected_generation and expected_generation != str(c.app.state.mklink_state.get('device_generation', 0)))):
-            return await reject(409, 'Device connection changed; reconnect explicitly before accessing the target')
+        def check_connection():
+            if not is_uart_path(path) and (
+                    (expected_probe and expected_probe != c.info.get('probe_id'))
+                    or (expected_generation and expected_generation != str(c.app.state.mklink_state.get('device_generation', 0)))):
+                raise HTTPException(409, 'Device connection changed; reconnect explicitly before accessing the target')
+        try:
+            check_connection()
+        except HTTPException as exc:
+            return await reject(exc.status_code, exc.detail)
         if path == '/api/device/disconnect':
+            async def disconnect():
+                check_connection()
+                return await self.app(scope, receive, send)
             try:
-                return await c.run_lifecycle(path, lambda: self.app(scope, receive, send), session_id=session_id)
+                return await c.run_lifecycle(path, disconnect, session_id=session_id)
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail)
         if is_uart_path(path):
@@ -557,6 +565,9 @@ class RuntimeGate:
                     (key.lower().encode(), value.encode()) for key, value in submission_headers().items())
             await send(message)
         async def operation():
+            # Receiving a body may yield across a completed switch. Validate
+            # again under admission before any old request reaches hardware.
+            check_connection()
             if path in {'/api/offline-download/deploy', '/api/offline-download/trigger',
                         '/api/offline-download/algorithm', '/api/online-flash/memory/read',
                         '/api/online-flash/memory/read-stream'}:
