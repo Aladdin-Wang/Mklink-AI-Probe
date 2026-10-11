@@ -337,7 +337,7 @@ export interface SymbolCLayoutResult {
 }
 
 export interface SuperWatchWriteResult {
-  mode?: 'live' | 'legacy-gap'
+  mode?: 'live' | 'legacy-gap' | 'cdc-mux'
   timestamp_us?: number | null
   time_ms?: number | null
   request_id?: number | null
@@ -345,6 +345,7 @@ export interface SuperWatchWriteResult {
   generation: number
   value: number | boolean
   verified: boolean
+  acknowledged?: boolean
 }
 
 export interface SuperWatchTransactionDetail {

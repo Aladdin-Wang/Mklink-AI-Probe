@@ -1193,10 +1193,14 @@ class DumpMemoryStreamSession:
         _, address, data, future = pending
         if frame['address'] != address or frame['size'] != len(data):
             future.set_exception(RuntimeError("Live write ACK address/size mismatch; result unknown"))
-        elif frame['status'] or frame['data'] != data:
-            future.set_exception(RuntimeError(f"Live write failed verification (status={frame['status']})"))
+        # SW01 firmware statuses 3/5 occur only AFTER a successful SWD write:
+        # its built-in readback failed/differed. Variable writes use the write
+        # acknowledgement only. These are NOT MUX command status codes.
+        elif frame['status'] not in (0, 3, 5):
+            future.set_exception(RuntimeError(f"Live write failed (status={frame['status']})"))
         else:
-            future.set_result({"data": frame['data'], "timestamp_us": frame['timestamp_us'],
+            future.set_result({"data": data, "acknowledged": True, "verified": False,
+                               "timestamp_us": frame['timestamp_us'],
                                "request_id": frame['request_id'], "mode": "live"})
 
     def read_frames(self, max_bytes: int | None = None) -> list[dict]:

@@ -2136,9 +2136,6 @@ class SuperWatchStreamManager:
                                                 write_error = None
                                                 try:
                                                     device.write_memory(address, payload)
-                                                    data = self._readback_once(address, len(payload))
-                                                    if data != payload:
-                                                        raise RuntimeError("SuperWatch readback mismatch")
                                                 except Exception as exc:
                                                     write_error = exc
                                                 finally:
@@ -2146,7 +2143,8 @@ class SuperWatchStreamManager:
                                                 if write_error is not None:
                                                     future.set_exception(write_error)
                                                 else:
-                                                    future.set_result({"data": data, "mode": "legacy-gap", "timestamp_us": None})
+                                                    future.set_result({"data": payload, "acknowledged": True, "verified": False,
+                                                                       "mode": "legacy-gap", "timestamp_us": None})
                                             except Exception as exc:
                                                 if not future.done():
                                                     future.set_exception(exc)
@@ -2251,13 +2249,6 @@ class SuperWatchStreamManager:
             self._thread = None
         return True
 
-    def _readback_once(self, address: int, size: int) -> bytes:
-        if self._device is None:
-            raise RuntimeError("SuperWatch device is unavailable")
-        # The continuous dump stream is already stopped. Re-entering dump mode
-        # for a one-shot read can leave firmware unable to restart streaming.
-        return self._device.read_memory(address, size)
-
     def write_symbol(self, path: str, *, generation: int, value: object) -> dict:
         from mklink.symbol_catalog import decode_descriptor, encode_descriptor
 
@@ -2297,7 +2288,8 @@ class SuperWatchStreamManager:
                 with self._read_lock:
                     origin = self._origin_us
                 result = {"path": path, "generation": catalog.generation,
-                          "value": decode_descriptor(descriptor, ack["data"]), "verified": True,
+                          "value": decode_descriptor(descriptor, ack["data"]),
+                          "acknowledged": True, "verified": False,
                           "mode": ack["mode"], "timestamp_us": timestamp,
                           "time_ms": (timestamp - origin) / 1000 if timestamp is not None and origin is not None else None,
                           "request_id": ack.get("request_id")}
@@ -2312,18 +2304,12 @@ class SuperWatchStreamManager:
                 device.write_memory(descriptor.address, payload)
             except Exception as exc:
                 raise SuperWatchTransactionError("write", exc) from exc
-            try:
-                actual_raw = self._readback_once(descriptor.address, descriptor.size)
-                if actual_raw[: descriptor.size] != payload:
-                    raise RuntimeError(f"SuperWatch readback mismatch for {path}")
-                actual = decode_descriptor(descriptor, actual_raw)
-            except Exception as exc:
-                raise SuperWatchTransactionError("readback", exc) from exc
             return {
                 "path": path,
                 "generation": catalog.generation,
-                "value": actual,
-                "verified": True,
+                "value": decode_descriptor(descriptor, payload),
+                "acknowledged": True,
+                "verified": False,
             }
 
     def reparse_symbols(

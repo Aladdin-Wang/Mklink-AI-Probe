@@ -1517,22 +1517,14 @@ def test_superwatch_prepare_rebinds_existing_runtime_to_reconnected_device(
     manager._device = old_device
 
     manager.prepare(new_device)
-    monkeypatch.setattr(
-        manager,
-        "_readback_once",
-        lambda address, size: new_operations.append(("readback", address, size))
-        or struct.pack("<f", 1.5),
-        raising=False,
-    )
 
     result = manager.write_symbol("gain", generation=1, value=1.5)
 
     assert old_operations == []
     assert new_operations == [
         ("write", 0x20000020, struct.pack("<f", 1.5)),
-        ("readback", 0x20000020, 4),
     ]
-    assert result["verified"] is True
+    assert result["acknowledged"] and result["verified"] is False
 
 
 def test_superwatch_prepare_rebinds_selected_items_to_new_device_catalog(tmp_path):
@@ -1587,15 +1579,6 @@ def test_superwatch_prepare_rebinds_selected_items_to_new_device_catalog(tmp_pat
     assert [(block.address, block.size) for block in manager._runtime.blocks] == [
         (0x20000040, 4),
     ]
-
-
-def test_superwatch_readback_uses_command_mode_after_dump_stream_stops():
-    manager = SuperWatchStreamManager()
-    device = SimpleNamespace(read_memory=Mock(return_value=b"\x00"))
-    manager._device = device
-
-    assert manager._readback_once(0x20000020, 1) == b"\x00"
-    device.read_memory.assert_called_once_with(0x20000020, 1)
 
 
 def test_superwatch_adds_catalog_array_leaves_and_merges_contiguous_reads(tmp_path):
