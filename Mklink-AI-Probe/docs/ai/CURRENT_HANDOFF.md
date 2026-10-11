@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-11T10:02:50+08:00`
+- 更新时间：`2026-10-11T18:27:20+08:00`
 - 分支：`codex/0.3.4-fixes`
-- HEAD：`Fix source ddda89c5; handoff commit follows. Inspect Git for the exact current branch tip.`
+- HEAD：`Fix sources ddda89c5 (capture) and 4c1227b9 (probe switching/peripherals); inspect Git for current handoff tip.`
 - 远端 HEAD：`microkeen/codex/0.3.4-fixes; base microkeen/main 271af444. Verify current tip with Git.`
 - 工作树：Original Mklink-AI-Probe remains the maintenance workspace. 0.3.4 changes are isolated on the task branch; source and production Web committed, hardware sessions released.
-- 当前任务：0.3.4 RTT/SystemView/SuperWatch 修复与 V3/F103 真机复核完成，源 ddda89c5。单次 RAM 解析、准确地址优先、清晰校验错误、统一准备等待、清理前原始错误、MUX 先读响应再判超时及请求诊断；SystemView 冲突提示遵守共享所有权。源码/Web 与交接已推送，PR40：https://github.com/MicroKeen/Mklink-AI-Probe/pull/40；未合并、未发布、未重建安装器。客户现场 MUX 超时的全部条件仍待核实。见 v034-rtt-startup.md。
+- 当前任务：0.3.4 RTT/SystemView/SuperWatch 与下载器切换修复完成。采集源 ddda89c5；新增源4c1227b9：外设ID去除绝对解压路径，失效偏好不阻断连接并提示重选，GUI切回已有下载器复用现有符号/采集。594项相关Python、70项GUI、生产构建通过；两实体下载器/独立桌面代理/真浏览器切换验证，原V3 RTT+126次内存检查0错误、符号版本不变。交接见v034-rtt-startup.md与v034-probe-switch-peripherals.md。PR40未合并或正式发布，未重建安装器。
 - 状态：`complete`
 
 ## 里程碑
 
-- **0.3.4 采集修复** — `verified`。源码 ddda89c5，RTT/SystemView/SuperWatch 与共享通信回归、真浏览器、V3.6.4/F103 复核通过。PR40 等待整合；未正式发布，客户现场不等于全部闭环。
+- **0.3.4 采集与下载器切换修复** — `verified`。源码ddda89c5/4c1227b9；采集准备、MUX诊断、稳定外设ID与非阻断恢复、GUI跨下载器复用现有连接。V3/F103、双实体下载器及生产Web/代理复核通过。PR40待整合；未发布或新安装器验收。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
 - **0.3.1正式版** — `complete`。PR33合并，源1d61159d；签名NSIS/Skill/SiteAgent与三端索引完成，最终提取包检查通过。见v031-release-handoff.md。
@@ -23,7 +23,7 @@
 
 ## 验证证据
 
-- **0.3.4 采集启动与通信**：源 ddda89c5；Python 全量4752通过/2旧读取顺序断言失败/2跳过，更新断言后相关487通过，最后边界与断连177通过；最终合计4757通过用例/2跳过。GUI全量936通过，补改冲突提示后SystemView25通过，最终937用例；生产构建通过。6万符号ELF基准20–22秒→1.45–1.51秒；V3/F103 RTT8+Watch3+跨客户端内存约126秒，读错误0；Trace三次0.53–0.66秒。最终冷启RTT0.328秒、Watch35209周期0错误、Trace0.354秒/123150事件；Web13任务72MHz/331969事件/drop0，停止释放通过。见v034-rtt-startup.md。 后续原工程原地编译/烧录校验通过，直接加载原 Obj AXF：RTT 0.246秒，Watch 35225周期0错误，Trace 0.379秒/122139事件；后台释放。05faf1e3 的三项 PR CI 全通过。
+- **0.3.4 采集启动与通信**：源 ddda89c5；Python 全量4752通过/2旧读取顺序断言失败/2跳过，更新断言后相关487通过，最后边界与断连177通过；最终合计4757通过用例/2跳过。GUI全量936通过，补改冲突提示后SystemView25通过，最终937用例；生产构建通过。6万符号ELF基准20–22秒→1.45–1.51秒；V3/F103 RTT8+Watch3+跨客户端内存约126秒，读错误0；Trace三次0.53–0.66秒。最终冷启RTT0.328秒、Watch35209周期0错误、Trace0.354秒/123150事件；Web13任务72MHz/331969事件/drop0，停止释放通过。见v034-rtt-startup.md。 后续原工程原地编译/烧录校验通过，直接加载原 Obj AXF：RTT 0.246秒，Watch 35225周期0错误，Trace 0.379秒/122139事件；后台释放。05faf1e3 的三项 PR CI 全通过。 切换源4c1227b9：最终594项Python、70项GUI及生产构建通过；失效偏好下真机连接/RAM/RTT成功，页面重选后4876外设项、两次新后台冷启恢复；双实体A→B→A→B不影响另一窗口RTT，126次内存检查0错误，符号generation不变，后台释放。见v034-probe-switch-peripherals.md。
 - **0.3.3 正式发布**：精确main11616f80重建Windows/Skill/SiteAgent；ARM/Linux CI38069170299，Intel详细重跑38071279659成功。三个native清单及冻结CLI/MCP/退出通过，五份签名实际验签。正式Windows提取包Windows-only PATH、35Web资源、原生界面/区域高度/退出通过；不计本次UAC取消为重新安装。两GitHub各17公开附件与三渠道回读验证，本地Skill逐文件核对并验证CLI/SVD/MCP；详见v033-release-handoff.md。
 - **0.3.3 最终候选与补充回归**：源码77f56f20/Web0c01a71b；GUI934通过，Python合计4747通过/2跳过（首次磁盘满项F盘重跑）。实装载荷摘要一致、最小PATH启动及冻结CLI/MCP/F407VE目录通过；F103RC全流程约10.25秒、AXF5909变量解析和实际搜索/拖动通过。三平台原生CI38067335470全成功。e90f6df1修测试本地偏好串扰，精确复现12失败后115波形用例及GUI CI38068369545通过；后台管理测试固定中文，不改产品运行时。见v033-release-readiness.md及本地v033-final证据。
 - **0.3.3 在线烧录算法选择与布局**：源码92e33221/Webee0c2024；连接折叠摘要、资源按钮、联网下载、多FLM选择及镜像地址映射。GUI120、Python530、构建通过；浏览器双分区模拟及真实内置F103RE文件解析通过。初次本地FLM目录缺失导致21项安全测试失败，基线同样失败，指定现有资产目录后全通过；未修改白名单。无物理烧录，未更新NSIS。见v033-online-flash-algorithms.md。
@@ -42,18 +42,18 @@
 - 原Mklink-AI-Probe是唯一维护入口。0.3.3正式包/证据已回原.build/artifacts/v033-official；F盘为构建缓存。交接PR合入后删除startup-cdc临时工作树并记录结果，保留共享依赖和必要客户证据。
 - mklink及既有长期跟进维持暂停；不得因旧交接自动接管硬件或重复发布。
 - 用户明确授权合并0.3.3修复分支、签名正式发布、更新本地Skill及清理临时工作树；PR38已合入并发布。探针连接/时钟不要求目标板；固件需要改动时另开会话。Gitee缺失镜像沿用此前GitHub兜底，渠道最后写入。
-- 用户特别要求：锁相关修复必须结合整体共享架构，不能仅消除当前卡点。保留唯一串口所有权、USB身份绑定、会话/操作锁及未知结果不重放；审查读写控制顺序、epoch隔离、取消完成前缓冲寿命、背压错误传播和端口释放，再以跨客户端与真实进程/硬件验证。 父进程仅在worker真正退出后发布串口关闭，避免其他线程提前释放应用锁。 0.3.4 继续保留这些边界；单次调用上下文缓存 RAM，未知响应不重放，错误可见不提前释放采集所有权。
+- 用户特别要求：锁相关修复必须结合整体共享架构，不能仅消除当前卡点。保留唯一串口所有权、USB身份绑定、会话/操作锁及未知结果不重放；审查读写控制顺序、epoch隔离、取消完成前缓冲寿命、背压错误传播和端口释放，再以跨客户端与真实进程/硬件验证。 父进程仅在worker真正退出后发布串口关闭，避免其他线程提前释放应用锁。 0.3.4 继续保留这些边界；单次调用上下文缓存 RAM，未知响应不重放，错误可见不提前释放采集所有权。 GUI切换下载器保持每个物理探针一个后台，只切换当前窗口代理；加入已有连接不修改其ELF/芯片/解析器。外设ID使用Pack版本/型号/SVD相对路径，失效偏好仅禁用外设目录，不阻断设备；无法反推的旧ID由用户重选。
 - 测试工程直接在用户指定原目录修改和构建，直接使用其 build/keil/Obj ELF，不再复制工程到其他目录；用户允许任意测试修改，不要求备份还原。详细硬件路径仅留本地。
 
 ## 真机环境
 
-- **state**：本轮用户授权 V3.6.4 + STM32F103 真机复核及任意修改测试工程，不要求备份还原。最终按用户要求在原工程启用已有 SystemView 开关、原地编译，直接加载其 build/keil/Obj/rt-thread.axf，同次 HEX 烧录校验与 RTT/Watch/Trace 复核通过，板上保留该程序。后续不得复制工程或使用旧派生目录 ELF。未更改供电或探针固件；采集已停、后台列表为空。绝对路径和身份仅留本地。
+- **state**：用户授权V3/F103与第二只下载器切换验证，允许修改原测试工程且不复制。原build/keil/Obj/rt-thread.axf与板上SystemView程序一致。本次原工程注入失效外设ID后连接/RAM/RTT成功，已在页面重选STM32F103RE保存稳定ID；两次冷启动恢复4876项。两实体下载器、两个独立生产桌面代理及真浏览器A→B→A→B通过；第二只未接目标，只验证连接隔离。原V3持续RTT/内存126次0错误，符号不变。全部测试窗口/代理/SDK已停，后台列表为空；未改供电/下载器固件或重刷目标。路径身份仅留本地。
 - **installer**：实际安装及F103回归来自77f56f20候选；正式11616f80运行时代码相同，已重建签名NSIS并验证提取包CLI/MCP/SVD/Web/原生界面/退出。本次再次覆盖安装UAC取消，未计新安装通过。详见v033-release-handoff.md。
 - **backups**：原Git根.build/artifacts/v033-official保存17正式文件、archive-manifest及qualification（含候选实装/F103、正式冻结/签名/渠道/Skill证据）；旧0.3.2正式归档及用户备份保持。F盘保留共享缓存；联接测试目录和旧安装器占用文件不强删。
 
 ## 下一动作
 
-1. 审查并整合 codex/0.3.4-fixes 的 PR40（https://github.com/MicroKeen/Mklink-AI-Probe/pull/40）；修复源 ddda89c5，详见 v034-rtt-startup.md。当前仅开发分支，合并、安装器、正式发布仍须明确授权，不改 v0.3.3 标签/资产。
+1. 审查整合codex/0.3.4-fixes的PR40；源ddda89c5（采集）、4c1227b9（切换/外设恢复）。详见v034-rtt-startup.md与v034-probe-switch-peripherals.md。客户旧外设哈希无法反推时需在界面重选一次，不要求删文件。合并、构建安装器及正式发布仍须明确授权。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. 检查 Gitee 镜像容量与可达性；缺失附件沿用 GitHub 兜底，不宣称国内镜像完整。历史联接/占用目录留人工处理。
