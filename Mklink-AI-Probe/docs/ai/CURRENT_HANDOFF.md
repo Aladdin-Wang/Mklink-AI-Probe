@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-11T09:39:50+08:00`
+- 更新时间：`2026-10-11T09:41:10+08:00`
 - 分支：`codex/0.3.4-fixes`
 - HEAD：`Fix source ddda89c5; handoff commit follows. Inspect Git for the exact current branch tip.`
 - 远端 HEAD：`microkeen/codex/0.3.4-fixes; base microkeen/main 271af444. Verify current tip with Git.`
 - 工作树：Original Mklink-AI-Probe remains the maintenance workspace. 0.3.4 changes are isolated on the task branch; source and production Web committed, hardware sessions released.
-- 当前任务：0.3.4 RTT/SystemView/SuperWatch 修复与 V3/F103 真机复核完成，源 ddda89c5。单次 RAM 解析、准确地址优先、清晰校验错误、统一准备等待、清理前原始错误、MUX 先读响应再判超时及请求诊断；SystemView 冲突提示遵守共享所有权。源码/Web 已提交，交接随后推送并建 PR；未合并、未发布、未重建安装器。客户现场 MUX 超时的全部条件仍待核实。见 v034-rtt-startup.md。
+- 当前任务：0.3.4 RTT/SystemView/SuperWatch 修复与 V3/F103 真机复核完成，源 ddda89c5。单次 RAM 解析、准确地址优先、清晰校验错误、统一准备等待、清理前原始错误、MUX 先读响应再判超时及请求诊断；SystemView 冲突提示遵守共享所有权。源码/Web 与交接已推送，PR40：https://github.com/MicroKeen/Mklink-AI-Probe/pull/40；未合并、未发布、未重建安装器。客户现场 MUX 超时的全部条件仍待核实。见 v034-rtt-startup.md。
 - 状态：`complete`
 
 ## 里程碑
 
-- **0.3.4 采集修复** — `verified`。源码 ddda89c5，RTT/SystemView/SuperWatch 与共享通信回归、真浏览器、V3.6.4/F103 复核通过。等待 PR 整合；未正式发布，客户现场不等于全部闭环。
+- **0.3.4 采集修复** — `verified`。源码 ddda89c5，RTT/SystemView/SuperWatch 与共享通信回归、真浏览器、V3.6.4/F103 复核通过。PR40 等待整合；未正式发布，客户现场不等于全部闭环。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
 - **0.3.1正式版** — `complete`。PR33合并，源1d61159d；签名NSIS/Skill/SiteAgent与三端索引完成，最终提取包检查通过。见v031-release-handoff.md。
@@ -52,7 +52,7 @@
 
 ## 下一动作
 
-1. 审查并整合 codex/0.3.4-fixes 的 PR；修复源 ddda89c5，详见 v034-rtt-startup.md。当前仅开发分支，合并、安装器、正式发布仍须明确授权，不改 v0.3.3 标签/资产。
+1. 审查并整合 codex/0.3.4-fixes 的 PR40（https://github.com/MicroKeen/Mklink-AI-Probe/pull/40）；修复源 ddda89c5，详见 v034-rtt-startup.md。当前仅开发分支，合并、安装器、正式发布仍须明确授权，不改 v0.3.3 标签/资产。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. 检查 Gitee 镜像容量与可达性；缺失附件沿用 GitHub 兜底，不宣称国内镜像完整。历史联接/占用目录留人工处理。
