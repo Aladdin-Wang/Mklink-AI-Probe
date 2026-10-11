@@ -62,7 +62,7 @@ def build_server():
                            "batch_read_max_total_bytes": BATCH_READ_MAX_TOTAL_BYTES,
                            "rtt_mux_channels": 8, "rtt_channel_cache_bytes": 65536,
                            "mux_watch_regions": 15, "mux_watch_region_bytes": 128},
-                "guidance": "Call connect, then GUI capabilities. Read shared history while GUI captures. Disconnect detaches only this AI client."}
+                "guidance": "Call connect, then GUI capabilities. Disconnect stops shared target acquisition and releases the probe; detach only leaves this AI session."}
 
     @server.tool()
     def inspect_mcu(project_root: str = ".", device: str | None = None, flm: str | None = None) -> dict:
@@ -86,7 +86,7 @@ def build_server():
         if info is not None and probe:
             from mklink.probes import select_probe
             if select_probe(probe)['probe_id'] != info['probe_id']:
-                raise RuntimeErrorResponse('Attached to another probe; disconnect before selecting a different security target')
+                raise RuntimeErrorResponse('Attached to another probe; call connect with the intended probe before selecting a different security target')
         if info is None:
             info = ensure_runtime(project_root=project_root, probe=probe)
         with lock:
@@ -249,7 +249,9 @@ def build_server():
                 client_name: str = 'AI client', scope: str = 'target') -> dict:
         """Attach to the shared backend: target (default) or independent UART scope.
 
-        Explicit conflicting project/probe/symbol settings fail without replacing the GUI session.
+        Explicit probe selection switches the existing backend after draining work.
+        Other target sessions are retired and must explicitly reconnect; GUI pages follow.
+        Conflicting project/symbol settings still require explicit reconfiguration.
         The default scope connects the USB probe without requiring a target MCU.
         scope='uart' attaches without MCU/CDC initialization, including the unselected lobby.
         Use gui_call for uart_ports, serial/modbus start/status/stop, serial_send, modbus_transaction
@@ -257,7 +259,7 @@ def build_server():
         Use probe to choose a backend; target port/AXF/MCU options require scope='target'.
         After a backend restart or USB reconnect, call connect again to rediscover
         the same probe and replace the expired attachment. Failed operations are
-        never replayed. Switching to a different probe still requires disconnect.
+        never replayed. An explicit different probe/port switches in place.
         """
         with lock:
             if "client" not in holder:
@@ -266,7 +268,18 @@ def build_server():
 
     @server.tool()
     def disconnect() -> dict:
-        """Detach this AI session. The GUI, acquisition, and device remain connected."""
+        """Stop shared target acquisition and disconnect the physical probe.
+
+        Drains admitted hardware work first. All target clients lose their old
+        attachment; GUI pages update. Use detach for session-only cleanup.
+        """
+        result = client().disconnect()
+        close()
+        return {**result, "detached": True}
+
+    @server.tool()
+    def detach() -> dict:
+        """Leave only this AI attachment; keep the shared probe and capture running."""
         close()
         return {"detached": True, "device_closed": False}
 
@@ -344,7 +357,7 @@ def build_server():
         detach-client uses a public client_id from status (never a PID). Stop acquisition
         uses stream, e.g. rtt. The backend rejects active jobs, other subscribers and
         unsafe shutdowns. No forced kill, implicit connect, command replay or retries.
-        Use disconnect to leave only your own attachment at normal task completion.
+        Use detach to leave only your own attachment at normal task completion.
         """
         from mklink.runtime import control_runtime
         return control_runtime(action, probe=runtime_selector(probe), confirm=confirm,
@@ -360,7 +373,7 @@ def build_server():
 
     @server.tool()
     def rtt_stop() -> dict:
-        """Stop RTT with no other subscribers. A sole subscriber may recover control after its owner detaches/expires; otherwise borrowers must disconnect."""
+        """Stop RTT with no other subscribers. A sole subscriber may recover control after its owner detaches/expires; otherwise borrowers must detach."""
         return client().call('rtt_stop')
 
     @server.tool()

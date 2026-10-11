@@ -138,11 +138,8 @@ def install_management(app, control):
 
     @api.post('/release-device')
     async def release_device(body: dict):
-        confirm_idle(control, body)
-        if control.target_sessions:
-            raise HTTPException(409, 'Detach AI/CLI/SDK clients before releasing the physical device')
-        no_capture()
-        return await control.invoke('POST', '/api/device/disconnect')
+        confirm_idle(control, body, target=False)
+        return await control.invoke('POST', '/api/device/disconnect', session_id=body.get('session_id'))
 
     @api.post('/stop-backend')
     async def stop(body: dict):

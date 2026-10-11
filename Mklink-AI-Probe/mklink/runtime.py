@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 51  # Window-owned backend with explicit, drained probe rebinding.
+PROTOCOL = 52  # Explicit lifecycle requests drain work and retire target sessions.
 VERSION = "0.3.3"
 STARTUP_TIMEOUT_SECONDS = 60
 
@@ -87,6 +87,8 @@ def request(info: dict, method: str, path: str, payload=None, *, timeout=35, for
         data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {"X-Auth-Token": info["token"], "Content-Type":
                "application/x-www-form-urlencoded" if form else "application/json"}
+    if info.get('probe_id'):
+        headers['X-MKLink-Probe'] = info['probe_id']
     req = Request(f"http://127.0.0.1:{port}{path}", data=data, headers=headers, method=method)
     # Local IPC must never travel through environment-configured HTTP proxies.
     try:
@@ -340,28 +342,43 @@ class RuntimeClient:
         if scope == 'uart' and any(value is not None for value in (port, axf, mcu, elf_backend)):
             raise ValueError('UART-only attachment accepts a probe selector, not target connection settings')
         with self._lock:
+            existing = self.info is not None
             if self.info is None:
                 options = {'allow_lobby': True} if scope == 'uart' else {}
                 self.info = ensure_runtime(project_root=project_root or self.project_root, probe=probe, device_port=port, **options)
-            elif probe or port:
+            # Only explicit connect may rediscover or select a target. Ordinary
+            # calls retain the original session and never replay hardware work.
+            selected = None
+            if existing and (probe or port):
                 from mklink.probes import select_probe
-                if select_probe(probe or port, allow_lobby=scope == 'uart')["probe_id"] != self.info.get("probe_id"):
-                    raise RuntimeErrorResponse("This client is bound to another probe; disconnect and create a new client")
-            # Only explicit connect may rediscover a dead backend. Keep the
-            # physical identity: an unplugged probe must never select a neighbor.
+                selected = select_probe(probe or port, allow_lobby=scope == 'uart')
             if self.info.get('probe_id'):
                 try:
                     health = request(self.info, 'GET', '/_runtime/status', timeout=2)
                 except RuntimeErrorResponse:
                     health = None
-                if (health is None or health.get('instance_id') != self.info.get('instance_id')
-                        or ('probe_id' in health and health['probe_id'] != self.info['probe_id'])):
+                if health is None or health.get('instance_id') != self.info.get('instance_id'):
                     self._stop_heartbeat()
                     self.session_id = None
                     self.info = ensure_runtime(project_root=project_root or self.project_root,
-                                               probe=self.info['probe_id'], allow_lobby=scope == 'uart')
-                elif health.get('protocol') != PROTOCOL or health.get('version') != VERSION:
-                    raise RuntimeErrorResponse('Runtime version differs; stop the old runtime explicitly before upgrading')
+                        probe=selected['probe_id'] if selected else self.info['probe_id'], allow_lobby=scope == 'uart')
+                else:
+                    if health.get('protocol') != PROTOCOL or health.get('version') != VERSION:
+                        raise RuntimeErrorResponse('Runtime version differs; stop the old runtime explicitly before upgrading')
+                    actual = health.get('probe_id', self.info['probe_id'])
+                    if actual != self.info['probe_id']:
+                        self._stop_heartbeat()
+                        self.session_id = None
+                        self.info = {**self.info, 'probe_id': actual}
+                        if selected is None:
+                            raise RuntimeErrorResponse('Backend target changed; explicitly select the intended probe before reconnecting')
+                    if selected and selected['probe_id'] != actual:
+                        if scope == 'uart':
+                            raise RuntimeErrorResponse('Select another target with a target-scoped connection')
+                        request(self.info, 'POST', '/api/runtime/select', {'probe': selected['probe_id']}, timeout=300)
+                        self._stop_heartbeat()
+                        self.session_id = None
+                        self.info = {**self.info, 'probe_id': selected['probe_id']}
             result = request(self.info, "POST", "/_runtime/attach", {
                 "project_root": project_root, "port": port, "axf": axf,
                 "mcu": mcu, "elf_backend": elf_backend, "session_id": self.session_id,
@@ -458,6 +475,19 @@ class RuntimeClient:
             self._stop_heartbeat()
             if session_id:
                 request(self.info, "POST", "/_runtime/detach", {"session_id": session_id})
+
+    def disconnect(self):
+        """Explicit physical disconnect; close() remains attachment-only cleanup."""
+        with self._lock:
+            if self.info is None:
+                return {'status': 'disconnected', 'device_closed': False}
+            result = request(self.info, 'POST', '/api/runtime/control/release-device',
+                             {'confirm': True, 'session_id': self.session_id}, timeout=300)
+            if self.session_id:
+                request(self.info, 'POST', '/_runtime/detach', {'session_id': self.session_id})
+            self.session_id = None
+            self._stop_heartbeat()
+            return {**result, 'device_closed': True}
 
 
 def serve_runtime(*, project_root=".", port=8765, probe_id="lobby", runtime_id=None):

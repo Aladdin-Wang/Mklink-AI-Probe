@@ -64,7 +64,6 @@ def test_job_retains_exclusion_and_deduplicates_after_client_leaves(fixture):
     assert client.post('/api/runtime/jobs/', json=body()).json()['job_id'] == job['job_id']
     assert client.post('/api/runtime/jobs/', json=body('erase')).status_code == 409
     assert client.post('/api/device/reset').status_code == 409
-    assert client.post('/api/runtime/control/release-device', json={'confirm':True}).status_code == 409
     assert client.post('/_runtime/stop', json={'confirm':True}).status_code == 409
     assert client.get('/api/runtime/control/status').json()['busy']
     client.portal.call(release.set)
@@ -111,7 +110,7 @@ async def main():
         Path(sys.argv[2]).write_text('one simulated operation', encoding='utf-8')
         await asyncio.Event().wait()
     control = SimpleNamespace(info={'jobs_path': sys.argv[1]},
-        operation_lock=asyncio.Lock(), attach_lock=asyncio.Lock(),
+        operation_lock=asyncio.Lock(), attach_lock=asyncio.Lock(), lifecycle_pending=0,
         require_identity=lambda: None, online_job=lambda: None, invoke=invoke,
         app=SimpleNamespace(state=SimpleNamespace(mklink_state={
             'device': SimpleNamespace(connected=True)})))

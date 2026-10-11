@@ -70,7 +70,7 @@ def test_diagnostics_keep_selected_identity_after_disconnect_without_reattaching
             await mcp.call_tool('connect', {'probe': 'original'})
             await mcp.call_tool('runtime_status', {})
             await mcp.call_tool('runtime_status', {'probe': 'other'})
-            await mcp.call_tool('disconnect', {})
+            await mcp.call_tool('detach', {})
             await mcp.call_tool('runtime_status', {})
     asyncio.run(scenario())
     assert selections == ['original', 'other', 'original'] and len(connections) == 1
@@ -188,7 +188,7 @@ def test_peripheral_mcp_thin_adapters_use_explicit_shared_client(monkeypatch):
             await mcp.call_tool('select_peripherals',{'chip':'TEST'})
             await mcp.call_tool('list_peripherals',{'query':'GPIO'})
             await mcp.call_tool('capture_peripherals',{'names':['GPIOB.12'],'duration':.1})
-            await mcp.call_tool('disconnect')
+            await mcp.call_tool('detach')
     asyncio.run(scenario())
     assert calls[1:]==[('select_peripherals',{'chip':'TEST'}),('list_peripherals',{'q':'GPIO'}),
                        ('capture_peripherals',{'names':['GPIOB.12'],'duration':.1,'period':.01}),('detach',None)]
@@ -334,7 +334,7 @@ def test_mcp_job_submission_uses_shared_session_and_can_query_after_disconnect(s
             assert status.data['state'] == 'unknown'
             duplicate = await mcp.call_tool('start_job', {'action': 'reset', 'request_id': 'once', 'confirm': True})
             assert duplicate.data['job_id'] == job_id
-            await mcp.call_tool('disconnect')
+            await mcp.call_tool('detach')
             assert not control.sessions
             assert (await mcp.call_tool('job_status', {'job_id': job_id})).data['state'] == 'unknown'
         assert not control.sessions
@@ -400,7 +400,7 @@ def test_active_mcp_security_submits_without_target_and_can_query_after_disconne
             result = await mcp.call_tool('security_lock', dict(target_part='nrf54l15',
                 firmware=str(tmp_path/'app.bin'),request_id='known-id',probe='alias',confirm_user=True))
             assert result.data['state']=='running'
-            assert (await mcp.call_tool('disconnect')).data['detached']
+            assert (await mcp.call_tool('detach')).data['detached']
             assert (await mcp.call_tool('job_status',{'job_id':'1'*32})).data['request_id']=='known-id'
     asyncio.run(scenario())
     assert calls[0] == ('ensure',{'project_root':'.','probe':'alias'})
@@ -425,7 +425,7 @@ def test_active_mcp_security_keeps_selection_after_lost_response(monkeypatch):
             result=await mcp.call_tool('security_unlock',dict(target_part='nrf54l15',
                 request_id='lost-request',probe='usb-test',confirm_user=True,confirm_data_loss=True),raise_on_error=False)
             assert result.is_error and 'lost-request' in str(result)
-            await mcp.call_tool('disconnect')
+            await mcp.call_tool('detach')
             assert (await mcp.call_tool('job_status')).data['jobs'][0]['request_id']=='lost-request'
     asyncio.run(scenario())
     assert calls==['POST','GET']

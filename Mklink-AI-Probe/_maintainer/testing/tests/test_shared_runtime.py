@@ -84,7 +84,6 @@ def call(client, session, capability, arguments=None):
 def test_detach_never_closes_gui_device(runtime):
     client, control, calls, _, _ = runtime
     first, second = attach(client), attach(client)
-    assert client.post("/api/device/disconnect").status_code == 409
     assert client.post("/_runtime/detach", json={"session_id": first}).json()["device_closed"] is False
     assert call(client, second, "device_status").json()["connected"]
     assert "disconnect" not in calls
@@ -373,14 +372,12 @@ def test_management_view_detach_stop_release_are_distinct(runtime):
     assert sorted(c['kind'] for c in snapshot['clients']) == ['gui','mcp']
     assert session not in str(snapshot)  # Public handles are not session credentials.
     assert snapshot['last_operation']['path'] == '/api/dash/rtt/start'
-    assert client.post(base+'/release-device', json={'confirm':True}).status_code == 409
     assert client.post(base+'/stop-acquisition', json={'stream':'rtt','confirm':True}).status_code == 409
     public_id = next(c['id'] for c in snapshot['clients'] if c['kind']=='mcp')
     assert client.post(base+'/detach-client', json={'client_id':public_id}).status_code == 422
     assert client.post(base+'/detach-client', json={'client_id':public_id,'confirm':True}).status_code == 200
     assert managers['rtt'].running
     assert call(client, session, 'device_status').status_code == 409
-    assert client.post(base+'/release-device', json={'confirm':True}).status_code == 409
     assert client.post(base+'/stop-acquisition', json={'stream':'rtt','confirm':True}).status_code == 200
     assert client.post(base+'/release-device', json={'confirm':True}).status_code == 200
     assert calls == ['start','stop','disconnect']

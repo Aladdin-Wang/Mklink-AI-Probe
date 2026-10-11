@@ -8,7 +8,7 @@
 
 - **后台会话/采集**：GUI、DeepSeek 等 AI 客户端共用一个后台，只有后台打开命令口。
   GUI 退出只移除窗口；AI 的 MCP 进程可能还在编辑器内续约。模型结束一段回答不等于
-  MCP 进程退出。正常任务收尾应调用 `disconnect`，借用采集时不替其他使用者停流。
+  MCP 进程退出。正常任务收尾应调用 `detach`，借用采集时不替其他使用者停流。
 - **操作系统串口持有者**：由指定端口的资源状态检查 PID；后台之外的串口助手也可能
   占用。COM 号、GUI 窗口 PID、后台 PID 不是同一概念。锁文件存在本身不证明仍占用。
 - **下载器目标调试占用**：CMSIS-DAP/IDE 与 MCU 的调试所有权；结束 Python 进程不能
@@ -34,13 +34,13 @@ python -m mklink resources status --port COM9 --json
 
 `COM9` 只作示例，使用当前枚举端口。旧版没有 `runtime control` 时，用该版本 GUI 的
 后台管理页读取同样信息；不能因为缺工具改为低层 `Device`、原始串口或另一套私有后台。
-共享版本/协议不一致时，先用旧版入口正常退出旧后台，再启用新版。当前修复协议为 50，
+共享版本/协议不一致时，先用旧版入口正常退出旧后台，再启用新版。当前修复协议为 52，
 官方旧 0.3.0 可能仍是 49；版本号相同也不能假定内部协议兼容。
 
 ## 按用户意图恢复
 
 正常读取 GUI 已有数据：`connect(probe=ID, client_name="DeepSeek/当前任务")`，
-RTT 无参数 `rtt_start()` 订阅，然后读取历史/通道。完成后 `disconnect`。
+RTT 无参数 `rtt_start()` 订阅，然后读取历史/通道。完成后 `detach`。
 不要通过重配 AXF、停止采集或关闭 GUI 来完成普通读任务。
 
 用户要求结束旧会话、释放下载器或恢复连接时，先查询上述状态，再执行对应动作。
@@ -49,11 +49,11 @@ RTT 无参数 `rtt_start()` 订阅，然后读取历史/通道。完成后 `disc
 
 | 已确认状态 | 对应动作 |
 |---|---|
-| 仅自己的 AI 会话结束 | `disconnect`；后台保留其他使用者 |
+| 仅自己的 AI 会话结束 | `detach`；后台保留其他使用者 |
 | GUI 全部退出，遗留采集只有自己订阅 | 用户要求停止时调用对应 `rtt_stop`/`superwatch(action="stop")`；新后台允许接手。未订阅先无参数订阅，不能覆盖参数 |
 | 另一个已不用的 AI 会话仍续约 | `runtime_control(action="detach-client", probe=ID, client_id=管理ID, confirm=true)`；旧心跳被拒绝，不再保持占用 |
 | 要停遗留采集且已没有 AI 订阅者 | `runtime_control(action="stop-acquisition", probe=ID, stream="rtt", confirm=true)`；其他流使用实际名称 |
-| 要释放命令口、保留后台窗口 | 结束目标会话并停止目标采集后，`runtime_control(action="release-device", probe=ID, confirm=true)` |
+| 要释放命令口、保留后台窗口 | `runtime_control(action="release-device", probe=ID, confirm=true)` |
 | 要退出整个后台 | 无在途任务、结束所有 AI 会话、停止所有采集（含 UART/Modbus）、关闭其他窗口后，`runtime_control(action="stop-backend", probe=ID, confirm=true)` |
 
 CLI 等价入口，例如：

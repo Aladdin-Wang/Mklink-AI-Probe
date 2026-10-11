@@ -23,7 +23,7 @@ Skill 或发布流程；按需读参考页。
   不发送旧 `RTTView.start/stop`，不另开串口；缺能力不退回独占。
   默认后台采集；需用户看效果才用 `gui_present`，先选窗口。
 - **占用先查后台**：`runtime_status(probe=...)` 无需连接，查询会话、采集和任务。
-  GUI 关闭不等于后台退出，AI 任务完成须 `disconnect`。占用/失败时读
+  GUI 关闭不等于后台退出，AI 任务完成须 `detach`。占用/失败时读
   [控制权与恢复](references/runtime-recovery.md)。
 - 首次需要生成脚本、日志、采集或报告时，工作根目录固定为用户指定的非系统盘
   目录；用户未指定时使用目标项目 `.mklink/`。项目在系统盘或没有项目时先询问，
@@ -35,7 +35,7 @@ Skill 或发布流程；按需读参考页。
 - **单探针串行**：先读 `ping.limits`。同一下载器、命令口或目标串口同一时刻只
   执行一个命令；新版 RTT/SuperWatch 统一调度并行，旧固件采集独占。共享客户端可
   同时读缓存。多下载器用 `discover_probes` 明确 ID/别名，不默认选第一台。
-  `disconnect` 仅退出本客户端；读变量不停止他人采集。独立工具复用连接，停流再断开。
+  `detach` 仅退出本客户端；明确 `disconnect` 自动停采集并断开设备；读变量不停止他人采集。独立工具复用连接，停流再断开。
 - **VOFA 与 dump**：`read_memory`/`read_ram` 只做快照；连续曲线用
   `dump_memory`。dump/SuperWatch 每次最多 **15 个**离散地址或 region；共享
   VOFA 最多 **64 路**、对齐合并后最多 **15 个读取分组**，连续 float 简写最多

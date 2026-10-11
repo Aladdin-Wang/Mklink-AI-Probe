@@ -312,7 +312,7 @@ def test_active_mcp_security_uses_real_journal_without_target_attach(security, m
             if not lose_response:
                 duplicate=await mcp.call_tool('security_unlock',args)
                 assert duplicate.data['job_id']==result.data['job_id']
-            await mcp.call_tool('disconnect')
+            await mcp.call_tool('detach')
             listing=await mcp.call_tool('job_status')
             job=listing.data['jobs'][0]
             assert job['state']=='running' and job['request_id']=='security-mcp'

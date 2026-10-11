@@ -59,6 +59,8 @@ async def relay(left, right):
 class GuiBridge:
     def __init__(self, info):
         self.info = info
+        self.probe_id = info.get('probe_id')
+        self.device_generation = info.get('device_generation', 0)
         self.active = 0
 
     async def __call__(self, socket, request):
@@ -68,10 +70,16 @@ class GuiBridge:
             raise RequestValidationError('This remote GUI operation is unavailable')
         if p.get('instance_id') != self.info['instance_id']:
             raise RequestValidationError('Remote backend changed; connect again explicitly')
+        if (self.info.get('probe_id') != self.probe_id
+                or self.info.get('device_generation', 0) != self.device_generation):
+            raise RequestValidationError('Remote target connection changed; reconnect the remote service explicitly')
         if self.active >= 64:
             raise RequestValidationError('Remote GUI connection limit reached')
         self.active += 1
         headers = {'X-Auth-Token': self.info['token']}
+        if self.probe_id:
+            headers['X-MKLink-Probe'] = self.probe_id
+        headers['X-MKLink-Device-Generation'] = str(self.device_generation)
         try:
             if mode == 'ws':
                 from websockets.legacy.client import connect

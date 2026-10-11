@@ -133,15 +133,12 @@ def test_disconnected_target_stops_renewing_only_target_sessions(runtime, scope,
     assert (session in control.sessions) == (scope == 'uart')
 
 
-def test_live_shared_disconnect_exposes_owners_without_releasing_device(runtime):
+def test_explicit_disconnect_is_admitted_with_shared_clients(runtime):
     client, control, calls, _, _ = runtime
-    session = attach(client)
+    attach(client)
     result = client.post('/api/device/disconnect')
-    assert result.status_code == 409
-    detail = result.json()['detail']
-    assert detail['reason'] == 'shared_clients_attached'
-    assert detail['clients'][0]['id'] == control.sessions[session].public_id
-    assert session not in str(detail) and not calls
+    assert result.status_code == 200 and calls == ['disconnect']
+    # The real device handler's retirement is covered by test_runtime_switch.
 
 
 def test_temporary_cdc_release_during_admitted_operation_does_not_evict_client(runtime):

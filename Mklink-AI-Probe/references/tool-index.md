@@ -15,7 +15,7 @@
 | 健康 | `ping` | 无需连接，首调确认 server 活着 |
 | 供电测量（0.2.3） | `get_power` | 只读 VCC 快照；V3 仅电压，V4 电压/电流/计算功率；需配套新固件，详见 [供电测量](power-telemetry.md) |
 | 器件检查（0.3） | `inspect_mcu` | 只读检查精确器件和统一算法目录，不写 profile/设备文件 |
-| 连接 | `discover_probes` · `connect` · `disconnect` · `device_status` | connect 传 `axf=` 才能读变量 |
+| 连接 | `discover_probes` · `connect` · `disconnect` · `detach` · `device_status` | connect 传 `axf=` 才能读变量 |
 | Flash / 探针控制 | `flash` · `erase_chip` · `erase_sector` · `reset` · `set_power_on` · `reboot_probe` | `reset` 复位目标；VCC 任意电压均须逐次确认，5 V 另须耐压确认；`reboot_probe` 会断连 |
 | 安全保护 | `security_status` · `security_lock` · `security_unlock` | 活动共享 MCP：先查精确型号；必须提供 request_id，返回后台任务后用 job_status 查询。加锁校验固件，解锁确认永久数据丢失，按明确电压复位；nRF54L15省略电压 |
 | 内存 | `read_memory` · `read_memory_regions` · `write_memory` · `flush_memory` | 快照 regions 最多 16 项/总计 4096B；flush 单批最多 12 KiB/8 项，超额由调用方串行分批 |
@@ -89,7 +89,7 @@
 也不会自动重连或解除保护。GUI 在线作业入口仍使用其原有查询方式，本次 CLI 迁移不代表该入口已获得持久去重。
 
 活动 MCP 的 `security_lock` / `security_unlock` 无需先调用 connect；用 `probe` 选择共享 ID、别名或命令端口。
-已连接时省略 probe 会使用当前探针，显式选择另一探针会被拒绝，须先 disconnect。
+已连接时省略 probe 会使用当前探针，安全操作不会隐式改绑；换探针先显式 connect(probe=新ID)。
 `project_root` 仅用于启动新的后台，不切换已有后台工程。`request_id` 必填且调用前保存，
 返回的 running 仅代表任务已接收，必须用 `job_status` 确认终态。MCP退出或disconnect均不会取消任务；
 提交响应丢失后仍可查询原探针的任务列表，也可在新会话给 `job_status` 指定 probe。

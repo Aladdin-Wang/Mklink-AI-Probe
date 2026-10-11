@@ -83,26 +83,17 @@ def test_occupied_destination_keeps_current_device_and_data(window):
     device.close.assert_not_called()
 
 
-@pytest.mark.parametrize('busy', ['sdk', 'uart', 'job', 'views', 'operation'])
-def test_shared_work_cannot_be_retargeted(window, busy):
+@pytest.mark.parametrize('busy', ['sdk', 'uart', 'views'])
+def test_explicit_switch_retires_target_clients_and_preserves_uart(window, busy):
     client, control, device, state = window
     if busy in ('sdk', 'uart'):
         control.sessions['peer'] = Session(state['project_root'], None, scope='uart' if busy == 'uart' else 'target')
-    elif busy == 'job':
-        control.jobs.jobs['job'] = {'state': 'running', 'job_id': 'job'}
-    elif busy == 'views':
-        control.views = {str(i): {'expires': float('inf')} for i in range(2)}
     else:
-        client.portal.call(control.operation_lock.acquire)
-    try:
-        assert client.post('/api/runtime/select', json={'port': 'COM2'}).status_code == 409
-        device.close.assert_not_called()
-        assert control.info['probe_id'] == A
-    finally:
-        control.jobs.jobs.clear()
-        control.views.clear()
-        if busy == 'operation':
-            control.operation_lock.release()
+        control.views = {str(i): {'expires': float('inf')} for i in range(2)}
+    assert client.post('/api/runtime/select', json={'port': 'COM2'}).status_code == 200
+    device.close.assert_called_once()
+    assert control.info['probe_id'] == B
+    assert ('peer' in control.sessions) == (busy == 'uart')
 
 
 def test_connect_failure_leaves_new_selection_disconnected_not_old_target(window, monkeypatch):
@@ -182,7 +173,7 @@ def test_old_binary_subscription_ends_on_switch(window):
             pytest.fail('Old target subscription survived the switch')
 
 
-def test_two_pages_behind_one_proxy_still_block_switching(window):
+def test_two_pages_behind_one_proxy_follow_explicit_switch(window):
     client, control, device, state = window
     client.post('/api/runtime/control/view', json={'client_id': 'desktop-parent'})
     headers = {'X-MKLink-View-Owner': 'desktop-parent'}
@@ -191,5 +182,162 @@ def test_two_pages_behind_one_proxy_still_block_switching(window):
         with client.websocket_connect('ws://127.0.0.1:8765/api/runtime/control/view/two', headers=headers) as second:
             assert second.receive_json()['registered']
             assert control.window_count == 2
-            assert client.post('/api/runtime/select', json={'port': 'COM2'}).status_code == 409
+            assert client.post('/api/runtime/select', json={'port': 'COM2'}).status_code == 200
+            device.close.assert_called_once()
+
+
+@pytest.mark.parametrize('endpoint,body', [
+    ('/api/device/disconnect', {}),
+    ('/api/runtime/control/release-device', {'confirm': True}),
+    ('/api/runtime/select', {'port': 'COM2'}),
+])
+def test_lifecycle_stops_shared_capture_and_revokes_old_target_sessions(window, endpoint, body):
+    from mklink.remote.api import acquire_dashboard_resources
+    client, control, device, state = window
+    control.sessions['target'] = Session(state['project_root'], None, streams={'superwatch'})
+    control.sessions['uart'] = Session(state['project_root'], None, scope='uart', streams={'serial'})
+    control.created_streams.update(superwatch='target', serial='uart')
+    control.views = {str(i): {'expires': float('inf')} for i in range(2)}
+    manager = dashboards.get_managers()['superwatch']; manager._running = True
+    acquire_dashboard_resources(state, 'superwatch')
+    device.close.side_effect = lambda: pytest.fail('worker not stopped') if manager.running else None
+    response = client.post(endpoint, json=body)
+    assert response.status_code == 200, response.text
+    assert not manager.running and state['device'] is None
+    assert state['device_generation'] == 1
+    assert set(control.sessions) == {'uart'} and control.created_streams == {'serial': 'uart'}
+    assert client.post('/_runtime/call', json={'session_id': 'target', 'capability': 'write_memory',
+        'arguments': {'address':'0x20000020','data_hex':'01'}}).status_code == 409
+    device.close.assert_called_once()
+
+
+@pytest.mark.parametrize('waiting', ['operation', 'job'])
+def test_switch_waits_for_admitted_work_and_blocks_new_target_work(window, waiting):
+    import asyncio
+    import httpx
+    client, control, device, state = window
+    async def scenario():
+        started, release = asyncio.Event(), asyncio.Event()
+        async def work():
+            started.set(); await release.wait()
+            assert state['device'] is device
+        if waiting == 'operation':
+            worker = asyncio.create_task(control.run_operation('/api/device/read-memory', work))
+        else:
+            control.jobs.jobs['job'] = dict(state='running',job_id='job',started=1,request_id='once')
+            async def job():
+                await work()
+                control.jobs.jobs['job']['state'] = 'succeeded'
+            worker = asyncio.create_task(job())
+        await started.wait()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=control.app),
+                base_url='http://127.0.0.1:8765',headers={'X-Auth-Token':'test'}) as http:
+            switch = asyncio.create_task(http.post('/api/runtime/select',json={'port':'COM2'}))
+            for _ in range(100):
+                if control.lifecycle_pending: break
+                await asyncio.sleep(.001)
+            assert control.lifecycle_pending and not switch.done()
             device.close.assert_not_called()
+            from fastapi import HTTPException
+            with pytest.raises(HTTPException,match='connection is changing'):
+                await control.run_operation('/api/device/write-memory',work)
+            release.set(); await worker
+            response = await switch
+            assert response.status_code == 200, response.text
+            assert control.info['probe_id'] == B and not control.lifecycle_pending
+    client.portal.call(scenario)
+
+
+def test_cancelled_lifecycle_request_still_drains_before_releasing_device(window):
+    import asyncio
+    client, control, device, state = window
+    async def scenario():
+        await control.operation_lock.acquire()
+        transitioned=[]
+        async def operation(): transitioned.append(True)
+        task=asyncio.create_task(control.run_lifecycle('/api/device/disconnect',operation))
+        await asyncio.sleep(0)
+        task.cancel(); await asyncio.sleep(0)
+        assert control.lifecycle_pending and not transitioned
+        control.operation_lock.release()
+        with pytest.raises(asyncio.CancelledError): await task
+        assert transitioned == [True] and not control.lifecycle_pending
+    client.portal.call(scenario)
+
+
+@pytest.fixture
+def ipc(window, monkeypatch):
+    client, control, device, state = window
+    def request(info, method, path, payload=None, **kwargs):
+        response = client.request(method,path,json=payload)
+        if response.status_code >= 400:
+            raise runtime.RuntimeErrorResponse(response.text,status_code=response.status_code)
+        return response.json()
+    monkeypatch.setattr(runtime,'request',request)
+    return window
+
+
+def test_sdk_explicit_selection_switches_same_backend_and_disconnects(ipc, monkeypatch, tmp_path):
+    client, control, device, state = ipc
+    sdk=runtime.RuntimeClient(info=dict(control.info),project_root=state['project_root'])
+    sdk.connect(probe=A)
+    old_session=sdk.session_id
+    replacement,_ = _connected_symbol_device(tmp_path)
+    replacement.port='COM2'; replacement.close=Mock()
+    monkeypatch.setattr('mklink.connect',lambda **kw: replacement)
+    try:
+        sdk.connect(probe=B)
+        assert control.info['probe_id']==B and sdk.info['port']==8765
+        assert sdk.session_id != old_session and old_session not in control.sessions
+        device.close.assert_called_once()
+        result=sdk.disconnect()
+        assert result['device_closed'] and control.info['probe_id']=='lobby'
+        replacement.close.assert_called_once()
+    finally: sdk.close()
+
+
+def test_mcp_disconnect_is_physical_but_detach_only_leaves_session(ipc, monkeypatch):
+    import asyncio
+    from fastmcp import Client
+    from mklink import runtime_mcp
+    client, control, device, state = ipc
+    monkeypatch.setattr(runtime_mcp,'RuntimeClient',lambda **kw: runtime.RuntimeClient(info=dict(control.info),**kw))
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            await mcp.call_tool('connect',{'probe':A})
+            await mcp.call_tool('detach')
+            device.close.assert_not_called()
+            await mcp.call_tool('connect',{'probe':A})
+            result=await mcp.call_tool('disconnect')
+            assert result.data['device_closed']
+            assert control.info['probe_id']=='lobby' and not control.target_sessions
+            device.close.assert_called_once()
+    asyncio.run(scenario())
+
+
+def test_stale_remote_identity_cannot_write_after_switch(window):
+    client, control, device, state = window
+    assert client.post('/api/runtime/select',json={'port':'COM2'}).status_code==200
+    response=client.post('/api/device/write-memory',headers={'X-MKLink-Probe':A},
+        json={'address':'0x20000000','data_hex':'01'})
+    assert response.status_code==409 and 'connection changed' in response.text
+
+
+
+def test_lifecycle_rechecks_async_job_created_by_draining_operation(window):
+    import asyncio
+    client,control,device,state=window
+    async def scenario():
+        await control.operation_lock.acquire()
+        transitioned=[]
+        async def change(): transitioned.append(True)
+        task=asyncio.create_task(control.run_lifecycle('/api/device/disconnect',change))
+        await asyncio.sleep(.01)
+        control.jobs.jobs['later']={'state':'running','job_id':'later'}
+        control.operation_lock.release()
+        await asyncio.sleep(.04)
+        assert not transitioned and not task.done()
+        control.jobs.jobs['later']['state']='succeeded'
+        await task
+        assert transitioned==[True] and not control.operation_lock.locked()
+    client.portal.call(scenario)

@@ -99,7 +99,7 @@ class RuntimeJobs:
             return previous
         c = self.control
         c.require_identity()
-        if self.active or c.operation_lock.locked() or c.attach_lock.locked() or c.online_job():
+        if c.lifecycle_pending or self.active or c.operation_lock.locked() or c.attach_lock.locked() or c.online_job():
             raise HTTPException(409, 'Another operation is active; no job was queued')
         from mklink.remote.dashboards import active_bridge_dashboards
         if active_bridge_dashboards() and action != 'flash':
