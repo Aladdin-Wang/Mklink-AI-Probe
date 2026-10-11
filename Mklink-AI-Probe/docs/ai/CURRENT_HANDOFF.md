@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-11T21:26:55+08:00`
+- 更新时间：`2026-10-11T21:38:38+08:00`
 - 分支：`codex/0.3.4-fixes`
 - HEAD：`0.3.4 candidate source 63e167147656, Web cea309bc, Site Agent metadata 4745ae08, test fixture dc510df6; final evidence-only commit follows. Inspect Git for exact tip.`
 - 远端 HEAD：`microkeen/codex/0.3.4-fixes; base microkeen/main 271af444. Verify current tip with Git.`
-- 工作树：Original workspace, codex/0.3.4-fixes / PR40. Local candidate preparation verified; no merge, signing, official tag or channel publication.
-- 当前任务：0.3.4候选回归与体积审计完成，待正式发布准入。0.3.2/0.3.3/0.3.4 NSIS为96.83/176.56/176.58MB，0.3.3增量99.9%来自新增Pack；2299资源与0.3.3一致，无缺引用或误装开发目录。版本/测试夹具修正后Python合计4800通过2跳过（非单次全绿），GUI941通过，三平台native CI38140979596全成功。冻结CLI/MCP/Web/原生窗口/退出与V3 F103原ELF、双探针固定后台、双独立后台隔离、24写入零读错误通过。SystemView首轮6230事件，末轮54字节0事件仅生命周期。Skill资源通过，最新WebGUI恢复。实际NSIS安装/覆盖升级、签名发布尚未执行。见v034-release-preparation.md及v034-package-size-audit.md。
-- 状态：`verified`
+- 工作树：Original workspace, codex/0.3.4-fixes / PR40; formal publication now explicitly authorized and in progress.
+- 当前任务：维护者已明确授权覆盖本地安装、更新本地Skill、正式发布0.3.4，含必要PR整合和既有密钥签名。候选NSIS已从0.3.3覆盖安装成功，正在验证安装后运行。远端CI仅Modbus异常类型断言失败：pymodbus3.16将串口OSError包装为ConnectionException，测试兼容两类传输错误而保持恢复设置、一次请求、失败终止断言，3.13/3.16各15通过。待精确头CI通过后合并、最终源重建、签名及渠道发布。
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -53,7 +53,7 @@
 
 ## 下一动作
 
-1. PR40待整合。0.3.4本地候选及回归报告已准备：先按最终精确源核对PR检查和NSIS实际安装/覆盖升级，合并与签名正式发布需用户明确授权。现有WebGUI已恢复0.3.4，可继续用户复核。
+1. 完成实际安装验收及PR40精确头CI，合并clean main后重建最终签名载荷，更新本地正式安装和Skill，验证所有发布附件后最后更新渠道索引。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. 检查 Gitee 镜像容量与可达性；缺失附件沿用 GitHub 兜底，不宣称国内镜像完整。历史联接/占用目录留人工处理。
