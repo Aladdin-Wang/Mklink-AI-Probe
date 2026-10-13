@@ -175,6 +175,97 @@ def test_superwatch_default_batches_high_rate_samples_without_discarding_rows():
     assert len(calls[0].args[0]) == 4096 * 12
 
 
+@pytest.mark.parametrize("offset", [-34.8, 34.8])
+@pytest.mark.parametrize("batched", [False, True])
+def test_superwatch_metadata_throttle_uses_injected_clock(monkeypatch, offset, batched):
+    now = [100.0]
+    monkeypatch.setattr(time, "monotonic", lambda: 100.0 - offset)
+    hub = Mock()
+    manager = SuperWatchStreamManager(stream_hub=hub, clock=lambda: now[0])
+    manager._runtime = SimpleNamespace(items=[_watch_item("a", 0x20000000)])
+    manager.set_interval(0.00005)
+    manager.publish_metadata(force=True)
+    hub.reset_mock()
+
+    def append_rows():
+        for index in range(1000):
+            assert manager._publish_sample_values_locked(
+                (float(index),), channel_count=1, sample_time=index * 0.05,
+                batch_time=now[0] if batched else None,
+            )
+
+    def metadata_count():
+        return sum(call.kwargs["flags"] == SUPERWATCH_METADATA_JSON
+                   for call in hub.publish.call_args_list)
+
+    append_rows()
+    assert metadata_count() == 0
+    now[0] += 0.999
+    append_rows()
+    assert metadata_count() == 0
+    now[0] = 101.0
+    append_rows()
+    assert metadata_count() == 1
+    now[0] = 102.0
+    append_rows()
+    assert metadata_count() == 2
+    manager._flush_binary_batch()
+    assert sum(call.kwargs["item_count"] for call in hub.publish.call_args_list) == 4000
+
+
+def test_superwatch_default_clock_does_not_compare_against_system_monotonic(monkeypatch):
+    # Windows before Python 3.13 can give these clocks different epochs.
+    hub = Mock()
+    manager = SuperWatchStreamManager(stream_hub=hub)
+    manager._runtime = SimpleNamespace(items=[_watch_item("a", 0x20000000)])
+    monkeypatch.setattr(time, "monotonic", lambda: manager._clock() - 34.8)
+    manager.publish_metadata(force=True)
+    hub.reset_mock()
+    batch_time = manager._clock()
+    for index in range(1000):
+        manager._publish_sample_values_locked(
+            (float(index),), channel_count=1, sample_time=index * 0.05,
+            batch_time=batch_time,
+        )
+    assert not [call for call in hub.publish.call_args_list
+                if call.kwargs["flags"] == SUPERWATCH_METADATA_JSON]
+
+
+def test_superwatch_clock_offset_does_not_evict_samples_from_client_queue():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=64)
+        manager = SuperWatchStreamManager(
+            stream_hub=hub, clock=lambda: time.monotonic() + 34.8,
+            batch_samples=100,
+        )
+        manager._runtime = SimpleNamespace(items=[_watch_item("a", 0x20000000)])
+        manager.set_interval(0.00005)
+        manager.publish_metadata(force=True)
+        queue = hub.subscribe()
+        try:
+            await asyncio.sleep(0)
+            batch_time = manager._clock()
+            for index in range(1000):
+                manager._publish_sample_values_locked(
+                    (float(index),), channel_count=1, sample_time=index * 0.05,
+                    batch_time=batch_time,
+                )
+            for _ in range(4):
+                await asyncio.sleep(0)
+            received = []
+            while not queue.empty():
+                received.append(queue.get_nowait())
+                queue.task_done()
+            assert sum(batch.item_count for batch in received) == 1000
+            assert sum(batch.flags == SUPERWATCH_METADATA_JSON for batch in received) == 1
+            assert hub.stats().dropped_batches == 0
+            assert hub.stats().queue_high_water_mark <= 11
+        finally:
+            hub.unsubscribe(queue)
+
+    asyncio.run(scenario())
+
+
 def test_superwatch_low_rate_sample_flushes_immediately():
     hub = Mock()
     manager = SuperWatchStreamManager(

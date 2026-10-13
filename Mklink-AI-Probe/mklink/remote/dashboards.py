@@ -1762,7 +1762,9 @@ class SuperWatchStreamManager:
         self._latest_sample: dict | None = None
         self._latest_sample_sequence = 0
         self._metadata_publish_lock = threading.Lock()
-        self._last_metadata_publish_monotonic = 0.0
+        # Metadata throttling shares the batch clock, including injected clocks.
+        # On Windows before Python 3.13, perf_counter and monotonic can differ.
+        self._last_metadata_publish_at = 0.0
         self._config_generation = 0
         self._completed_read_cycles = 0
         self._dropped_read_cycles = 0
@@ -2633,7 +2635,7 @@ class SuperWatchStreamManager:
                     flags=SUPERWATCH_METADATA_JSON,
                     stream_type=StreamType.SUPERWATCH,
                 )
-        self._last_metadata_publish_monotonic = time.monotonic()
+            self._last_metadata_publish_at = self._clock()
         return self._metadata_version
 
     def _publish_cached_metadata(self) -> int:
@@ -2647,7 +2649,7 @@ class SuperWatchStreamManager:
                     flags=SUPERWATCH_METADATA_JSON,
                     stream_type=StreamType.SUPERWATCH,
                 )
-            self._last_metadata_publish_monotonic = time.monotonic()
+            self._last_metadata_publish_at = self._clock()
             return version
 
     def publish_sample_points(self, points) -> bool:
@@ -2716,7 +2718,7 @@ class SuperWatchStreamManager:
         except (OverflowError, TypeError, ValueError):
             return False
         self._pending_sample_count += 1
-        if (time.monotonic() if batch_time is None else batch_time) - self._last_metadata_publish_monotonic >= 1.0:
+        if (self._clock() if batch_time is None else batch_time) - self._last_metadata_publish_at >= 1.0:
             self._publish_cached_metadata()
         if batch_time is None:
             self._record_sample_rate_locked()
