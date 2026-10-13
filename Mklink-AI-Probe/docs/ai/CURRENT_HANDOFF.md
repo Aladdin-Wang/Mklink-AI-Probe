@@ -4,33 +4,33 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-11T23:05:48+08:00`
-- 分支：`codex/0.3.4-release-handoff`
-- HEAD：`Official v0.3.4 source a8fd3fab0403; follow-up handoff/Web commit follows. Inspect Git for exact tip.`
-- 远端 HEAD：`microkeen/main after PR40; immutable release tag a8fd3fab0403.`
-- 工作树：Official publication completed; follow-up handoff and preserved generated Web assets through PR.
-- 当前任务：0.3.4正式发布、本地实际覆盖安装和Skill更新完成。PR40合并源a8fd3fab0403；17附件、5更新签名、3渠道索引均核对。最终已安装包CLI/MCP/Web/原生窗口/退出、F103原ELF双下载器切换/采集中24写入5766周期零错误通过。Gitee Skill已真实镜像并验证GitHub不可达回退；Windows因Gitee单附件100MB限制被拒，使用GitHub链接；其他平台仅GitHub。详见v034-release-handoff.md。Mac/Linux物理USB及原地升级后验边界保留。
-- 状态：`verified`
+- 更新时间：`2026-10-13T23:25:38+08:00`
+- 分支：`codex/0.3.5-fixes`
+- HEAD：`cf118751 backend repair; 75a73a5a production Web; subsequent verification documentation commit.`
+- 远端 HEAD：`codex/0.3.5-fixes pushed; PR43 draft against microkeen/main 185678c59623.`
+- 工作树：Isolated repair branch; source, tests, production Web and verification. Local desktop candidate installed; no merge or release.
+- 当前任务：0.3.5 SuperWatch修复及WebGUI/Skill/桌面一致性核对完成，PR43草稿。统一元数据时钟，Python3.11/3.14与偏差回归通过；V3/F103及真实浏览器各入口约260k、零缺口/丢弃。用户要求重试后NSIS实际覆盖安装退出0、4载荷哈希一致；已安装MCP/Web两组实机及原生启动/退出通过。全局Skill未替换，候选包通过；客户原机复测和正式发布待后续。
+- 状态：`complete`
 
 ## 里程碑
 
+- **0.3.5 SuperWatch时钟修复** — `complete`。源修复、定向回归、真实Web/MCP/硬件、候选包一致性及实际覆盖安装完成；PR43草稿，未发布0.3.5。
 - **0.3.4正式版** — `complete`。PR40，源a8fd3fab0403；实际覆盖安装/Skill更新、五份更新验签、三平台原生CI38144587775、三渠道正式发布完成。后续交接与正式Web另走PR，标签不移动。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
 - **0.3.1正式版** — `complete`。PR33合并，源1d61159d；签名NSIS/Skill/SiteAgent与三端索引完成，最终提取包检查通过。见v031-release-handoff.md。
-- **0.3.0正式版** — `complete`。签名NSIS、Skill、远程服务包及三端更新索引发布完成；精确源提交ec1d2834。安装/退出、CLI/MCP通过，Web由用户确认。
-- **2026-10-09固件** — `complete`。用户指定MicroLink V4.6.3 SHA e960cb70，1625600B，三端下载及独立索引核对；与旧605验收UF2不同，不继承旧HIL。其他型号未变。
+- **0.3.0及2026-10-09固件归档** — `complete`。0.3.0发布及2026-10-09固件记录见历史交接和固件归档；不继承其硬件验收结论。
 
 ## 验证证据
 
+- **0.3.5 SuperWatch环境时钟差异**：默认时钟与注入时钟、正负34.8秒偏差、无batch_time、1秒边界和64批队列回归；Python3.11.16 152通过，Python3.14.5 392通过。V3/F103单float、30MHz、每组约10秒：1us 261664/259304Hz，50us 21685/21676Hz；四组浏览器与后台丢弃0。详见docs/verification/v035-superwatch-clock.md。 另107项分发/runtime/MCP通过、1项可选hil_core跳过；GUI206通过。195源码/38Web资源及冻结方法字节码一致。Skill/冻结MCP各测1us/50us零缺口丢弃；Windows-only PATH原生WebView35秒9230741读零错误/丢弃，关闭窗口后台正常退出。首次UAC取消，用户要求重试后NSIS退出0；4安装载荷哈希一致，已安装MCP/真实Edge两组约262k/20k零缺口丢弃，原生窗口和后台正常退出。运行代码75a73a5a三个PR CI通过；最终文档头需另核对CI。
 - **0.3.4 正式发布与本地升级**：最终源a8fd3fab0403；正式NSIS176582092字节，实装载荷哈希匹配；冻结CLI/MCP/38 Web文件/原生窗口及退出通过。F103双探针固定后台、采集中24写应答、5766周期零读错误通过；SystemView54字节仅证生命周期。三平台native CI38144587775、五份签名实际验签、17附件匿名下载及三渠道索引、本地Skill逐文件/CLI/MCP通过。见v034-release-handoff.md，早期准备与体积审计证据仍保留原报告。
 - **0.3.4 明确断开与切换自动收尾**：源34834d08/5f4b9728，协议52，生产Web已构建。830项相关Python通过，随后队列/SDK115、最后迟到请求71通过；87项GUI/TypeScript/构建通过。V3/F103原ELF、30MHz/1ms、RTT+Watch双AI订阅直接断开成功；共享AI下采集中切到第二只、旧会话拒绝，AI断开和SDK A→B→A均保持后台身份。最终代码再次完整真机复核通过且读错误0。两个真实页面自动同步断开/切换，额外页已关。SystemView短程54字节/0解码事件，AI断开成功，仅证明生命周期不宣称解码性能。异步烧录和迟到请求用确定性夹具覆盖，未中断实物烧录。见v034-explicit-connection-control.md。
 - **0.3.4 SuperWatch取消回读校验**：源267b175f及其生产Web。旧版真实复现自增变量写入readback mismatch并停止采集。385项Python、72项GUI、TypeScript和生产构建通过。V3.6.4/F103原ELF、30MHz/1ms两波形+RTT，24次写入应答全部成功，4450周期零读错误、RTT31行；独立测试读确认静态字变化再恢复，70605周期零读错误。真实浏览器动态变量写12后显示已写入且运行中，最新GUI保留。旧SW01/HPM仅源码及模拟协议验证，无新固件修改。见v034-superwatch-write.md。
 - **0.3.4 窗口固定后台与原地切换**：源50eb6c52/Web504e690d。Python全量初跑4771通过/2跳过，1旧参数断言失败及4缺FLM资源夹具错误；更新断言后相关1177通过，最后双页面保护29通过。指定既有本地资源后干净实包5通过，冻结后台用runtime_id发现后复用新实包重跑1通过。GUI全量938通过/2旧导航夹具失败，补充状态及换目标清空表单断言后2通过，最终940项覆盖；生产构建通过。两只实物、两个独立代理/Web：A→B→A后台身份不变，RTT+Watch及Trace运行中切换清空旧目标。独立窗口占用B时拒绝切入而A采集继续；双方释放/接手均不重启后台。最终代码再次A→B→A保持PID/端口。原位置ELF5365变量；3秒RTT30行/Watch283周期读错误0，Trace14093事件。B无目标板。保留一最终WebGUI供用户测试。见v034-window-owned-backend.md。
 - **0.3.4 采集启动与通信**：源 ddda89c5；Python 全量4752通过/2旧读取顺序断言失败/2跳过，更新断言后相关487通过，最后边界与断连177通过；最终合计4757通过用例/2跳过。GUI全量936通过，补改冲突提示后SystemView25通过，最终937用例；生产构建通过。6万符号ELF基准20–22秒→1.45–1.51秒；V3/F103 RTT8+Watch3+跨客户端内存约126秒，读错误0；Trace三次0.53–0.66秒。最终冷启RTT0.328秒、Watch35209周期0错误、Trace0.354秒/123150事件；Web13任务72MHz/331969事件/drop0，停止释放通过。见v034-rtt-startup.md。 后续原工程原地编译/烧录校验通过，直接加载原 Obj AXF：RTT 0.246秒，Watch 35225周期0错误，Trace 0.379秒/122139事件；后台释放。05faf1e3 的三项 PR CI 全通过。 切换源4c1227b9：最终594项Python、70项GUI及生产构建通过；失效偏好下真机连接/RAM/RTT成功，页面重选后4876外设项、两次新后台冷启恢复；双实体A→B→A→B不影响另一窗口RTT，126次内存检查0错误，符号generation不变，后台释放。见v034-probe-switch-peripherals.md。 上述跨后台跳转属于旧方案，已被50eb6c52窗口固定后台方案取代，见最新验证。
 - **0.3.3 正式发布**：精确main11616f80重建Windows/Skill/SiteAgent；ARM/Linux CI38069170299，Intel详细重跑38071279659成功。三个native清单及冻结CLI/MCP/退出通过，五份签名实际验签。正式Windows提取包Windows-only PATH、35Web资源、原生界面/区域高度/退出通过；不计本次UAC取消为重新安装。两GitHub各17公开附件与三渠道回读验证，本地Skill逐文件核对并验证CLI/SVD/MCP；详见v033-release-handoff.md。
-- **0.3.3 最终候选与补充回归**：源码77f56f20/Web0c01a71b；GUI934通过，Python合计4747通过/2跳过（首次磁盘满项F盘重跑）。实装载荷摘要一致、最小PATH启动及冻结CLI/MCP/F407VE目录通过；F103RC全流程约10.25秒、AXF5909变量解析和实际搜索/拖动通过。三平台原生CI38067335470全成功。e90f6df1修测试本地偏好串扰，精确复现12失败后115波形用例及GUI CI38068369545通过；后台管理测试固定中文，不改产品运行时。见v033-release-readiness.md及本地v033-final证据。
-- **0.3.3 在线烧录算法选择与布局**：源码92e33221/Webee0c2024；连接折叠摘要、资源按钮、联网下载、多FLM选择及镜像地址映射。GUI120、Python530、构建通过；浏览器双分区模拟及真实内置F103RE文件解析通过。初次本地FLM目录缺失导致21项安全测试失败，基线同样失败，指定现有资产目录后全通过；未修改白名单。无物理烧录，未更新NSIS。见v033-online-flash-algorithms.md。
+- **0.3.3候选与在线烧录归档**：候选、GUI、全量Python、安装、FLM资源和在线烧录布局证据见v033-release-readiness.md及v033-online-flash-algorithms.md；原始报告保留。
 
 ## 架构决策
 
@@ -47,13 +47,13 @@
 
 ## 真机环境
 
-- **state**：最终0.3.4已安装程序：V3/F103原工程ELF，30MHz/1ms，24写应答/5766周期零读错误、RTT47行；双探针同后台切换/旧AI失效/共享采集断开通过，最终SystemView54字节仅证生命周期。未改供电或探针固件。测试后台正常退出。
-- **installer**：正式0.3.4主线NSIS已实际覆盖安装，退出0，安装载荷哈希与正式包匹配；原生窗口/Web显示a8fd3fab0403，CLI/MCP/资源/正常退出及真机复核通过。
+- **state**：本轮修复源码Python3.11/3.14及Skill/NSIS候选均以共享后台连接V3/F103原AXF，30MHz、1us/50us通过；原生WebView35秒923万读0错误。所有采集已停止，测试浏览器/SDK/native窗口及后台已退出；未改固件/供电。
+- **installer**：0.3.5修复分支本地NSIS候选已实际覆盖安装，退出0，4文件哈希与候选一致；仍保留0.3.4版本标识、cf118751构建标识。已安装冻结MCP/WebGUI实机1us/50us约262k/20k、零缺口丢弃，Windows-only PATH原生窗口及正常退出通过。全局Skill未替换，候选已解包核对/MCP/HIL通过。
 - **backups**：原Git根.build/artifacts/v033-official保存17正式文件、archive-manifest及qualification（含候选实装/F103、正式冻结/签名/渠道/Skill证据）；旧0.3.2正式归档及用户备份保持。F盘保留共享缓存；联接测试目录和旧安装器占用文件不强删。
 
 ## 下一动作
 
-1. 0.3.4已正式发布。合入本次交接与保存的正式Web资源后继续原工作空间维护；已运行AI进程需重启加载本地0.3.4 Skill。保留客户现场/跨平台实物验证边界。
+1. 审查PR43 codex/0.3.5-fixes并核对最终CI；客户原机升级确认元数据频率/丢弃。合并、版本提升和正式发布仍需维护者授权；全量发布门禁未由定向验证替代。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史联接/占用目录留人工处理。
@@ -61,7 +61,7 @@
 
 ## 已知限制
 
-- 原始30MHz/1µs CDC失败、首次启动离线和客户F405 PROGRAM100%后读线程退出仍未复现；诊断与保护不等于根因闭环。客户Python3.12/受限AI/GD32仍待复测。F103校验约0.30秒无显著加速；外置Flash多FLM缺少实物验证。历史unknown任务不得改判或重放。0.3.4正式主线包现已实际覆盖安装并完成运行及真机复核。 本轮修复可复现的RTT主机缺陷；两客户版本/目标ELF/IDE占用尚不全，未证明所有后续MUX超时同根因，按新增opcode/request/epoch继续核实。
+- 0.3.5时钟修复已通过偏差注入及本地Windows3.11/3.14实机短测；客户3.11.9原电脑仍待升级确认。原始CDC首次离线/F405 PROGRAM100%后退出、受限AI/GD32及RTT客户后续MUX超时仍未闭环；不宣称同一根因或任意负载无损。历史unknown操作不得重放。
 - V4.6.8 30MHz RTT8/Watch4/UART并行目标读错1kHz +1、最大+273；10MHz0。旧V4.6.6原始+1/+224，报告此前漏记已更正。采集不停止、不误断、UART完整；用户明确继续发布，限制交接下版处理，不写公开发布说明。
 - HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4/V4.6.8仿真中新启采集及负载读回通过，V4.6.8已完成Keil及相关矩阵。详见release handoff；长期目标暂停。
 - 性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。
