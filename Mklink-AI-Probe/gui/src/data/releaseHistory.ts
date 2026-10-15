@@ -9,6 +9,25 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.3.5', date: '2026-10-15',
+    summary: '修复 SuperWatch 采样、变量解析与外设导入',
+    summaryEn: 'Fix SuperWatch sampling, variable parsing and peripheral imports',
+    changes: [
+      '修复部分 Windows Python 环境中采样元数据发送过于频繁，导致显示变慢和队列丢弃的问题。',
+      '补全 DWARF 位域成员，支持从共享存储块提取有符号及跨字节位域并绘制只读曲线。',
+      '修复重新解析 ELF 后原搜索结果未刷新，导致 System 等变量显示缺失的问题。',
+      '在线烧录导入或移除 Pack 后，SuperWatch 外设索引同步更新，并支持手动刷新芯片包。',
+      '芯片外设新增手动加载 SVD 文件，支持网页上传、桌面文件选择及工程配置恢复。',
+    ],
+    changesEn: [
+      'Fix excessive sampling metadata in some Windows Python environments that caused slow display and queue drops.',
+      'Restore DWARF bit-field members and plot signed and cross-byte fields decoded from shared storage blocks as read-only channels.',
+      'Refresh unchanged searches after ELF reparsing so variables such as System appear correctly.',
+      'Refresh the SuperWatch peripheral index after Pack imports or removal, with an explicit Pack refresh button.',
+      'Load SVD files manually through browser uploads or the desktop file picker, and restore the selection with the project.',
+    ],
+  },
+  {
     version: '0.3.4', date: '2026-10-11',
     summary: '改善采集启动、变量写入与下载器切换',
     summaryEn: 'Improve capture startup, variable writes and probe switching',
