@@ -54,10 +54,6 @@
       "result": "bdd3c3e3版本和NSIS，53b4ebb2 Web/Skill；949GUI、26版本/启动/更新器通过。NSIS退出0，登记0.3.5，四载荷哈希一致；195Python/38Web与源一致；Windows-only PATH冻结CLI/SVD/MCP/HTTP、原生WebView及Edge通过，版本说明和手动SVD可见。正常关闭进程/endpoint/8765释放。全局Skill0.3.5、2600文件一致及CLI/MCP通过，旧Skill备份。无新硬件操作，未签名/合并/发布，详见docs/verification/v035-local-install.md。"
     },
     {
-      "area": "0.3.5 本机测试包与覆盖安装",
-      "result": "bdd3c3e3版本和NSIS，53b4ebb2 Web/Skill；949GUI、26版本/启动/更新器通过。NSIS退出0，登记0.3.5，四载荷哈希一致；195Python/38Web与源一致；Windows-only PATH冻结CLI/SVD/MCP/HTTP、原生WebView及Edge通过，版本说明和手动SVD可见。正常关闭进程/endpoint/8765释放。全局Skill0.3.5、2600文件一致及CLI/MCP通过，旧Skill备份。无新硬件操作，未签名/合并/发布，详见docs/verification/v035-local-install.md。"
-    },
-    {
       "area": "0.3.5 Pack外设同步与手动SVD",
       "result": "d5a65482：非空SVD索引随Pack状态/索引/工程配置变化刷新；聚焦重查/显式刷新；浏览器SVD校验持久化、桌面本地路径。138Python、33GUI、生产构建通过；真实Edge+HTTP在线导入后原查询找到型号、手动文件选择显示12项、错误XML保留当前配置、重载恢复均通过。离线夹具不访问硬件；未实装新桌面或更新全局Skill，详见docs/verification/v035-peripheral-import.md。"
     },
@@ -80,6 +76,10 @@
     {
       "area": "0.3.4 SuperWatch取消回读校验",
       "result": "源267b175f及其生产Web。旧版真实复现自增变量写入readback mismatch并停止采集。385项Python、72项GUI、TypeScript和生产构建通过。V3.6.4/F103原ELF、30MHz/1ms两波形+RTT，24次写入应答全部成功，4450周期零读错误、RTT31行；独立测试读确认静态字变化再恢复，70605周期零读错误。真实浏览器动态变量写12后显示已写入且运行中，最新GUI保留。旧SW01/HPM仅源码及模拟协议验证，无新固件修改。见v034-superwatch-write.md。"
+    },
+    {
+      "area": "0.3.4 窗口固定后台与原地切换",
+      "result": "源50eb6c52/Web504e690d。Python全量初跑4771通过/2跳过，1旧参数断言失败及4缺FLM资源夹具错误；更新断言后相关1177通过，最后双页面保护29通过。指定既有本地资源后干净实包5通过，冻结后台用runtime_id发现后复用新实包重跑1通过。GUI全量938通过/2旧导航夹具失败，补充状态及换目标清空表单断言后2通过，最终940项覆盖；生产构建通过。两只实物、两个独立代理/Web：A→B→A后台身份不变，RTT+Watch及Trace运行中切换清空旧目标。独立窗口占用B时拒绝切入而A采集继续；双方释放/接手均不重启后台。最终代码再次A→B→A保持PID/端口。原位置ELF5365变量；3秒RTT30行/Watch283周期读错误0，Trace14093事件。B无目标板。保留一最终WebGUI供用户测试。见v034-window-owned-backend.md。"
     }
   ],
   "decisions": [
