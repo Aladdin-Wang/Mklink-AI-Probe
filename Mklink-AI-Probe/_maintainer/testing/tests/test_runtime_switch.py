@@ -83,6 +83,74 @@ def test_occupied_destination_keeps_current_device_and_data(window):
     device.close.assert_not_called()
 
 
+@pytest.mark.parametrize('stale_connected', [False, True])
+@pytest.mark.parametrize('replacement_port', ['COM2', 'COM1'])
+def test_auto_connect_after_unplug_switches_to_unique_replacement(window, monkeypatch, tmp_path,
+                                                                stale_connected, replacement_port):
+    client, control, device, state = window
+    device.connected = stale_connected  # Enumeration can precede transport failure.
+    monkeypatch.setattr(probes, 'inventory', lambda: [
+        {'probe_id': B, 'port': replacement_port, 'alias': ''}])
+    state['last_device_connection'] = {'port': 'COM99', 'mcu': 'old-target'}
+    control.sessions['old-target'] = Session(state['project_root'], None)
+    control.sessions['uart'] = Session(state['project_root'], None, scope='uart')
+    replacement, _ = _connected_symbol_device(tmp_path)
+    replacement.port = replacement_port
+    connect = Mock(return_value=replacement)
+    monkeypatch.setattr('mklink.connect', connect)
+
+    response = client.post('/api/runtime/select', json={'connect': {'restore_last': True}})
+
+    assert response.status_code == 200, response.text
+    assert response.json()['switched'] and response.json()['connection']['port'] == replacement_port
+    assert control.info['probe_id'] == B and state['device'] is replacement
+    assert control.info['port'] == 8765 and control.info['instance_id'] == 'same-instance'
+    assert state['device_generation'] == 1 and set(control.sessions) == {'uart'}
+    assert connect.call_args.kwargs['port'] == replacement_port
+    assert connect.call_args.kwargs['mcu'] is None
+    device.close.assert_called_once()
+
+
+@pytest.mark.parametrize('candidates', [[], [B, 'usb-' + 'd' * 24]])
+def test_auto_connect_missing_probe_requires_one_candidate(window, monkeypatch, candidates):
+    client, control, device, state = window
+    monkeypatch.setattr(probes, 'inventory', lambda: [
+        {'probe_id': probe, 'port': f'COM{i + 2}', 'alias': ''}
+        for i, probe in enumerate(candidates)])
+    response = client.post('/api/runtime/select', json={'connect': {'restore_last': True}})
+    assert response.status_code == 409
+    assert ('Multiple probes' if candidates else 'No supported probe') in response.text
+    assert control.info['probe_id'] == A and state['device'] is device
+    device.close.assert_not_called()
+
+
+def test_auto_connect_missing_probe_does_not_take_occupied_replacement(window, monkeypatch):
+    client, control, device, state = window
+    monkeypatch.setattr(probes, 'inventory', lambda: [{'probe_id': B, 'port': 'COM2', 'alias': ''}])
+    with runtime.runtime_lock('owner.lock', B):
+        response = client.post('/api/runtime/select', json={'connect': {}})
+    assert response.status_code == 409
+    assert control.info['probe_id'] == A and state['device'] is device
+    device.close.assert_not_called()
+
+
+def test_selection_without_connect_does_not_replace_missing_binding(window, monkeypatch):
+    client, control, device, state = window
+    monkeypatch.setattr(probes, 'inventory', lambda: [{'probe_id': B, 'port': 'COM2', 'alias': ''}])
+    assert client.post('/api/runtime/select', json={}).json() == {'same_runtime': True}
+    assert client.post('/api/device/connect', json={}).status_code == 409
+    assert control.info['probe_id'] == A
+    device.close.assert_not_called()
+
+
+def test_auto_connect_keeps_present_binding_with_multiple_probes(window):
+    client, control, device, state = window
+    response = client.post('/api/runtime/select', json={'connect': {'restore_last': True}})
+    assert response.status_code == 200 and response.json() == {'same_runtime': True}
+    assert control.info['probe_id'] == A and state['device'] is device
+    device.close.assert_not_called()
+
+
 @pytest.mark.parametrize('busy', ['sdk', 'uart', 'views'])
 def test_explicit_switch_retires_target_clients_and_preserves_uart(window, busy):
     client, control, device, state = window

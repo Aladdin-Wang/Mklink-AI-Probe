@@ -1652,15 +1652,23 @@ def create_app(
             raise HTTPException(422, "connect must be an object")
         if selector is not None and not isinstance(selector, str):
             raise HTTPException(422, "probe must be a string")
-        if not selector and _state.get("shared_probe_id") != "lobby":
-            return {"same_runtime": True}
-        if not selector and (body.get('connect') or {}).get('restore_last'):
-            selector = (_state.get('last_device_connection') or {}).get('port')
         try:
-            selected = select_probe(selector)
             runtime = app.state.shared_runtime
             async def switch():
                 runtime.prune()
+                current_selector = selector
+                if not current_selector and _state.get('shared_probe_id') != 'lobby':
+                    # Only an explicit Connect may replace an unplugged probe.
+                    # Keep a present binding (including a changed COM number),
+                    # but do not let its stale identity or saved port defeat
+                    # Auto search after the user replaces the physical device.
+                    if 'connect' not in body or runtime.presence()['status'] != 'missing':
+                        return {'same_runtime': True}
+                elif not current_selector and (body.get('connect') or {}).get('restore_last'):
+                    current_selector = (_state.get('last_device_connection') or {}).get('port')
+                # Resolve after lifecycle admission: queued requests must use
+                # the current inventory, and auto search requires one candidate.
+                selected = select_probe(current_selector)
                 if selected['probe_id'] == _state.get('shared_probe_id'):
                     return {'same_runtime': True}
                 binding = getattr(runtime, 'binding', None)

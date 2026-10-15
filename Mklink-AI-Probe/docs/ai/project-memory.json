@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-15T14:33:48+08:00",
+  "updated_at": "2026-10-15T15:16:27+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/0.3.5-fixes",
-    "head": "合并交接前 dfaa3acc；已补入原0.3.4分支07846c1a的清理/交接记录。应用版本及NSIS源bdd3c3e3，生产Web/Skill源53b4ebb2；文档提交不改变安装载荷。",
+    "head": "本次在49b7afb1之后修复拔掉旧下载器再换设备时自动连接失败；精确提交以Git为准。已安装NSIS仍为bdd3c3e3、Web/Skill仍为53b4ebb2，不含本次源码修复。",
     "remote_head": "microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。",
     "working_tree": "继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。"
   },
@@ -13,14 +13,14 @@
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
-    "status": "complete",
-    "current_task": "本会话收尾交接；用户将开启新会话，继续现有0.3.5分支修复。0.3.5本机测试NSIS已覆盖安装，全局Skill已同步，用户待复测；应用显示v0.3.5 · bdd3c3e3ef32。已包含SuperWatch环境时钟、System变量/位域、Pack外设同步及手动SVD修复。949GUI、26版本/runtime/更新器及实际安装/冻结后端/原生WebView/Edge检查通过，见docs/verification/v035-local-install.md；此前V3/F103真机证据见专项报告，本轮打包未操作目标硬件。客户ucrtbase.dll临时解压拒绝在重启后恢复，按用户要求暂不追加修复；不能据此判定软件绝无问题。未签名、合并或正式发布。 已合并原工作树07846c1a交接、清理报告及0.3.0–0.3.4/OTP历史交接中仍有效的限制；旧版本已完成事项不重新排为待办。"
+    "status": "verified",
+    "current_task": "修复未点断开直接拔掉旧下载器、换另一只后自动搜索仍被旧身份绑定拦截的问题。仅显式Connect且旧绑定missing时重新唯一选择，复用安全切换/清理/占用保护，选择在生命周期锁内执行。332 Python、89 GUI及用户配合实际拔插的Chrome/源码后台验证通过；详见docs/verification/v035-auto-connect.md。修复提交到现有0.3.5分支/PR43，未重新打包或安装；当前桌面和全局Skill不含本次修复。原安装版窗口保持打开但已断开，测试源码后台和浏览器已退出。"
   },
   "milestones": [
     {
-      "name": "0.3.5 SuperWatch时钟、DWARF及Pack/SVD修复",
+      "name": "0.3.5 时钟、符号、Pack/SVD及拔插自动连接修复",
       "status": "complete",
-      "notes": "0.3.5本机NSIS覆盖安装及全局Skill更新完成；代码含时钟、位域、普通System搜索及Pack/SVD修复，用户待复测。PR43草稿，未合并或正式发布。"
+      "notes": "0.3.5本机NSIS覆盖安装及全局Skill更新完成；代码含时钟、位域、普通System搜索及Pack/SVD修复，用户待复测。PR43草稿，未合并或正式发布。 源码修复及用户配合物理拔插验证完成；332 Python、89 GUI通过。仅显式Connect在旧身份消失时选择唯一新设备，保持所有权和旧会话隔离。待后续打包安装，见v035-auto-connect.md。"
     },
     {
       "name": "0.3.4正式版",
@@ -49,6 +49,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "0.3.5 拔插自动连接",
+      "result": "修复前7个新增用例失败；修复后身份/切换/重连93、共享runtime/API/枚举/任务/安全239 Python通过，GUI89通过。用户真实拔掉旧下载器换另一只；Chrome直接点击连接、不选端口成功，后台PID/端口不变，generation1→2。第二只目标ID0x0只证下载器连接。测试后断开并退出源码后台，安装版仍打开且断开。无供电/烧录/固件变更，无新包或Skill更新；详见docs/verification/v035-auto-connect.md。"
+    },
     {
       "area": "0.3.5 本机测试包与覆盖安装",
       "result": "bdd3c3e3版本和NSIS，53b4ebb2 Web/Skill；949GUI、26版本/启动/更新器通过。NSIS退出0，登记0.3.5，四载荷哈希一致；195Python/38Web与源一致；Windows-only PATH冻结CLI/SVD/MCP/HTTP、原生WebView及Edge通过，版本说明和手动SVD可见。正常关闭进程/endpoint/8765释放。全局Skill0.3.5、2600文件一致及CLI/MCP通过，旧Skill备份。无新硬件操作，未签名/合并/发布，详见docs/verification/v035-local-install.md。 交接前75cc3106的shared-runtime-contract、shared-gui-contract、feedback-contract均成功；新文档提交的CI须按新HEAD另查。"
@@ -90,8 +94,8 @@
     "原MK-Firmware及固件工程保留既有最新归档与用户子模块改动，旧用户固件/stash仅备份用途不自动恢复；历史发布授权已完成，不延伸为0.3.5发布授权。"
   ],
   "hardware": {
-    "state": "历史真机验证：V3/F103原Keil工程位域测试下载Verify OK；62faad0e生产Web/共享SDK15路、一个8字节块完成三组逐行验证，测试固件保留；当时全部采集/SDK后台退出，未改下载器固件/供电。最后安装验证后已重新打开常用桌面供用户测试，最后观察为后台正常、MCU未连接；不能把此前runtime为空当作当前状态。后续接硬件前重新确认设备身份、占用及用户当前操作，不自动中断其测试。",
-    "installer": "用户明确授权后已实际覆盖安装0.3.5本机测试NSIS，源bdd3c3e3、生产Web53b4ebb2。退出0，四载荷哈希一致；冻结195Python/38Web一致，Windows-only PATH原生/HTTP/MCP及正常退出通过。全局Skill也实际更新0.3.5、2600文件一致、CLI/MCP通过；备份在构建根artifacts/v035-local-bdd3c3e3/skill-backups。用户待复测，未正式发布。",
+    "state": "本轮用户授权连接/断开并配合物理换下载器，Chrome+源码后台自动连接第二只通过；第二只目标ID0x0，不当作目标调试验证。测试后已断开、测试浏览器及源码后台退出；原安装版窗口仍在且断开。未改供电、目标程序或下载器固件。此前V3/F103位域与时钟验证见原专项报告；后续接硬件前重新核实当前状态。",
+    "installer": "用户明确授权后已实际覆盖安装0.3.5本机测试NSIS，源bdd3c3e3、生产Web53b4ebb2。退出0，四载荷哈希一致；冻结195Python/38Web一致，Windows-only PATH原生/HTTP/MCP及正常退出通过。全局Skill也实际更新0.3.5、2600文件一致、CLI/MCP通过；备份在构建根artifacts/v035-local-bdd3c3e3/skill-backups。用户待复测，未正式发布。 本次拔插自动连接修复尚未重新打包/安装或更新全局Skill。",
     "backups": "0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。"
   },
   "known_limits": [
@@ -105,7 +109,7 @@
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。 HPM5301组18/19永久锁定的历史状态及用户字先写/组锁最后、全部固件独立校验后才写OTP等边界见docs/ai/hpm-offline-otp-handoff.md；接手重新确认芯片，其他型号不继承验收。"
   ],
   "next_actions": [
-    "新会话进入现有0.3.5工作树，先读本交接、校验memory、检查分支/改动并fetch匹配远端；继续PR43。优先按用户新复测反馈修复：SuperWatch吞吐/丢弃、System/位域曲线、Pack导入和手动SVD，客户原电脑仍待升级确认。既有AI/MCP需重载才能用新Skill。不因交接重复安装或操作硬件；后续代码变更按影响重新验证。正式合并/签名/发布仍需授权。",
+    "继续现有0.3.5工作树及PR43处理用户反馈；拔插自动连接修复已完成源码与实物验证，当前桌面/全局Skill尚未包含。后续打包安装时纳入该修复并验证安装态。此前时钟、System/位域、Pack/SVD继续收集用户/客户复测反馈。正式合并、签名、发布需授权。",
     "收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。",
     "继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。",
     "Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。",
@@ -113,7 +117,7 @@
   ],
   "continuation_protocol": [
     "新会话固定继续 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe 的 codex/0.3.5-fixes；读取该目录AGENTS.md和本交接，运行 python scripts/ai_memory.py validate，核对 git status、log、worktree及远端。不要从原0.3.4目录另起修复分支。",
-    "区分源码与安装态：桌面 D:/Program Files/Mklink AI Probe；全局Skill C:/Users/akqbd/.codex/skills/mklink-ai-probe；本机测试包、哈希、安装证据及旧Skill备份在 F:/MKLink-Build/artifacts/v035-local-bdd3c3e3。版本0.3.5，Web build bdd3c3e3ef32；后续文档提交不会更新已安装二进制。",
+    "区分源码与安装态：桌面 D:/Program Files/Mklink AI Probe；全局Skill C:/Users/akqbd/.codex/skills/mklink-ai-probe；本机测试包、哈希、安装证据及旧Skill备份在 F:/MKLink-Build/artifacts/v035-local-bdd3c3e3。版本0.3.5，Web build bdd3c3e3ef32；后续文档提交不会更新已安装二进制。 本次源码自动连接修复未装入桌面/Skill；源码浏览器实测通过不能当作安装态验收。",
     "合并来源：原0.3.4工作树07846c1a的CURRENT_HANDOFF/project-memory与v034-workspace-cleanup；历史v030/v031/v032/v033/v034-release-handoff、v032-archive-handoff和hpm-offline-otp-handoff已核对。其已完成发布/清理和当时安装/连接状态仅属历史；当前以本文件0.3.5断点为准。专项修复见docs/verification/v035-superwatch-clock.md、v035-dwarf-bitfields.md、v035-peripheral-import.md，安装见v035-local-install.md。",
     "客户启动故障仅确认PyInstaller解压ucrtbase.dll时Permission denied，重启后恢复；未定位权限/杀软/占用的具体来源，按用户意见暂不做推测性修复。若再现，结合新startup/runtime日志复查。",
     "仅继续修复和验证；PR43仍为草稿，未授权合并或正式发布。遵循AGENTS提交推送任务分支、更新memory并render/validate；详细历史保留docs/verification，敏感日志/硬件标识及本机产物不提交。"
