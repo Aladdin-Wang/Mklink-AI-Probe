@@ -348,6 +348,31 @@ describe('SymbolVariablePanel', () => {
     wrapper.unmount()
   })
 
+  it('shows newly parsed ordinary roots without changing the active search', async () => {
+    const previous = ['gSystemState.ModeSub', 'gSystemState.MotorDriverMode'].map(path => (
+      { ...catalogItems[2], path, parent_path: 'gSystemState' }
+    ))
+    mocks.searchSymbols.mockResolvedValue(previous)
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
+    await flushPromises()
+    await wrapper.get('[data-testid="variable-search"]').setValue('System')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="branch-System"]').exists()).toBe(false)
+    mocks.reparse.mockImplementationOnce(async () => {
+      mocks.searchSymbols.mockResolvedValue([
+        ...previous, { ...catalogItems[2], path: 'System.WorkMode', parent_path: 'System' },
+      ])
+      mocks.generation.value++
+      return { preserved: [], updated: [], removed: [] }
+    })
+    await wrapper.get('[data-testid="reparse-symbols"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.get('[data-testid="variable-search"]').element as HTMLInputElement).value).toBe('System')
+    expect(wrapper.get('[data-testid="leaf-System.WorkMode"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="leaf-gSystemState.ModeSub"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('refreshes an automatically replaced symbol generation and stops polling on unmount', async () => {
     vi.useFakeTimers()
     const wrapper = mount(SymbolVariablePanel, {
