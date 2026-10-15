@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-15T11:48:21+08:00",
+  "updated_at": "2026-10-15T11:53:29+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "0.3.5位域修复及V3/F103真机完成，62faad0e，PR43草稿。客户ELF恢复57位域叶，gSystemState六成员/真实布局256模式1536值通过；读取整块RAM拆位域，签名扩展及跨字节支持。15路一次8字节读取，浏览器三组530083行逐项一致；50us最终272200行零序号缺口/后台丢弃，曲线目视通过。452项Python覆盖、52项GUI和生产构建通过。测试固件留在原工程和板上；采集/客户端/后台均释放。新位域修复未打包覆盖安装；此前时钟候选已安装，全局Skill未替换，客户原机和正式发布仍待后续。"
+    "current_task": "0.3.5位域修复及V3/F103真机完成，62faad0e，PR43草稿。客户ELF恢复57位域叶，gSystemState六成员/真实布局256模式1536值通过；读取整块RAM拆位域，签名扩展及跨字节支持。15路一次8字节读取，浏览器三组530083行逐项一致；50us最终272200行零序号缺口/后台丢弃，曲线目视通过。452项Python覆盖、53项GUI和生产构建通过。测试固件留在原工程和板上；采集/客户端/后台均释放。新位域修复未打包覆盖安装；此前时钟候选已安装，全局Skill未替换，客户原机和正式发布仍待后续。 补充System普通变量显示：旧生产GUI在保持System查询的手动重解析后仍2叶，新GUI恢复System23/gSystemState6；实际客户ELF+真实HTTP/浏览器离线fixture验证，不推断原截图全部历史。"
   },
   "milestones": [
     {
@@ -51,7 +51,7 @@
   "verification": [
     {
       "area": "0.3.5 位域解析和整变量曲线",
-      "result": "62faad0e：客户ELF815→872标量叶，gSystemState6成员256模式1536比较通过，System23成员。旧MSB offset与data_bit_offset分离、显式存储宽度、cache6、位域只读、搜索generation刷新。450项Python通过，后加2个文本解析用例所在15项通过，共452覆盖；52GUI、TS/生产构建通过。V3/F103原工程Keil编译/烧录验证通过；15路一个8字节块、30MHz，1ms12343/50us245540/50us272200浏览器行全部一致、各256状态、signed -16..15；最后序号含元数据0缺口，读/CRC/固件/队列丢弃0、真实位域曲线通过。所有会话释放，测试固件保留；未改下载器固件/供电。见docs/verification/v035-dwarf-bitfields.md；新位域尚未打包安装。"
+      "result": "62faad0e：客户ELF815→872标量叶，gSystemState6成员256模式1536比较通过，System23成员。旧MSB offset与data_bit_offset分离、显式存储宽度、cache6、位域只读、搜索generation刷新。450项Python通过，后加2个文本解析用例所在15项通过，共452覆盖；53GUI、TS/生产构建通过。V3/F103原工程Keil编译/烧录验证通过；15路一个8字节块、30MHz，1ms12343/50us245540/50us272200浏览器行全部一致、各256状态、signed -16..15；最后序号含元数据0缺口，读/CRC/固件/队列丢弃0、真实位域曲线通过。所有会话释放，测试固件保留；未改下载器固件/供电。见docs/verification/v035-dwarf-bitfields.md；新位域尚未打包安装。 旧/新生产GUI对照确认手动重解析未刷新不变查询的独立bug；旧2叶、新29叶，后台均System23，已补普通根回归。"
     },
     {
       "area": "0.3.5 SuperWatch环境时钟差异",

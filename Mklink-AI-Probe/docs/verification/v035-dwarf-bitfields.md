@@ -53,6 +53,20 @@ zero and the function-pointer array is in Flash; neither becomes a RAM scalar
 watch. The screenshot's stale-AXF warning is additional context, not proof that
 every absent ordinary variable had the same cause.
 
+An additional real-browser comparison isolated the missing ordinary `System`
+root. A controlled old catalog exposed only the two ordinary `gSystemState`
+leaves; the actual customer ELF was then reparsed through the real HTTP endpoint
+while the search text remained `System`. The old production GUI (`db963955`)
+continued showing only those two leaves even though the backend now contained
+all 23 `System` members. The repaired production GUI immediately showed 23
+`System` members and six `gSystemState` members without editing the search text.
+Fresh loading also showed all 29 matching leaves using the Device's actual
+ELF-derived RAM ranges. This reproduces an independent stale-search defect;
+the customer's original in-memory catalog is unavailable, so its exact history
+cannot be reconstructed from the screenshot. This browser test used an offline
+device-status fixture and real ELF/catalog/API code, with hardware reads/writes
+disabled; it is separate from the physical board test below.
+
 ## Physical V3 + STM32F103 test
 
 The user's original Keil project was modified in place with two test unions,
@@ -102,7 +116,8 @@ firmware, screenshots, hardware identifiers and paths are excluded from Git.
 - The final bit-field module passed 15 tests, including two added text-parser
   cases (452 distinct covered Python cases in total). Legacy/modern locations,
   bounded spans, signed cross-byte arrays, cache/rebind and write refusal are covered.
-- 52 GUI tests passed across the variable panel, symbol tab, catalog and tree.
+- 53 GUI tests passed across the variable panel, symbol tab, catalog and tree,
+  including manual reparse adding an ordinary root to an unchanged search.
   Type checking and production GUI build passed.
 - Two initial HPM write tests had an inconsistent fixture: HPM addresses with a
   retained Cortex-M RAM map. Correcting the fixture restored the intended coverage.
