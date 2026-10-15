@@ -561,7 +561,7 @@ def test_browser_symbol_upload_rejects_an_unsupported_suffix(tmp_path):
 @pytest.mark.parametrize('failure', [PermissionError('workspace denied'), OSError('disk full')])
 def test_browser_symbol_upload_reports_storage_error(tmp_path, monkeypatch, failure):
     from mklink.remote import api
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise failure
     monkeypatch.setattr(api, '_store_uploaded_file_source', fail)
     app = create_app(auth_token=None, project_root=str(tmp_path))

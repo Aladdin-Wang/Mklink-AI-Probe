@@ -192,6 +192,7 @@ def _store_uploaded_file_source(
     upload: Any,
     project_root: Path | str,
     allowed_suffixes: tuple[str, ...],
+    *, max_bytes: int | None = None, validate=None,
 ) -> dict[str, object]:
     original_name = str(upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     suffix = Path(original_name).suffix.casefold()
@@ -216,12 +217,15 @@ def _store_uploaded_file_source(
                 if not chunk:
                     break
                 total += len(chunk)
-                if total > _FILE_SOURCE_UPLOAD_LIMIT:
-                    raise ValueError("file exceeds 256 MiB upload limit")
+                limit = _FILE_SOURCE_UPLOAD_LIMIT if max_bytes is None else max_bytes
+                if total > limit:
+                    raise ValueError(f"file exceeds {limit // (1024 * 1024)} MiB upload limit")
                 digest.update(chunk)
                 output.write(chunk)
         if total == 0:
             raise ValueError("file is empty")
+        if validate is not None:
+            validate(temporary)
         checksum = digest.hexdigest()
         destination = (uploads / (checksum + suffix)).resolve()
         if destination.parent != uploads:
@@ -1729,6 +1733,7 @@ def create_app(
     async def _upload_file_source(
         file: UploadFile,
         allowed_suffixes: tuple[str, ...],
+        *, max_bytes: int | None = None, validate=None,
     ) -> dict[str, object]:
         try:
             return await run_in_threadpool(
@@ -1736,6 +1741,7 @@ def create_app(
                 file,
                 _state["project_root"],
                 allowed_suffixes,
+                max_bytes=max_bytes, validate=validate,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1755,6 +1761,12 @@ def create_app(
     @app.post("/api/files/map")
     async def upload_map_file(file: UploadFile = File(...)):
         return await _upload_file_source(file, (".map",))
+
+    @app.post("/api/files/svd")
+    async def upload_svd_file(file: UploadFile = File(...)):
+        from mklink.peripheral_watch import MAX_XML_BYTES, load_catalog
+        return await _upload_file_source(file, (".svd",), max_bytes=MAX_XML_BYTES,
+                                         validate=lambda path: load_catalog(svd=path))
 
     # ===================================================================
     # REST API — Device Lifecycle
@@ -2869,15 +2881,20 @@ def create_app(
         return await run_in_threadpool(get_managers()["superwatch"].peripheral_catalog, q)
 
     _svd_targets = {}
+    _svd_revision = None
     _svd_target_lock = asyncio.Lock()
 
     @app.get("/api/dash/superwatch/peripherals/targets")
-    async def peripheral_targets(q: str = ""):
-        from mklink.peripheral_watch import discover_svd_targets
+    async def peripheral_targets(q: str = "", refresh: bool = False):
+        nonlocal _svd_revision
+        from mklink.peripheral_watch import discover_svd_targets, svd_index_revision
         async with _svd_target_lock:
-            if not _svd_targets:
+            revision = await run_in_threadpool(svd_index_revision, _state["project_root"])
+            if refresh or _svd_revision != revision:
                 targets = await run_in_threadpool(discover_svd_targets, _state["project_root"])
+                _svd_targets.clear()
                 _svd_targets.update({target.key: target for target in targets})
+                _svd_revision = revision
         matches = [target.public() for target in _svd_targets.values()
                    if q.casefold() in target.target.casefold()]
         return {"targets": matches[:200], "total": len(matches)}

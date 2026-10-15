@@ -84,6 +84,10 @@ export function pickFlmFile(): Promise<PickedFile> {
   return pickFile(FLM_FILTER)
 }
 
+export function pickSvdFile(): Promise<PickedFile> {
+  return pickFile({ name: 'CMSIS SVD', extensions: ['svd'] })
+}
+
 export async function pickFirmwareFiles(multiple = false): Promise<Array<string | File>> {
   if (!isTauri()) {
     const selected = await pickBrowserFile(FIRMWARE_FILTER)

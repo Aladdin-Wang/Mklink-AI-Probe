@@ -458,7 +458,7 @@ export interface ProbeFirmwareDownload {
   family: 'microlink' | 'hpmlink'
 }
 
-export type FileSourceKind = 'symbol' | 'map'
+export type FileSourceKind = 'symbol' | 'map' | 'svd'
 
 export interface UploadedFileSource {
   path: string
