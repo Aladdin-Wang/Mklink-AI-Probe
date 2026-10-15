@@ -5,7 +5,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 
 # MKLink 用户入口
 
-用于设备及目标 MCU 工程，不读仓库交接、Git 状态、维护或发布流程；按需读参考页。
+用于目标 MCU；不读仓库交接、Git、维护或发布流程，按需读参考页。
 
 ## 开始前
 
@@ -78,21 +78,21 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 
 | 本次任务 | 只在需要时读取 |
 |---|---|
-| 下载固件、IDE/pyOCD/脱机后端选择 | [下载优先级](references/firmware-download-priority.md) |
+| 固件下载后端 | [下载优先级](references/firmware-download-priority.md) |
 | 烧录、项目初始化、RTT 集成/捕获 | [烧录与 RTT](references/commands-flash-rtt.md) |
-| 固定 RTT 控制块地址 | [RTT 静态模式](references/rtt-static-mode.md) |
-| SystemView RTOS 跟踪与报告 | [SystemView](references/systemview-rtthread.md) |
+| 固定 RTT 地址 | [RTT 静态模式](references/rtt-static-mode.md) |
+| RTOS 跟踪 | [SystemView](references/systemview-rtthread.md) |
 | RAM、变量、VOFA/SuperWatch、AXF、HardFault | [内存与符号](references/commands-memory.md) |
-| SuperWatch 持续记录、停止保存与离线回放 | [日志记录与回放](references/superwatch-replay.md) |
-| 下载器 VCC 输出电压、电流、功率测量 | [供电测量](references/power-telemetry.md) |
+| SuperWatch 记录/回放 | [日志记录与回放](references/superwatch-replay.md) |
+| VCC 电压、电流、功率 | [供电测量](references/power-telemetry.md) |
 | flush-memory、多地址或分块写入 | [静默写边界](references/flush-memory.md) |
 | Modbus、RS485、点表 | [Modbus](references/commands-modbus.md) |
 | UART、串口 profile | [串口](references/commands-serial.md) |
 | VPN/局域网 Site Agent | [直连远程](references/commands-remote.md) |
-| 本地 Web GUI/API、桌面应用 | [本地 GUI](references/commands-remote-gui.md) |
+| Web/桌面 | [本地 GUI](references/commands-remote-gui.md) |
 | GUI 与 AI 共存、多下载器、设备别名 | [共享后台](references/shared-runtime.md) |
-| 安装、更新、运行依赖故障 | [安装与更新](references/install.md) |
+| 安装/更新/依赖 | [安装与更新](references/install.md) |
 | U 盘/桌面 HTML 快速入口 | [Web 入口](references/web-entry.md) |
 | Windows USB 端口名称 | [端口命名](references/windows-port-names.md) |
 | 复杂编排或故障排查 | [工作流](references/workflows.md) |
-| 疑似 MKLink 缺陷、授权反馈或跟进修复 | [问题反馈](references/issue-reporting.md) |
+| 缺陷反馈/跟进 | [问题反馈](references/issue-reporting.md) |

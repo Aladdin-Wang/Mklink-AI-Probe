@@ -411,7 +411,7 @@ def test_gui_start_validation_failure_is_retained_without_replay(security):
 
 
 @pytest.mark.parametrize('mode', ['bound', 'missing', 'lobby', 'other-dap'])
-def test_shared_online_discovery_never_offers_another_probe(security, mode):
+def test_shared_online_discovery_filters_present_binding_and_lists_unbound_candidates(security, mode):
     s = security
     enumerated = []
     def provider():
@@ -423,8 +423,13 @@ def test_shared_online_discovery_never_offers_another_probe(security, mode):
     if mode == 'lobby': s.control.info['probe_id'] = 'lobby'
     response = s.client.get('/api/online-flash/probes')
     assert response.status_code == 200
-    assert [row['unique_id'] for row in response.json()] == (['serial'] if mode == 'bound' else [])
-    assert bool(enumerated) == (mode in {'bound', 'other-dap'})
+    # Discovery is read-only and must work before connecting a target. A present
+    # binding still restricts the list; selecting a candidate is a separate action.
+    expected = {'bound': ['serial'], 'other-dap': [],
+                'missing': ['OTHER', 'serial'], 'lobby': ['OTHER', 'serial']}
+    assert [row['unique_id'] for row in response.json()] == expected[mode]
+    assert enumerated == [True]
+    assert s.control.info['probe_id'] == ('lobby' if mode == 'lobby' else 'usb-test')
     assert not s.calls
 
 
