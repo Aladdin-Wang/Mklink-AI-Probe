@@ -34,4 +34,3 @@ export async function selectDownloadProbe(probe: string, cmsisDap = false): Prom
     } : {}
   } finally { selecting.value-- }
 }
-
