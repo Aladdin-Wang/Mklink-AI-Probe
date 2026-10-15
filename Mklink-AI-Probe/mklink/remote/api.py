@@ -2911,7 +2911,7 @@ def create_app(
         usable = catalog is not None and not catalog.is_stale()
         entries = []
         for name in preferences["pins"]:
-            descriptor = catalog.by_path(name) if usable else None
+            descriptor = catalog.by_path(name, writable_only=False) if usable else None
             entries.append({
                 "path": name,
                 "descriptor": descriptor.to_dict() if descriptor else None,
@@ -3903,7 +3903,7 @@ def create_app(
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         try:
-            descriptor = _require_symbol_catalog().by_path(name)
+            descriptor = _require_symbol_catalog().by_path(name, writable_only=False)
             if descriptor is None:
                 return {"name": name, "found": False}
             return {

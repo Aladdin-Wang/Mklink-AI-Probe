@@ -71,6 +71,7 @@ class CompiledDecodeField:
     unpacker: struct.Struct
     bit_offset: int = 0
     bit_mask: int | None = None
+    sign_bit: int = 0
 
 
 class CompiledFrameDecoder:
@@ -110,7 +111,7 @@ class CompiledFrameDecoder:
             for offset, field in self._packed_fields:
                 value = field.unpacker.unpack_from(frame.payload, frame.offset + offset)[0]
                 if field.bit_mask is not None:
-                    value = (int(value) >> field.bit_offset) & field.bit_mask
+                    value = _decode_field_bits(value, field)
                 self._values[field.channel_index] = float(value)
             return self._values
         seen = 0
@@ -122,12 +123,18 @@ class CompiledFrameDecoder:
                     return None
                 value = field.unpacker.unpack_from(region_data, field.offset)[0]
                 if field.bit_mask is not None:
-                    value = (int(value) >> field.bit_offset) & field.bit_mask
+                    value = _decode_field_bits(value, field)
                 self._values[field.channel_index] = float(value)
             seen |= self._region_masks[region_index]
         if seen != self._complete_mask:
             return None
         return self._values
+
+
+def _decode_field_bits(value, field):
+    raw = int.from_bytes(value, "little") if isinstance(value, bytes) else int(value)
+    value = (raw >> field.bit_offset) & field.bit_mask
+    return value - (field.sign_bit << 1) if value & field.sign_bit else value
 
 
 @dataclass
@@ -251,7 +258,14 @@ def compile_frame_decoder(
                 continue
             size = int(item.size)
             scalar_kind = getattr(item, "scalar_kind", None)
-            if scalar_kind == "float":
+            bit_offset = int(item.metadata.get("bit_offset", 0))
+            bit_width = item.metadata.get("bit_width")
+            if bit_width is not None:
+                bit_width = int(bit_width)
+                if scalar_kind not in {"unsigned", "signed", "bool", "enum"} or not 0 < bit_width <= 64 or not 0 <= bit_offset <= size * 8 - bit_width or size > 9:
+                    raise ValueError(f"Invalid bit field: {item.name}")
+                code = integer_formats[False].get(size) or f"{size}s"
+            elif scalar_kind == "float":
                 code = {4: "f", 8: "d"}.get(size)
             elif scalar_kind == "bool":
                 code = integer_formats[False].get(size)
@@ -267,15 +281,10 @@ def compile_frame_decoder(
             offset = item.address - block.address
             if offset < 0 or offset + size > block.size:
                 raise ValueError(f"SuperWatch item {item.name} is outside its read block")
-            bit_offset = int(item.metadata.get("bit_offset", 0))
-            bit_width = item.metadata.get("bit_width")
-            if bit_width is not None:
-                bit_width = int(bit_width)
-                if scalar_kind != "unsigned" or not 0 < bit_width <= size * 8 or not 0 <= bit_offset <= size * 8 - bit_width:
-                    raise ValueError(f"Invalid peripheral bit field: {item.name}")
             fields.append(CompiledDecodeField(
                 channel_index, offset, size, struct.Struct("<" + code),
                 bit_offset, (1 << bit_width) - 1 if bit_width is not None else None,
+                (1 << (bit_width - 1)) if bit_width is not None and scalar_kind == "signed" else 0,
             ))
         region_fields.append(tuple(fields))
     return CompiledFrameDecoder(channel_names, tuple(region_fields), tuple(block.size for block in blocks))
@@ -320,6 +329,8 @@ def sample_blocks(
                 point[item.name] = (
                     int.from_bytes(data, "little") >> item.metadata["bit_offset"]
                 ) & ((1 << item.metadata["bit_width"]) - 1)
+                if item.scalar_kind == "signed" and point[item.name] & (1 << (item.metadata["bit_width"] - 1)):
+                    point[item.name] -= 1 << item.metadata["bit_width"]
                 continue
             point[item.name] = decode_value(
                 data,
@@ -478,6 +489,12 @@ def resolve_watch_items(
         writable_ranges = writable_memory_ranges(
             source, backend=backend, project_root=project_root
         )
+    # A lookup-only catalog gives legacy/standalone callers the same typed bit
+    # layout as the shared runtime without creating a cache or touching a file.
+    resolver = None
+    if dwarf_info is not None:
+        from mklink.symbol_catalog import SymbolCatalog, AxfFingerprint
+        resolver = SymbolCatalog(1, source or "", AxfFingerprint(0, 0), 0, (), _info=dwarf_info)
     items: list[WatchItem] = []
     for raw_name in _normalize_names(names):
         reg_key = raw_name.upper().replace("->", ".")
@@ -498,6 +515,18 @@ def resolve_watch_items(
             )
             continue
         if dwarf_info is not None:
+            descriptor = resolver.by_path(raw_name, writable_only=False)
+            if descriptor is not None and descriptor.bit_size is not None:
+                if writable_ranges is not None:
+                    from mklink.elf_backend import address_is_writable
+                    if not address_is_writable(descriptor.address, descriptor.size, writable_ranges):
+                        continue
+                items.append(WatchItem(
+                    raw_name, descriptor.address, descriptor.type_name, descriptor.size,
+                    scalar_kind="signed" if descriptor.enum_signed else descriptor.scalar_kind,
+                    metadata={"bit_offset": descriptor.bit_offset, "bit_width": descriptor.bit_size, "writable": False},
+                ))
+                continue
             address, type_name, size, enum_values = resolve_variable_path(dwarf_info, raw_name)
             if size <= 0 or type_name == "unknown":
                 size = int(symbol_sizes.get(raw_name, 0) or 4)
@@ -660,16 +689,24 @@ def _build_node(name: str, type_name: str, data: bytes, dwarf_info, *, depth: in
 def _member_node(member, parent_data: bytes, dwarf_info, *, depth: int) -> dict:
     chunk = parent_data[member.offset:member.offset + member.size]
     if member.bit_size is not None:
-        raw = int.from_bytes(chunk or b"\x00", "little")
-        mask = (1 << member.bit_size) - 1
-        value = (raw >> (member.bit_offset or 0)) & mask
+        from mklink.dwarf_parser import bitfield_layout
+        from mklink.symbol_catalog import SymbolDescriptor, _resolve_scalar_spec, decode_descriptor
+        layout = bitfield_layout(member, len(parent_data), little_endian=dwarf_info.little_endian)
+        spec = _resolve_scalar_spec(dwarf_info, member.type_offset, type_name=member.type_name, size=member.size)
+        if layout is None or spec is None or spec.kind == "float":
+            return {"name": member.name, "kind": "bitfield", "value": None, "error": "unsupported bit field layout"}
+        offset, size, shift = layout
+        descriptor = SymbolDescriptor(member.name, 0, member.type_name, spec.kind, size,
+                                      writable=False, enum_signed=spec.enum_signed,
+                                      bit_offset=shift, bit_size=member.bit_size)
+        value = decode_descriptor(descriptor, parent_data[offset:offset + size])
         return {
             "name": member.name,
             "type": member.type_name,
             "kind": "bitfield",
-            "bit_offset": member.bit_offset or 0,
+            "bit_offset": shift,
             "bit_size": member.bit_size,
-            "value": bool(value) if member.bit_size == 1 else value,
+            "value": value,
         }
     return _build_node(member.name, member.type_name, chunk, dwarf_info, depth=depth)
 
@@ -771,7 +808,9 @@ class SuperWatchRuntime:
         existing = next((item for item in self.items if item.name == name), None)
         if existing is not None:
             return {"name": existing.name, **make_channel_metadata([existing])[existing.name]}
-        descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
+        descriptor = self.symbol_catalog.by_path(name, writable_only=False) if self.symbol_catalog else None
+        if descriptor is not None and not self.symbol_catalog._in_ram(descriptor.address, descriptor.size):
+            return {"error": f"Cannot watch '{name}': address outside SRAM"}
         if name in self.peripheral_items:
             item = self.peripheral_items[name]
         elif descriptor is not None:
@@ -787,6 +826,8 @@ class SuperWatchRuntime:
                     if descriptor.scalar_kind == "enum" and descriptor.enum_signed
                     else descriptor.scalar_kind
                 ),
+                metadata=({"bit_offset": descriptor.bit_offset, "bit_width": descriptor.bit_size,
+                           "writable": False} if descriptor.bit_size is not None else {}),
             )
         else:
             if self.symbol_catalog is not None and self.symbol_catalog.is_overridden(name):
@@ -906,7 +947,7 @@ class SuperWatchRuntime:
 def _run_visualizer_stream(bridge, server, runtime, stop_event, reconfigure,
                            *, clock=time.monotonic, stall_timeout=5.0, max_recoveries=3):
     """Keep the standalone stream observable and recover bounded session faults."""
-    from mklink.dump_memory import DumpMemoryStreamSession, decode_frame_to_points
+    from mklink.dump_memory import DumpMemoryStreamSession
 
     failures = 0
     origin_us = None
@@ -918,10 +959,7 @@ def _run_visualizer_stream(bridge, server, runtime, stop_event, reconfigure,
         reconfigure.clear()
         version = runtime.blocks_version
         period = server._interval
-        layout = [(block.address, block.size, [
-            (item.name, item.type_name, item.address - block.address, item.size,
-             item.scalar_kind, item.enum_values) for item in block.items
-        ]) for block in blocks]
+        decoder = compile_frame_decoder([item for block in blocks for item in block.items], blocks)
         session = DumpMemoryStreamSession(bridge, [(b.address, b.size) for b in blocks], period)
         started = last_valid = clock()
         fault = None
@@ -934,9 +972,19 @@ def _run_visualizer_stream(bridge, server, runtime, stop_event, reconfigure,
                 # Always drain paused streams so they cannot accumulate in the bridge.
                 frames = session.read_frames()
                 for frame in frames:
-                    points, origin_us = decode_frame_to_points(frame, layout, origin_us)
-                    if not points:
+                    regions = frame.get("regions", ())
+                    if (frame.get("flags", 0) & 4 or len(regions) != len(blocks)
+                            or {index for index, _ in regions} != set(range(len(blocks)))
+                            or any(len(data) != blocks[index].size for index, data in regions)):
+                        raise ValueError("Incomplete SuperWatch sample")
+                    values = decoder.decode(frame)
+                    if values is None:
                         raise ValueError("dump_memory returned no variable values")
+                    timestamp = frame["timestamp_us"]
+                    if origin_us is None:
+                        origin_us = timestamp
+                    points = [{"_t": (timestamp - origin_us) / 1_000_000,
+                               "timestamp_us": timestamp, **dict(zip(decoder.channel_names, values))}]
                     last_valid = clock()
                     if last_valid - started >= 30:
                         failures = 0

@@ -198,6 +198,23 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.get('[data-testid="leaf-controller.target"]').exists()).toBe(true)
   })
 
+  it('refreshes an existing query after reparse and exposes read-only bit fields', async () => {
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
+    await flushPromises()
+    await wrapper.get('input[placeholder]').setValue('controller')
+    await flushPromises()
+    const field = { ...catalogItems[0], path: 'controller.bits', writable: false,
+      scalar_kind: 'unsigned', type_name: 'uint8_t', bit_offset: 1, bit_size: 2 }
+    mocks.searchSymbols.mockResolvedValue([field])
+    mocks.generation.value += 1
+    await flushPromises()
+    expect(mocks.searchSymbols).toHaveBeenLastCalledWith('controller')
+    expect(wrapper.find('[data-testid="leaf-controller.bits"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="edit-controller.bits"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="edit-controller.bits"]').attributes('title')).toContain('位域只读')
+    expect(wrapper.find('[data-testid="leaf-controller.target"]').exists()).toBe(false)
+  })
+
   it('pins selected variables separately from sampling and keeps pins while searching', async () => {
     const server = mockPinnedWorkspace()
     const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: { gain: 1.25 } } })

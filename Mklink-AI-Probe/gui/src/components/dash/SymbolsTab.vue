@@ -268,7 +268,7 @@ watch(() => props.deviceConnected, connected => {
 watch(() => props.symbolLoaded, loaded => {
   if (loaded && props.deviceConnected) void loadCatalog()
 })
-watch(query, value => {
+watch([query, catalog.generation], ([value]) => {
   const key = value.trim()
   if (!key) {
     searchItems.value = []

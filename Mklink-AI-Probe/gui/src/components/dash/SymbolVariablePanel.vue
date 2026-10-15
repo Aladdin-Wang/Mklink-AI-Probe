@@ -252,7 +252,7 @@
               type="button"
               :data-testid="`edit-${row.node.descriptor.path}`"
               :disabled="catalog.stale.value || !row.node.descriptor.writable"
-              :title="tr('设置变量', 'Set variable')"
+              :title="row.node.descriptor.bit_size != null ? tr('位域只读，避免改动相邻字段', 'Read-only bit field; protects adjacent fields') : tr('设置变量', 'Set variable')"
               @click="beginEdit(row.node.descriptor)"
             >
               {{ tr('编辑', 'Edit') }}
@@ -981,7 +981,7 @@ watch(catalog.generation, () => {
   pinnedDescriptors.value = new Map()
   if (props.deviceConnected && props.symbolLoaded) void loadPins()
 })
-watch(query, (next, previous) => {
+watch([query, catalog.generation], ([next], [previous]) => {
   filteredCollapsed.value = new Set()
   if (next.trim() && !previous.trim()) searchExpansionSnapshot = new Set(expanded.value)
   if (!next.trim() && previous.trim() && searchExpansionSnapshot) {

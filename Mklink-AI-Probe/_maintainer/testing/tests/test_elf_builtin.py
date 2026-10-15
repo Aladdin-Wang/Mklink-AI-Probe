@@ -317,6 +317,35 @@ def test_fixed_address_and_member_offset_accept_only_constant_expressions():
     assert _member_offset(dynamic_member, structs) is None
 
 
+def test_builtin_dwarf_preserves_both_bit_location_encodings(tmp_path):
+    uint = FakeDie('DW_TAG_base_type', 0x10, attributes={
+        'DW_AT_name': FakeAttribute('DW_FORM_string', b'uint8_t'),
+        'DW_AT_byte_size': FakeAttribute('DW_FORM_data1', 1),
+    })
+    fields = []
+    for index, attrs in enumerate(({'DW_AT_bit_offset': 5, 'DW_AT_byte_size': 1},
+                                    {'DW_AT_data_bit_offset': 9})):
+        fields.append(FakeDie('DW_TAG_member', 0x21+index, attributes={
+            'DW_AT_name': FakeAttribute('DW_FORM_string', f'f{index}'.encode()),
+            'DW_AT_type': FakeAttribute('DW_FORM_ref4', 0x10),
+            'DW_AT_bit_size': FakeAttribute('DW_FORM_data1', 2),
+            **{key: FakeAttribute('DW_FORM_data1', value) for key, value in attrs.items()},
+        }, refs={'DW_AT_type': uint}))
+    record = FakeDie('DW_TAG_structure_type', 0x20, attributes={
+        'DW_AT_name': FakeAttribute('DW_FORM_string', b'Bits'),
+        'DW_AT_byte_size': FakeAttribute('DW_FORM_data1', 2),
+    }, children=fields)
+    backend, source = make_backend(tmp_path, FakeElf(dwarf=FakeDwarf(
+        FakeDie('DW_TAG_compile_unit', 0, children=[uint, record]))))
+    info = backend.dwarf_info(source)
+    from mklink.dwarf_parser import bitfield_layout
+    a, b = info.structs['Bits'].members
+    assert (a.bit_offset, a.data_bit_offset, a.storage_size) == (5, None, 1)
+    assert (b.bit_offset, b.data_bit_offset) == (None, 9)
+    assert bitfield_layout(a, 2) == (0, 1, 1)
+    assert bitfield_layout(b, 2) == (1, 1, 1)
+
+
 def test_builtin_dwarf_skips_members_with_nonconstant_offsets(tmp_path):
     int16 = FakeDie(
         "DW_TAG_base_type",

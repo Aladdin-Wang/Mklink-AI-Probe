@@ -234,6 +234,8 @@ export interface SymbolDescriptor {
   scalar_kind: SymbolScalarKind
   size: number
   writable: boolean
+  bit_offset?: number | null
+  bit_size?: number | null
   enum_values: Record<string, number>
   enum_signed?: boolean
   parent_path: string | null

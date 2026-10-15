@@ -23,6 +23,33 @@ class DwarfMember:
     size: int = 0
     bit_offset: int | None = None
     bit_size: int | None = None
+    data_bit_offset: int | None = None
+    storage_size: int | None = None
+
+
+def bitfield_layout(member: DwarfMember, record_size: int, *, little_endian=True):
+    """Return byte offset, read width and LSB shift for a bounded bit field.
+
+    DWARF 2/3 bit_offset counts from the storage unit's MSB. DWARF 4/5
+    data_bit_offset counts from the enclosing record, including whole bytes.
+    The watch transport currently decodes little-endian target data only.
+    """
+    width = member.bit_size
+    if not little_endian or width is None or not 0 < width <= 64:
+        return None
+    if member.data_bit_offset is not None:
+        start = member.data_bit_offset
+    elif member.bit_offset is not None:
+        storage = member.storage_size if member.storage_size is not None else member.size
+        start = member.offset * 8 + storage * 8 - member.bit_offset - width
+        if storage <= 0 or member.bit_offset < 0:
+            return None
+    else:
+        return None
+    if start < 0 or record_size <= 0 or start + width > record_size * 8:
+        return None
+    offset, shift = divmod(start, 8)
+    return offset, (shift + width + 7) // 8, shift
 
 
 @dataclass
@@ -73,6 +100,7 @@ class DwarfInfo:
     pointers: dict[int, tuple[int | None, int]] = field(default_factory=dict)
     arrays: dict[int, DwarfArray | tuple[int | None, int]] = field(default_factory=dict)
     qualifiers: dict[int, int | None] = field(default_factory=dict)
+    little_endian: bool = True
 
 
 _DIE_RE = re.compile(r"^\s*<(\d+)><([0-9a-fA-F]+)>:\s+.*\((DW_TAG_[^)]+)\)")
@@ -209,9 +237,9 @@ def parse_dwarf_info_output(output: str) -> DwarfInfo:
                     name=_clean_name(cattrs.get("DW_AT_name", "")),
                     offset=_parse_member_offset(cattrs.get("DW_AT_data_member_location", "0")),
                     type_offset=_parse_ref(cattrs.get("DW_AT_type", "")),
-                    bit_offset=_parse_int(cattrs["DW_AT_bit_offset"]) if "DW_AT_bit_offset" in cattrs else (
-                        _parse_int(cattrs["DW_AT_data_bit_offset"]) if "DW_AT_data_bit_offset" in cattrs else None
-                    ),
+                    bit_offset=_parse_int(cattrs["DW_AT_bit_offset"]) if "DW_AT_bit_offset" in cattrs else None,
+                    data_bit_offset=_parse_int(cattrs["DW_AT_data_bit_offset"]) if "DW_AT_data_bit_offset" in cattrs else None,
+                    storage_size=_parse_int(cattrs["DW_AT_byte_size"]) if "DW_AT_byte_size" in cattrs else None,
                     bit_size=_parse_int(cattrs["DW_AT_bit_size"]) if "DW_AT_bit_size" in cattrs else None,
                 )
                 st.members.append(m)
@@ -347,7 +375,7 @@ def _finalize_array_size(
 
 
 class DwarfCache:
-    CACHE_SCHEMA_VERSION = 5
+    CACHE_SCHEMA_VERSION = 6
 
     def __init__(self, cache_dir: str | None = None):
         self.cache_dir = Path(cache_dir or (Path.home() / ".mklink" / "dwarf_cache"))
@@ -487,6 +515,7 @@ def _info_to_json(info: DwarfInfo) -> dict:
         }
     return {
         "schema_version": 3,
+        "little_endian": info.little_endian,
         "structs": {k: {"name": v.name, "offset": v.offset, "size": v.size, "members": [m.__dict__ for m in v.members], "kind": v.kind} for k, v in info.structs.items()},
         "records_by_offset": {str(k): {"name": v.name, "offset": v.offset, "size": v.size, "members": [m.__dict__ for m in v.members], "kind": v.kind} for k, v in info.records_by_offset.items()},
         "enums": {k: {"name": v.name, "offset": v.offset, "size": v.size, "values": v.values} for k, v in info.enums.items()},
@@ -505,6 +534,7 @@ def _info_from_json(data: dict) -> DwarfInfo:
     if data.get("schema_version") != 3:
         raise ValueError("unsupported DWARF cache schema")
     info = DwarfInfo()
+    info.little_endian = data.get("little_endian", True)
     info.structs = {
         k: DwarfStruct(v["name"], v["offset"], v.get("size", 0), [DwarfMember(**m) for m in v.get("members", [])], v.get("kind", "struct"))
         for k, v in data.get("structs", {}).items()
