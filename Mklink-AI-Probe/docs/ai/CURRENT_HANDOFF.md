@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-16T00:03:13+08:00`
+- 更新时间：`2026-10-16T00:07:15+08:00`
 - 分支：`codex/0.3.5-fixes`
-- HEAD：`3dd8ca23原图回放源码；本提交保存同源生产Web及开发服务器共享Worker路径修正。`
+- HEAD：`7ac530f7保存3dd8ca23原图回放生产资产；本提交补入提取包/Skill通过及待关闭窗口的交接。`
 - 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
 - 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
-- 当前任务：原图回放/单按钮记录/移除旧导出已完成，GUI全量964及末次受影响145通过，3dd8ca23本机NSIS已生成，正在提取/覆盖安装资格检查和更新全局Skill。Chrome选择日志工具超时后丢失标签调试连接；用户手动打开，但画面交互仍待安装态确认。a8a99df3实机Keil编译0错0警告，RTT同会话不重启，59轮无failed/awaiting-reload；Watch同名同址零读错，但事务中1轮短暂停采恢复，保留该限制。
+- 当前任务：原图回放/单按钮记录/移除旧导出完成；GUI964全量及145末次受影响、TS/Vite通过。3dd8ca23 NSIS已构建并提取验证196Python/40Web逐文件、Windows-only PATH冻结CLI/SVD/stdioMCP/HTTP/无主机Python/正常退出；全局Skill已更新7ac530f7，2603文件及CLI/MCP通过，旧包已备份。用户关闭桌面的请求已发出但尚未答复，进程56676仍开，当前安装版a8a99df3；自己的RTT/Watch测试已停止。待覆盖安装新包并完成原图回放人工/工具复测及最终原生关闭检查。PR43已更新为准确待验收状态。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -53,7 +53,7 @@
 
 ## 下一动作
 
-1. 完成原图回放最终NSIS/Skill覆盖安装，复测原图播放/暂停/缩放/PNG及单按钮记录、Keil不变地址静默更新；记录工具限制和实机结果，更新PR43。未知烧录不自动重放，不合并发布。
+1. 等待用户关闭原生MKLink窗口后，用构建根artifacts/v035-local-3dd8ca23/install-desktop.ps1覆盖，运行qualify-package.py installed及launch-native.py，验证原图回放/单按钮记录/PNG；Chrome文件选择工具会超时并丢失标签调试连接，必要时由用户完成文件选择与视觉验证，不能宣称已验收。最终正常关闭检查、记录证据、更新PR43；未知烧录不重放、不发布。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。

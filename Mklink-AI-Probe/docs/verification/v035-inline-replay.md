@@ -23,3 +23,10 @@
 - 3dd8ca23 本机 NSIS 构建成功，目录校验 7,059 型号、2,224 FLM、4,800 外设型号。
 - 开发服务器首次选择日志时还发现共享 Worker 在 Vite 默认允许目录之外；仅开发服务器增加静态资源目录白名单。生产包 Worker 已正常构建为同源资产，继续核对提取包。
 - 已安装 a8a99df3 对原工程实际 Keil 重编译：0 错误/警告，59 轮状态采样无 failed/awaiting-reload，RTT 同会话且地址不变、不重启，双变量名字/地址未改变、读取错误 0。SuperWatch 符号更新事务中有一轮短暂停采随后恢复；验证脚本最初的“所有轮次一直 running”断言失败，不能宣称完全无间断。
+
+## 包检查与交接
+
+- NSIS 3dd8ca23 提取检查通过：196 Python/40 Web 资产与源逐文件一致；Windows-only PATH 下冻结 CLI/SVD、真实 stdio MCP、HTTP 全 Web 资源、无主机 Python、后台正常退出通过。
+- 全局 Skill 已实际更新为 7ac530f7（生产 Web 3dd8ca23），归档 2,603 文件逐个一致，离线 CLI/SVD 和真实 stdio MCP 通过，原 Skill 已备份。
+- 本地包和校验报告位于构建根 `artifacts/v035-local-3dd8ca23`；SHA256SUMS 已生成。未签名、合并或发布。
+- 原生窗口仍运行旧安装版 a8a99df3，已请用户关闭后覆盖安装。当前自建 RTT/Watch 测试均已停止；不能将提取包检查写为覆盖安装或原图回放的实页验收。
