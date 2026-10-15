@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-15T23:58:23+08:00`
+- 更新时间：`2026-10-16T00:03:13+08:00`
 - 分支：`codex/0.3.5-fixes`
-- HEAD：`9056e676后继续：SuperWatch原图日志回放、单按钮记录及取消CSV导出；新源码待构建安装。`
+- HEAD：`3dd8ca23原图回放源码；本提交保存同源生产Web及开发服务器共享Worker路径修正。`
 - 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
 - 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
-- 当前任务：按用户最新要求取消独立回放弹窗，日志直接接入原SuperWatch图表，开始/暂停/停止复用，保持缩放/光标/PNG，实时数据隔离，返回实时恢复最新通道；记录合成一个按钮。GUI全量964及后续受影响测试通过，生产构建通过。Chrome文件选择器导致调试连接丢失，用户已手动载入，画面交互尚待最终安装复测；正在重建NSIS/Skill。a8a99df3已覆盖安装并连回F103，Keil稳定等待实测仍待完成。
+- 当前任务：原图回放/单按钮记录/移除旧导出已完成，GUI全量964及末次受影响145通过，3dd8ca23本机NSIS已生成，正在提取/覆盖安装资格检查和更新全局Skill。Chrome选择日志工具超时后丢失标签调试连接；用户手动打开，但画面交互仍待安装态确认。a8a99df3实机Keil编译0错0警告，RTT同会话不重启，59轮无failed/awaiting-reload；Watch同名同址零读错，但事务中1轮短暂停采恢复，保留该限制。
 - 状态：`in_progress`
 
 ## 里程碑
