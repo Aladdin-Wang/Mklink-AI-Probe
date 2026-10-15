@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-16T00:19:31+08:00",
+  "updated_at": "2026-10-16T00:24:13+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/0.3.5-fixes",
-    "head": "12848d33后补入安装3dd8ca23实测与CI契约修正；运行代码和生产Web不变。",
+    "head": "01fc3f9a已推送，运行与生产Web3dd8ca23；本提交记录最终安装验收。",
     "remote_head": "microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。",
     "working_tree": "继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。"
   },
@@ -13,8 +13,8 @@
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
-    "status": "in_progress",
-    "current_task": "3dd8ca23已覆盖安装并通过196Python/40Web、四载荷哈希及Windows-only PATH冻结CLI/SVD/MCP/HTTP检查；原生启动，Chrome共享后端自动连接F103通过。单按钮记录GUI/Skill CLI/冻结MCP交叉操作通过，保存29637及23766行，停止后采集继续而文件不增长。Chrome实际原图日志载入、播放/暂停、进度定位、光标已通过并保存截图；用户正在协助滚轮/拖动/PNG，最终原生正常关闭待核对。CI原失败为Skill入口4574字符超限及两项旧下载发现预期；已精简Skill并更新为未绑定可枚举、存在绑定仍过滤且不切换身份，229相关通过，Skill边界补测57通过。待更新Skill归档/全局安装及验证交接。"
+    "status": "complete",
+    "current_task": "原图回放/单按钮记录/取消旧导出完成；3dd8ca23已覆盖安装，196Python/40Web与载荷哈希一致，Windows-only PATH CLI/SVD/MCP/HTTP通过。原生+Chrome实机自动连接F103、476110周期零读错/丢弃；GUI/Skill CLI/冻结MCP交叉记录29637及23766行，停止后不再写入。原图加载/播放/暂停/定位/光标、用户协助缩放后的画面与PNG实际文件、返回实时均已核对。采集停止，原生窗口/后台退出、端口释放通过。全局Skill文档精简后更新01fc3f9a，2603文件及CLI/SVD/MCP通过。CI反馈与GUI通过，后台回归仍运行，结果须另查。未合并发布。"
   },
   "milestones": [
     {
@@ -51,7 +51,7 @@
   "verification": [
     {
       "area": "0.3.5 原图回放安装验证",
-      "result": "3dd8ca23实际覆盖与196Python/40Web、冻结CLI/SVD/MCP/HTTP通过；Chrome原图加载/播放/暂停/时间定位/光标通过。GUI/Skill CLI/冻结MCP双向记录29637及23766行，停止后文件稳定。滚轮/拖动/PNG及原生最后关闭仍待完成。CI修正仅涉及Skill文档与旧测试预期，运行载荷不变。详见v035-inline-replay.md。"
+      "result": "3dd8ca23覆盖安装196Python/40Web、载荷哈希、冻结CLI/SVD/MCP/HTTP及原生启动/退出通过。Chrome原图加载/播放/暂停/定位/光标、缩放截图、158212字节PNG和返回实时通过。GUI/Skill CLI/冻结MCP双向记录29637/23766行；停止后文件稳定；F103 476110周期零读错/丢弃。全局Skill01fc3f9a，2603文件逐一匹配和CLI/MCP通过。229相关测试通过，精简后边界57通过；远端反馈/GUI通过，后台回归待结果。详见v035-inline-replay.md。"
     },
     {
       "area": "0.3.5 连接、RTT重载及下载流程",
@@ -95,8 +95,8 @@
     "编译完成不代表目标已下载：RTT地址或已选SuperWatch名字/地址/类型变化必须等用户点击重新加载才应用，保留旧布局及采集；不变时静默更新。重载同名迁移新地址，旧名消失移出采集，新名供重新选择；用户显式停止不自动恢复。无自动等待控制块重启逻辑。"
   ],
   "hardware": {
-    "state": "原下载器/F103已自动连接，使用用户原工程符号；双变量采集及两份显式日志交叉验证通过，当前原图日志暂停查看，后台采集显示暂停，记录已停止。历史HEX unknown未重放，未改固件/电压。",
-    "installer": "最新NSIS3dd8ca23已实际覆盖安装；196Python/40Web及四载荷哈希一致，Windows-only PATH冻结CLI/SVD/MCP/HTTP通过。原生运行与Web共享后端实测通过；全局Skill7ac530f7已装，入口精简后待重建同步。包和证据在MKLINK_BUILD_ROOT/artifacts/v035-local-3dd8ca23。未签名/合并/发布。",
+    "state": "本轮F103原图回放、连续记录及CLI/MCP交叉验证结束；自建采集已停，用户关闭原生窗口后进程/端口释放通过。历史HEX unknown未重放，未改固件/电压。",
+    "installer": "本机NSIS运行源/Web3dd8ca23已覆盖安装；全局Skill文档更新至01fc3f9a，Web仍3dd8ca23，2603文件匹配。提取/实装、CLI/MCP/HTTP、原生启动及正常关闭已核对；本地包/哈希/截图/日志在MKLINK_BUILD_ROOT/artifacts/v035-local-3dd8ca23。未签名/合并/发布。",
     "backups": "0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。"
   },
   "known_limits": [
@@ -110,7 +110,7 @@
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。 HPM5301组18/19永久锁定的历史状态及用户字先写/组锁最后、全部固件独立校验后才写OTP等边界见docs/ai/hpm-offline-otp-handoff.md；接手重新确认芯片，其他型号不继承验收。"
   ],
   "next_actions": [
-    "继续原图回放安装态验收：等待用户滚轮/拖动与PNG结果，返回实时核对恢复；停止自建采集后由用户关闭原生窗口，验证进程/端口退出。完成Skill文档重打包同步、memory/PR43更新及CI；禁止重放unknown烧录或发布。",
+    "最新原图回放修复已安装并完成实机/Web/CLI/MCP验收，收集用户复测反馈；核对PR43后台CI最终结果（反馈/GUI已通过），不得把草稿分支视为已发布。当前窗口/后台已关，无需继续要求用户关闭或选日志。未知烧录不重放。",
     "收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。",
     "继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。",
     "Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。",
