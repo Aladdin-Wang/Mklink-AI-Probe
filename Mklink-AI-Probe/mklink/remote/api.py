@@ -2926,6 +2926,26 @@ def create_app(
         )
         return {"status": "stopped"}
 
+    @app.get("/api/dash/superwatch/recording/status")
+    async def superwatch_recording_status():
+        return get_managers()["superwatch"].recording_status()
+
+    @app.post("/api/dash/superwatch/recording/start")
+    async def superwatch_recording_start(directory: str = Body(..., embed=True, min_length=1, max_length=4096)):
+        try:
+            return await run_in_threadpool(get_managers()["superwatch"].start_recording, directory)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, detail=str(exc)) from exc
+
+    @app.post("/api/dash/superwatch/recording/stop")
+    async def superwatch_recording_stop():
+        try:
+            return await run_in_threadpool(get_managers()["superwatch"].stop_recording)
+        except TimeoutError as exc:
+            raise HTTPException(409, detail=str(exc)) from exc
+
     @app.post("/api/dash/superwatch/add")
     async def superwatch_add(name: str = Body(..., embed=True)):
         managers = get_managers()

@@ -75,3 +75,10 @@ export async function saveBlobFile(filename: string, blob: Blob): Promise<boolea
 export function saveTextFile(filename: string, text: string): Promise<boolean> {
   return saveBlobFile(filename, new Blob([text], { type: 'text/plain;charset=utf-8' }))
 }
+
+/** Native images use a save dialog; Web images use the browser download location. */
+export function saveImageFile(filename: string, blob: Blob): Promise<boolean> {
+  if (isTauri()) return saveBlobFile(filename, blob)
+  downloadBlobFile(filename, blob)
+  return Promise.resolve(true)
+}

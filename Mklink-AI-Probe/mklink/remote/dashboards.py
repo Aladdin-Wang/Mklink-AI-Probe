@@ -1763,6 +1763,8 @@ class SuperWatchStreamManager:
         # rows, and metadata transitions. Hardware reads happen outside it.
         self._read_lock = threading.RLock()
         self._operation_lock = threading.RLock()
+        self._recording_lock = threading.Lock()
+        self._recorder = None
         self._origin_us: int | None = None
         self._stream_hub = stream_hub
         self._batch_samples = max(1, int(batch_samples))
@@ -2256,6 +2258,8 @@ class SuperWatchStreamManager:
                             future.set_exception(RuntimeError("SuperWatch stream stopped before write"))
                 self._flush_binary_batch()
                 if getattr(self, "_generation", None) is generation:
+                    if self._recorder:
+                        self._recorder.request_stop()
                     self._running = False
                     self._collecting.clear()
                     self._bridge.put({"event": "stopped"})
@@ -2274,9 +2278,38 @@ class SuperWatchStreamManager:
                 raise TimeoutError("SuperWatch worker thread is still active")
         self._running = False
         self._flush_binary_batch()
+        self.stop_recording()
         if self._thread is thread:
             self._thread = None
         return True
+
+    def recording_status(self) -> dict:
+        recorder = self._recorder
+        return recorder.status() if recorder else {"state": "idle", "active": False}
+
+    def start_recording(self, directory: str) -> dict:
+        from mklink.superwatch_recording import SuperWatchRecorder
+
+        with self._recording_lock, self._read_lock:
+            if self._recorder and self._recorder.status()['active']:
+                raise RuntimeError('SuperWatch recording is already active')
+            if not self.running or not json.loads(self._metadata_cache[1]):
+                raise RuntimeError('Start SuperWatch acquisition before recording')
+            # Exclude samples received before the user pressed Start recording.
+            self._flush_binary_batch_locked()
+            self._recorder = SuperWatchRecorder(directory)
+            return self._recorder.status()
+
+    def stop_recording(self) -> dict:
+        with self._recording_lock:
+            with self._read_lock:
+                self._flush_binary_batch_locked()
+                recorder = self._recorder
+                # Stop accepting batches at this boundary, then drain outside
+                # the acquisition lock so disk I/O cannot stall the device.
+                if recorder:
+                    recorder.request_stop()
+            return recorder.stop() if recorder else self.recording_status()
 
     def write_symbol(self, path: str, *, generation: int, value: object) -> dict:
         from mklink.symbol_catalog import decode_descriptor, encode_descriptor
@@ -2817,6 +2850,8 @@ class SuperWatchStreamManager:
         self._pending_channel_count = 0
         self._pending_started_at = None
         try:
+            if self._recorder:
+                self._recorder.append(values, times, self._latest_sample['channels'])
             if self._stream_hub is None:
                 raise RuntimeError("SuperWatch binary stream hub is unavailable")
             if sys.byteorder != "little":
@@ -2896,6 +2931,7 @@ class SuperWatchStreamManager:
             "metadata_version": metadata_version,
             "live_write_supported": self._live_write_supported,
             "write_events": write_events,
+            "recording": self.recording_status(),
             "read_cycles": self._completed_read_cycles,
             "read_drops": self._dropped_read_cycles,
             "read_errors": self._read_errors + self._stream_integrity.get('firmware_read_errors', 0),

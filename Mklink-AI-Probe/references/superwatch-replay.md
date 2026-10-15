@@ -5,10 +5,29 @@
 
 ## 操作
 
+在 SuperWatch 工具栏打开 **日志 → 开始记录**，选择后台电脑的保存目录。
+只有明确开始记录才创建文件；平时只保留有限的内存显示缓冲，不自动保存日志。
+后台将收到的采样连续写入 JSONL，不受显示暂停、页面刷新或显示缓冲区长度影响。
+点击 **停止记录** 排空待写数据并关闭文件；停止采集、断开设备或关闭后台也会完成保存。
+每段最多 100 万个数值或 32 MiB，通道变化时另起一段，可按文件编号回放。
+磁盘失败或写入队列溢出会明确显示失败，不把不完整记录报告为成功。
+
+CLI 和 MCP 控制的是同一个后台记录器：
+
+```sh
+mklink runtime call superwatch_recording_start --arguments '{"directory":"D:/logs"}'
+mklink runtime call superwatch_recording_status
+mklink runtime call superwatch_recording_stop
+```
+
+MCP 使用 `superwatch(action="recording_start", arguments={"directory":"D:/logs"})`，
+另有 `recording_status`、`recording_stop`。先连接并开始 SuperWatch 采样。
+目录必须已存在；重名文件不会覆盖。仅断开 AI 会话不会结束后台的记录。
+
 1. 点击 **导入日志**，选择本地 CSV、TXT、LOG、JSONL 或 NDJSON 文件。
 2. 导入完成后停在首个时间点。点击 **播放**；支持暂停、0.25–16 倍速和重新播放。
 3. 拖动时间轴可向前或向后跳转，跳转后保持暂停；点击播放继续。
-4. 选择 2 秒、10 秒、60 秒或全部时间窗口，也可在波形上滚轮缩放。
+4. 选择 2 秒、10 秒、60 秒或全部时间窗口，也可使用放大/缩小按钮或在波形上滚轮缩放；缩放自动暂停。
    **查看全部**会暂停并显示整段记录。
 5. 勾选左侧通道显示独立纵轴波形；左侧数值是当前时间之前最近一次记录值。
 6. 点击 **返回实时页面**或按 Escape 关闭回放并释放日志内存。

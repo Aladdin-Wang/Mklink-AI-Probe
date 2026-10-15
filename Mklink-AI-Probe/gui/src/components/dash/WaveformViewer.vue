@@ -4,6 +4,7 @@
     class="waveform-viewer"
     :class="{ 'superwatch-desktop': props.mode === 'SuperWatch' }"
   ></div>
+  <Teleport v-if="recordHost" :to="recordHost"><SuperWatchRecording @state="updateRecordingLabel" /></Teleport>
 </template>
 
 <script setup lang="ts">
@@ -17,9 +18,10 @@ import viewerUrl from '../../assets/rtt_viewer.js?url'
 import { DESKTOP_SETTINGS_STORAGE_KEY } from '../../lib/desktopSettings'
 import { language } from '../../composables/useLanguage'
 import { API_BASE } from '../../lib/runtimeEndpoint'
-import { saveTextFile } from '../../lib/downloadTextFile'
+import { saveTextFile, saveImageFile } from '../../lib/downloadTextFile'
 import { mountReplayButton } from '../../../../mklink/static/superwatch_replay.js'
 import '../../../../mklink/static/superwatch_replay.css'
+import SuperWatchRecording from './SuperWatchRecording.vue'
 
 const props = defineProps<{
   mode: 'SuperWatch' | 'VOFA'
@@ -33,6 +35,14 @@ const emit = defineEmits<{
 }>()
 
 const container = ref<HTMLDivElement>()
+const recordHost = ref<HTMLElement>()
+function updateRecordingLabel(state: string) {
+  const summary = container.value?.querySelector('.watch-log-controls summary')
+  if (!summary) return
+  summary.removeAttribute('data-i18n')
+  const en = language.value === 'en'
+  summary.textContent = (en ? 'Logs' : '日志') + (state === 'recording' ? (en ? ' · Recording' : ' · 记录中') : state === 'failed' ? (en ? ' · Error' : ' · 记录失败') : '')
+}
 const binary = useBinaryStream(
   props.mode === 'VOFA' ? 'vofa' : 'superwatch',
   { capacity: props.mode === 'VOFA' ? 10000 : 50000, channelCount: 1 },
@@ -331,11 +341,13 @@ onMounted(() => {
 
   const saveViewerFile = (filename: string, text: string) => saveTextFile(filename, text)
   ;(window as any).__MKLINK_SAVE_FILE__ = saveViewerFile
+  ;(window as any).__MKLINK_SAVE_BLOB__ = saveImageFile
 
   // 1. Inject HTML template
   el.innerHTML = buildTemplate(props.mode)
   if (props.mode === 'SuperWatch') {
     compactSuperwatchControls(el)
+    recordHost.value = el.querySelector('.watch-log-menu') as HTMLElement
     disposeReplay = mountReplayButton(el.querySelector('.watch-log-menu') as HTMLElement, { language: language.value })
   }
 

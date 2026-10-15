@@ -56,6 +56,16 @@ describe('replay controls and lifetime', () => {
     expect(element<HTMLButtonElement>('[data-action=play]').disabled).toBe(false)
     expect(element<HTMLInputElement>('[data-testid=replay-file]').value).toBe('')
   })
+  it('pauses playback and narrows the visible time window when zooming', () => {
+    const worker = upload(); loaded(worker, 60)
+    click('play')
+    expect(element('.sw-replay').dataset.playbackState).toBe('playing')
+    click('zoom-in')
+    expect(element('.sw-replay').dataset.playbackState).toBe('paused')
+    const inFlight = worker.postMessage.mock.calls.at(-1)![0]
+    worker.send({ type: 'view', id: inFlight.id, start: 0, end: 10, position: 0, channels: [] })
+    expect(worker.postMessage.mock.calls.at(-1)![0].span).toBe(5)
+  })
   it('reports parse errors and releases the worker without retaining prior data', () => {
     const worker = upload(); loaded(worker)
     worker.send({ type: 'error', message: 'Line 3: invalid timestamp' })

@@ -29,6 +29,8 @@ export function mountReplayButton(host, options = {}) {
         <label>${t('速度', 'Speed')} <select data-action="speed" disabled><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option><option>8</option><option>16</option></select> ×</label>
         <label>${t('时间窗口', 'Window')} <select data-action="span" disabled><option value="2">2 s</option><option value="10" selected>10 s</option><option value="60">60 s</option><option value="all">${t('全部', 'All')}</option></select></label>
         <button type="button" data-action="overview" disabled>${t('查看全部', 'Show all')}</button>
+        <button type="button" data-action="zoom-in" disabled>${t('放大', 'Zoom in')}</button>
+        <button type="button" data-action="zoom-out" disabled>${t('缩小', 'Zoom out')}</button>
         <output data-testid="replay-time">0.000 / 0.000 s</output>
         <span data-testid="replay-state">${t('未加载', 'No file')}</span>
       </div>
@@ -48,7 +50,7 @@ export function mountReplayButton(host, options = {}) {
 
     function status(text, error = false) { message.textContent = text; message.classList.toggle('error', error); }
     function controls(enabled) {
-      for (const name of ['play', 'restart', 'speed', 'span', 'overview']) action(name).disabled = !enabled;
+      for (const name of ['play', 'restart', 'speed', 'span', 'overview', 'zoom-in', 'zoom-out']) action(name).disabled = !enabled;
       seek.disabled = !enabled;
     }
     function renderClock() {
@@ -168,10 +170,16 @@ export function mountReplayButton(host, options = {}) {
     action('span').onchange = () => { span = action('span').value === 'all' ? Math.max(.001, metadata.duration) : Number(action('span').value); requestView(); };
     action('overview').onclick = () => { pause(); position = metadata.duration; span = Math.max(.001, metadata.duration); action('span').value = 'all'; renderClock(); requestView(); };
     seek.oninput = () => { const requested = Number(seek.value); pause(); position = requested; renderClock(); requestView(); };
+    function zoom(factor) {
+      if (!metadata) return;
+      pause(); span = Math.max(.001, Math.min(Math.max(.001, metadata.duration), span * factor));
+      action('span').value = ''; requestView();
+    }
+    action('zoom-in').onclick = () => zoom(.5);
+    action('zoom-out').onclick = () => zoom(2);
     canvas.addEventListener('wheel', event => {
       if (!metadata || event.ctrlKey) return;
-      event.preventDefault(); span = Math.max(.001, Math.min(Math.max(.001, metadata.duration), span * (event.deltaY > 0 ? 1.25 : .8)));
-      action('span').value = ''; requestView();
+      event.preventDefault(); zoom(event.deltaY > 0 ? 1.25 : .8);
     }, { passive: false });
     const observer = new ResizeObserver(() => { draw(); requestView(); }); observer.observe(wrap);
     closeDialog = () => {

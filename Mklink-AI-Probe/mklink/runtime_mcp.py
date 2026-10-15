@@ -402,11 +402,13 @@ def build_server():
 
         snapshot_select uses name, start_index, count for the same array view as GUI;
         snapshot_clear removes that shared array view. Neither starts acquisition.
+        recording_start accepts directory (existing absolute path on the backend computer).
+        recording_status/recording_stop inspect or drain the same continuous JSONL recorder as GUI.
 
         write requires path, generation from gui_call('symbol_status'), and value. It uses the existing typed
         live-write transaction. Start with empty arguments subscribes to an existing capture.
         """
-        if action not in {'status', 'items', 'values', 'snapshot', 'snapshot_select', 'snapshot_clear', 'add', 'remove', 'start', 'stop', 'pause', 'resume', 'interval', 'write'}:
+        if action not in {'status', 'items', 'values', 'snapshot', 'snapshot_select', 'snapshot_clear', 'add', 'remove', 'start', 'stop', 'pause', 'resume', 'interval', 'write', 'recording_start', 'recording_stop', 'recording_status'}:
             raise ValueError('Unsupported SuperWatch action')
         return client().call('superwatch_'+action, arguments)
 

@@ -2544,6 +2544,21 @@ describe('VOFA viewer hot path source guard', () => {
       'checkTrigger', 'cursor-a', 'cursor-b',
     ]) expect(source).toContain(token)
   })
+  it('sends PNG bytes through the native-compatible file saver', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    const saver = vi.fn().mockResolvedValue(true)
+    ;(window as any).__MKLINK_SAVE_BLOB__ = saver
+    const data = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,iVBORw0KGgo=')
+    try {
+      runtime.wrapper.element.querySelector<HTMLButtonElement>('#btn-export-png')!.click()
+      await flushPromises()
+      expect(saver).toHaveBeenCalledOnce()
+      const [name, blob] = saver.mock.calls[0]!
+      expect(name).toMatch(/\.png$/)
+      expect(blob.type).toBe('image/png')
+      expect([...new Uint8Array(await blob.arrayBuffer())]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+    } finally { data.mockRestore(); delete (window as any).__MKLINK_SAVE_BLOB__; runtime.cleanup() }
+  })
 
   it('limits collection-boundary resets to VOFA and SuperWatch binary modes', () => {
     expect(source).toContain('var IS_BINARY_WAVEFORM_MODE = IS_VOFA_MODE || IS_SUPERWATCH_MODE;')

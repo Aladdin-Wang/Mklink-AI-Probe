@@ -2781,13 +2781,22 @@ function exportBinaryHistorySnapshot(snapshot) {
 
 function exportPNG() {
   drawChart();
-  var dataURL = canvas.toDataURL('image/png');
-  var a = document.createElement('a');
-  a.href = dataURL;
-  a.download = 'jscope_chart.png';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  try {
+    var dataURL = canvas.toDataURL('image/png');
+    var bytes = Uint8Array.from(atob(dataURL.split(',')[1]), function(c) { return c.charCodeAt(0); });
+    var blob = new Blob([bytes], { type: 'image/png' });
+    if (typeof window.__MKLINK_SAVE_BLOB__ === 'function') {
+      Promise.resolve(window.__MKLINK_SAVE_BLOB__('waveform-chart.png', blob)).catch(function(error) {
+        showControlError('Save failed: ' + error.message);
+      });
+    } else {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'waveform-chart.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    }
+  } catch (error) { showControlError('Save failed: ' + error.message); }
 }
 
 // ============================================================
