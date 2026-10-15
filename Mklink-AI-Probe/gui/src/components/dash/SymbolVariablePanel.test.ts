@@ -385,12 +385,39 @@ describe('SymbolVariablePanel', () => {
       await flushPromises()
       expect(mocks.refreshStatus).toHaveBeenCalledOnce()
       expect(mocks.ensureLoaded).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('符号已重载；请确认目标上的固件与当前符号文件一致')
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('符号已重新加载', 2500)
+      expect(wrapper.find('.stale-banner').exists()).toBe(false)
       wrapper.unmount()
       await vi.advanceTimersByTimeAsync(4000)
       expect(mocks.refreshStatus).toHaveBeenCalledOnce()
     } finally {
       wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits for a reload click before applying a changed target layout', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
+    try {
+      await flushPromises()
+      mocks.refreshStatus.mockResolvedValue({ file_source_change: { sequence: 1, state: 'awaiting-reload' } })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(wrapper.get('[data-testid="reparse-symbols"]').text()).toBe('重新加载')
+      expect(mocks.reparse).not.toHaveBeenCalled()
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/reload-sources'))).toBe(false)
+      mocks.refreshStatus.mockImplementationOnce(async () => {
+        mocks.generation.value = 2
+        return { file_source_change: { sequence: 2, state: 'applied' } }
+      })
+      await wrapper.get('[data-testid="reparse-symbols"]').trigger('click')
+      await flushPromises()
+      expect(fetch).toHaveBeenCalledWith('/api/symbols/reload-sources', expect.objectContaining({ method: 'POST' }))
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('符号已重新加载', 2500)
+      expect(wrapper.get('[data-testid="reparse-symbols"]').text()).not.toContain('重新加载')
+    } finally {
+      wrapper.unmount()
+      mocks.refreshStatus.mockReset()
       vi.useRealTimers()
     }
   })
@@ -523,7 +550,7 @@ describe('SymbolVariablePanel', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="edit-gain"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('AXF 已变化')
+    expect(wrapper.text()).not.toContain('AXF 已变化')
   })
 
   it('shows a write acknowledgement without claiming verification or retrying', async () => {

@@ -423,6 +423,10 @@ class RttStreamManager(RttChannelDecoder):
         self._write_lock = threading.RLock()
         self._lifecycle_lock = threading.RLock()
 
+    def restart_options(self) -> dict:
+        """Capture settings for a source-address refresh, without old target data."""
+        return {**getattr(self, '_start_options', {}), 'encoding': self._line_assembler.encoding}
+
     @property
     def running(self) -> bool:
         return self._running and not self._stop_event.is_set()
@@ -459,7 +463,7 @@ class RttStreamManager(RttChannelDecoder):
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 0,
               duration: float = 86400, encoding: str = "utf-8",
-              channels: list[int] | None = None) -> None:
+              channels: list[int] | None = None, all_channels: bool = False) -> None:
         with self._lifecycle_lock:
             self._start_locked(
                 device,
@@ -470,12 +474,13 @@ class RttStreamManager(RttChannelDecoder):
                 duration=duration,
                 encoding=encoding,
                 channels=channels,
+                all_channels=all_channels,
             )
 
     def _start_locked(self, device, *, addr: str | None = None, channel: int = 0,
                       mode: int = 0, search_size: int = 0,
                       duration: float = 86400, encoding: str = "utf-8",
-              channels: list[int] | None = None) -> None:
+                      channels: list[int] | None = None, all_channels: bool = False) -> None:
         """Start RTT polling in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             if self.running:
@@ -495,6 +500,9 @@ class RttStreamManager(RttChannelDecoder):
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
         self._error = None
         self._startup_started = time.monotonic()
+        self._start_options = dict(addr=addr, channel=channel, channels=channels,
+                                   mode=mode, search_size=search_size, duration=duration,
+                                   encoding=encoding, all_channels=all_channels)
         with self._decode_lock:
             self._line_assembler.reset(encoding)
             self._terminal_decoder = codecs.getincrementaldecoder(
@@ -525,14 +533,32 @@ class RttStreamManager(RttChannelDecoder):
 
         def _poll():
             initialized = False
+            poll_channel = channel
             start_failure = None
             terminal_failure = None
             try:
                 start_info = device.rtt_start(
                     addr, channel=channel, mode=mode, search_size=search_size,
                     **({"channels": channels} if channels is not None else {}),
+                    **({'all_channels': True} if all_channels else {}),
                 )
                 initialized = True
+                if all_channels and isinstance(start_info, dict):
+                    discovered = start_info.get('channels') or channels or [channel]
+                    poll_channel = discovered[0]
+                    self._channel_cache.reset(self._capture_session, discovered)
+                    decoders = {ch: decoder for ch, decoder in self._channel_decoders.items()
+                                if ch in discovered}
+                    for source in discovered:
+                        if source in decoders:
+                            continue
+                        decoder = RttChannelDecoder(raw_batch_lines=self._raw_batch_lines,
+                                                    waveform_batch_samples=self._waveform_batch_samples)
+                        decoder.set_encoding(encoding)
+                        if source in self._channel_hubs:
+                            decoder._stream_hub, decoder._terminal_stream_hub = self._channel_hubs[source]
+                        decoders[source] = decoder
+                    self._channel_decoders = decoders
                 with self._write_lock:
                     if (
                         getattr(self, "_generation", None) is generation
@@ -543,7 +569,7 @@ class RttStreamManager(RttChannelDecoder):
                         # reads; hardware writes/stops retain _write_lock.
                         self._start_info = {
                             **(start_info if isinstance(start_info, dict) else {}),
-                            "channel": channel,
+                            "channel": poll_channel,
                         }
                         self._active_generation = generation
                 start_time = time.time()
@@ -560,7 +586,7 @@ class RttStreamManager(RttChannelDecoder):
                             for source, data in chunks.items():
                                 self._channel_cache.append(source, data)
                                 self.feed_channel_bytes(source, data)
-                            text = chunks.get(channel, b"")
+                            text = chunks.get(poll_channel, b"")
                         else:
                             read_bytes = getattr(device, "rtt_read_bytes", None)
                             if callable(read_bytes):
@@ -568,8 +594,8 @@ class RttStreamManager(RttChannelDecoder):
                             else:
                                 text = device.rtt_read(duration=_RTT_DELIVERY_INTERVAL)
                             chunk = text.encode("utf-8") if isinstance(text, str) else text or b""
-                            self._channel_cache.append(channel, chunk)
-                            self.feed_channel_bytes(channel, chunk)
+                            self._channel_cache.append(poll_channel, chunk)
+                            self.feed_channel_bytes(poll_channel, chunk)
                     except Exception as exc:
                         if _device_in_error_state(device) or self._start_info.get("transport") == "cdc-mux":
                             terminal_failure = exc
@@ -745,6 +771,7 @@ class RttStreamManager(RttChannelDecoder):
             "encoding": self._line_assembler.encoding,
             "line_parser": self._line_assembler.status(),
             "down_buffers": down_buffers,
+            "up_buffers": [dict(item) for item in start_info.get('up_buffers', []) if isinstance(item, dict)],
             "session": self._capture_session,
             "control_block_addr": control_block_addr,
             "startup_timings_ms": dict(start_info.get("startup_timings_ms", {})),

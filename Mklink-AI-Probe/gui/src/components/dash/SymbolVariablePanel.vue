@@ -2,8 +2,6 @@
   <aside class="symbol-panel">
     <div v-if="pinsError" class="stale-banner" role="alert">{{ pinsError }}</div>
 
-    <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
-    <div v-else-if="sourceReloaded" class="stale-banner">{{ tr('符号已重载；请确认目标上的固件与当前符号文件一致。', 'Symbols reloaded. Confirm that the target firmware matches the current symbol file.') }}</div>
     <SetupHint
       v-if="!deviceConnected"
       kind="device"
@@ -85,13 +83,15 @@
       <button
         class="icon-button"
         type="button"
-        :title="tr('重新解析符号', 'Reparse symbols')"
-        :aria-label="tr('重新解析符号', 'Reparse symbols')"
-        :disabled="catalog.reparsing.value"
+        :title="sourcePending ? tr('板上固件就绪后重新加载', 'Reload when the target firmware is ready') : tr('重新解析符号', 'Reparse symbols')"
+        :aria-label="sourcePending ? tr('重新加载', 'Reload') : tr('重新解析符号', 'Reparse symbols')"
+        :disabled="catalog.reparsing.value || reloadingSources"
+        :class="{ 'reload-button': sourcePending }"
         data-testid="reparse-symbols"
-        @click="reparseSymbols"
+        @click="sourcePending ? reloadSources() : reparseSymbols()"
       >
-        <RefreshCw :size="16" aria-hidden="true" />
+        <span v-if="sourcePending">{{ tr('重新加载', 'Reload') }}</span>
+        <RefreshCw v-else :size="16" aria-hidden="true" />
       </button>
     </div>
 
@@ -483,7 +483,6 @@ const pathAlignment = ref<{ edge: 'left' | 'right'; revision: number }>({ edge: 
 function alignPaths(edge: 'left' | 'right'): void {
   pathAlignment.value = { edge, revision: pathAlignment.value.revision + 1 }
 }
-const sourceReloaded = ref(false)
 const manualAddOpen = ref(false)
 const manualPath = ref('')
 const manualAdding = ref(false)
@@ -907,6 +906,20 @@ async function writeValue(symbol: SymbolDescriptor): Promise<void> {
   }
 }
 
+const sourcePending = ref(false)
+const reloadingSources = ref(false)
+async function reloadSources(): Promise<void> {
+  reloadingSources.value = true
+  try {
+    await request('/api/symbols/reload-sources', { method: 'POST' })
+    await refreshSourceStatus()
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+  } finally {
+    reloadingSources.value = false
+  }
+}
+
 async function reparseSymbols(): Promise<void> {
   try {
     const summary = await catalog.reparse()
@@ -929,27 +942,38 @@ function formatValue(value: number | boolean | undefined): string {
 let statusTimer: ReturnType<typeof setInterval> | undefined
 let statusBusy = false
 let disposed = false
+let lastSourceError = 0
 async function refreshSourceStatus(): Promise<void> {
   if (disposed || statusBusy || !props.deviceConnected || !props.symbolLoaded) return
   statusBusy = true
   try {
     const previousGeneration = catalog.generation.value
-    await catalog.refreshStatus()
+    const status = await catalog.refreshStatus()
     if (disposed) return
+    const change = status?.file_source_change
+    sourcePending.value = change?.state === 'awaiting-reload' || change?.state === 'failed'
+    if (change?.error && change.sequence !== lastSourceError) {
+      lastSourceError = change.sequence
+      toast.error(tr('符号重载失败：', 'Symbol reload failed: ') + change.error)
+    }
     const watchList = await request('/api/dash/superwatch/items')
     if (disposed) return
     if (Array.isArray(watchList.items)) {
       const next = new Set<string>(watchList.items.map((item: { name: string }) => item.name))
       if (next.size !== selected.value.size || [...next].some(path => !selected.value.has(path))) {
+        for (const path of selected.value) {
+          if (!next.has(path)) emit('selection-removed', path)
+        }
         selected.value = next
         await refreshSelectedDescriptors()
       }
     }
     if (catalog.generation.value !== previousGeneration) {
-      sourceReloaded.value = true
+      toast.success(tr('符号已重新加载', 'Symbols reloaded'), 2500)
       editing.value = null
       for (const path of Object.keys(writeSuccess)) delete writeSuccess[path]
       await loadWorkspace()
+      await refreshSelectedDescriptors()
       const search = query.value.trim()
       if (search) {
         const requestId = ++searchRequest
@@ -1026,6 +1050,7 @@ watch(tree, roots => {
 .panel-toolbar .form-input { min-width: 0; flex: 1; }
 .icon-button { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); background: transparent; color: var(--fg); cursor: pointer; }
 .icon-button:disabled { color: var(--muted); cursor: default; }
+.icon-button.reload-button { flex-basis: auto; width: auto; padding: 0 8px; white-space: nowrap; color: var(--accent); }
 .manual-add-row { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .manual-add-row .form-input { min-width: 0; flex: 1; }
 .panel-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }

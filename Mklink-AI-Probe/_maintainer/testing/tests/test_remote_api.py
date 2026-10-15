@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from mklink.dwarf_parser import DwarfArray, DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
 from mklink.remote.api import BrowserSessionLease, _project_root_drives, create_app
@@ -195,7 +196,7 @@ def test_flash_failure_is_request_scoped_and_releases_lease(tmp_path):
         assert app.state.mklink_state["resource_manager"].get_status() == {}
 
 
-def test_source_reload_stops_dependents_before_parsing(tmp_path):
+def test_source_reload_does_not_stop_unrelated_idle_managers(tmp_path):
     import os
     from mklink.remote.dashboards import get_managers
     device, axf = _connected_symbol_device(tmp_path)
@@ -213,7 +214,7 @@ def test_source_reload_stops_dependents_before_parsing(tmp_path):
     with patch("mklink.remote.dashboards.stop_bridge_dashboards", side_effect=lambda **kw: order.append("stop") or ["rtt"]), patch.object(get_managers()["superwatch"], "_runtime", None), patch("mklink.project_config.ensure_rtt_config_updated", return_value={"rtt_addr": "0x20000020"}):
         asyncio.run(app.state.check_file_sources())
         asyncio.run(app.state.check_file_sources())
-    assert order == ["stop", "parse"]
+    assert order == ["parse"]
     assert app.state.mklink_state["file_source_change"]["rtt_addr"] == "0x20000020"
 
 
@@ -225,7 +226,7 @@ def test_shared_source_reload_defers_without_losing_changes(tmp_path, monkeypatc
     app = create_app(auth_token=None, project_root=str(tmp_path))
     app.state.mklink_state['device'] = device
     control = install_runtime(app, {'port': 8765, 'token': 'fixture', 'instance_id': 'fixture'})
-    active = ['rtt']
+    active = ['systemview']
     monkeypatch.setattr('mklink.remote.dashboards.active_bridge_dashboards', lambda: list(active))
     order = []
     def parse(*args, **kwargs):
@@ -239,7 +240,6 @@ def test_shared_source_reload_defers_without_losing_changes(tmp_path, monkeypatc
         await app.state.check_file_sources()
         event = dict(app.state.mklink_state['file_source_change'])
         assert event['state'] == 'deferred' and event['pending']
-        control.sessions.clear()
         await app.state.check_file_sources()
         assert app.state.mklink_state['file_source_change']['sequence'] == event['sequence']
         active.clear()
@@ -257,7 +257,10 @@ def test_shared_source_reload_defers_without_losing_changes(tmp_path, monkeypatc
         assert applied['state'] == 'applied' and not applied['pending']
         assert applied['sequence'] != event['sequence']
         await app.state.check_file_sources()
-        assert order == ['parse']  # Shared reload never implicitly stops another acquisition.
+        assert order == ['parse']
+        assert 'ai' in control.sessions  # Existing clients do not block automatic refresh.
+        with pytest.raises(HTTPException, match='Symbols changed'):
+            control.validate_session('ai')
         assert control.last_operation['path'] == 'reload-file-sources'
     with patch('mklink.remote.dashboards.stop_bridge_dashboards', side_effect=lambda **kw: order.append('stop') or []), patch.object(get_managers()['superwatch'], '_runtime', None), patch('mklink.project_config.ensure_rtt_config_updated', return_value={'rtt_addr': '0x20000020'}):
         asyncio.run(scenario())

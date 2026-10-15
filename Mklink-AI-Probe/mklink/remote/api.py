@@ -714,6 +714,7 @@ async def stop_dashboard_manager_transaction(
         shared = active_operation.get()
         if shared:
             shared[0].require_acquisition_control(dashboard, shared[1])
+        manager._explicit_stop_version = getattr(manager, '_explicit_stop_version', 0) + 1
         await asyncio.to_thread(
             stop_dashboard_manager, state, dashboard, manager,
         )
@@ -989,9 +990,10 @@ def create_app(
         elf_backend: str | None = None,
         *,
         error_status: int = 500,
+        automatic: bool = False,
     ) -> dict:
         runtime = getattr(app.state, 'shared_runtime', None)
-        if runtime is not None:
+        if runtime is not None and not automatic:
             runtime.require_symbol_change()
         device = _state.get("device")
         if not device or not device.connected:
@@ -1088,14 +1090,16 @@ def create_app(
     from mklink.source_monitor import SourceMonitor
     source_monitor = SourceMonitor()
     source_monitor_task = None
+    reload_captures = {}
     _state["file_source_change"] = None
 
-    async def check_file_sources():
+    async def check_file_sources(*, apply: bool = False, admitted: bool = False):
         device = _state.get("device")
         if device is None or not device.connected:
             return
         if source_monitor.device is not device:
             _state["file_source_change"] = None
+            reload_captures.clear()
         project = load_project_info(_state["project_root"]) or {}
         changed = await run_in_threadpool(source_monitor.changed, device, project)
         pending = dict(source_monitor.pending)
@@ -1104,43 +1108,106 @@ def create_app(
         previous = _state['file_source_change'] or {}
         # A failed parse is not retried every second against identical content.
         # New content or a newly selected device permits another attempt.
-        if not changed and previous.get('state') == 'failed':
+        if not apply and not changed and previous.get('state') in {'failed', 'awaiting-reload'}:
             return
         event = {'sequence': previous.get('sequence', time.time_ns()),
                  'files': [Path(path).name for path in pending], 'pending': True}
 
         async def reload_sources():
-            event['state'] = 'reloading'
-            async with _exclusive_probe_control("reload-file-sources") as (active, stopped):
-                if active is not device:
+            from contextlib import AsyncExitStack
+            from mklink.remote.dashboards import active_bridge_dashboards
+            from mklink.project_config import ensure_rtt_config_updated
+            async with AsyncExitStack() as stack:
+                # Admission serializes target operations; attachment must also
+                # finish before publishing a new symbol identity. Existing SDK
+                # sessions remain stale and cannot write through the new layout.
+                if runtime is not None:
+                    if runtime.attach_lock.locked():
+                        raise HTTPException(409, 'A client is attaching')
+                    await stack.enter_async_context(runtime.attach_lock)
+                    runtime.require_identity()
+                await stack.enter_async_context(_dashboard_start_lock(_state))
+                await stack.enter_async_context(_async_target_lock())
+                if device is not _state.get('device') or not device.connected:
                     return
-                event["stopped"] = stopped
-                if getattr(device, "_axf", None):
+                if set(active_bridge_dashboards()) - {'rtt', 'superwatch'}:
+                    raise HTTPException(409, 'Another target capture is active')
+                event['state'] = 'reloading'
+                manager = get_managers()['rtt']
+                watch_manager = get_managers()['superwatch']
+                for name, capture in (('rtt', manager), ('superwatch', watch_manager)):
+                    if capture.running and name not in reload_captures:
+                        paused = capture.paused if name == 'rtt' else not capture._collecting.is_set()
+                        reload_captures[name] = (getattr(capture, '_explicit_stop_version', 0), paused)
+                def resume_requested(name, capture):
+                    saved = reload_captures.get(name)
+                    return bool(saved and saved[0] == getattr(capture, '_explicit_stop_version', 0))
+                previous_rtt = manager.get_status()
+                config = await run_in_threadpool(
+                    ensure_rtt_config_updated, _state['project_root'],
+                    source_path=getattr(device, '_axf', None), persist=False)
+                address = (config or {}).get('rtt_addr')
+                from mklink.project_config import load_rtt_config
+                old_address = (previous_rtt.get('control_block_addr')
+                               or manager.restart_options().get('addr')
+                               or (load_rtt_config(_state['project_root']) or {}).get('rtt_addr'))
+                address_changed = bool(old_address) and (
+                    not address or int(address, 0) != int(old_address, 0))
+                catalog = getattr(device, 'symbol_catalog', None)
+                if not apply:
+                    from mklink.symbol_catalog import rebind_paths
+                    watch = get_managers()['superwatch']
+                    paths = [item.name for item in getattr(watch._runtime, 'items', ())
+                             if getattr(item, 'source', 'ram') == 'ram']
+                    paths.extend(item.name for item in (watch._array_snapshot or {}).get('items', ()))
+                    summary = None
+                    if paths and catalog is not None and await run_in_threadpool(catalog.is_stale):
+                        preview = await run_in_threadpool(device.preview_axf_catalog)
+                        summary = rebind_paths(catalog, preview, paths)
+                    if address_changed or (summary and (summary.updated or summary.removed)):
+                        event.update(state='awaiting-reload', rtt_addr=address, rtt_changed=address_changed)
+                        return
+                await run_in_threadpool(ensure_rtt_config_updated, _state['project_root'],
+                                        source_path=getattr(device, '_axf', None))
+                restart = None
+                if ((address_changed and previous_rtt['running']) or
+                        (apply and not previous_rtt['running'] and resume_requested('rtt', manager))):
+                    options = {**manager.restart_options(), 'addr': address, 'mode': 0, 'search_size': 0}
+                    restart = lambda: manager.start(device, **options)
+                    # Retain ownership/subscriptions during this automatic
+                    # transition, and wait for the old worker before rebinding.
+                    await run_in_threadpool(stop_dashboard_manager, _state, 'rtt', manager)
+                if getattr(device, '_axf', None):
                     catalog = getattr(device, 'symbol_catalog', None)
-                    # An explicit GUI parse may already have loaded the new content.
                     if catalog is None or await run_in_threadpool(catalog.is_stale):
-                        await _reparse_active_symbols()
-                from mklink.project_config import ensure_rtt_config_updated
-                rtt = await run_in_threadpool(
-                    ensure_rtt_config_updated, _state["project_root"],
-                    source_path=getattr(device, "_axf", None),
-                )
-                event["rtt_addr"] = (rtt or {}).get("rtt_addr")
-                event["message"] = "AXF/MAP 内容已变化并重载；采集已停止，请确认目标固件后重新启动"
+                        result = await _reparse_active_symbols(automatic=True)
+                        event['rebind'] = result.get('rebind', {})
+                        event['symbols_reloaded'] = True
+                if restart is not None:
+                    if not address:
+                        raise ValueError('RTT symbol is absent from the rebuilt firmware')
+                    await _start_dashboard_manager_transaction(_state, 'rtt', manager, restart)
+                if apply and not watch_manager.running and resume_requested('superwatch', watch_manager):
+                    await _start_dashboard_manager_transaction(_state, 'superwatch', watch_manager,
+                                                              lambda: watch_manager.start(device))
+                    if reload_captures['superwatch'][1]:
+                        watch_manager.pause()
+                event.update(rtt_addr=address, rtt_changed=address_changed,
+                             rtt_restarted=restart is not None, pending=False, state='applied')
                 source_monitor.acknowledge(device, pending)
-                event.update(pending=False, state='applied')
+                reload_captures.clear()
 
         try:
             runtime = getattr(app.state, 'shared_runtime', None)
-            if runtime is not None:
-                await runtime.run_operation('reload-file-sources', reload_sources, configuration=True)
+            if runtime is not None and not admitted:
+                await runtime.run_operation('reload-file-sources', reload_sources)
             else:
                 await reload_sources()
         except HTTPException as error:
             if error.status_code != 409 or event.get('state') == 'reloading':
                 event.update(state='failed', error=str(error.detail))
             else:
-                event.update(state='deferred', message='符号文件已变化，等待停止采集、结束客户端会话及当前任务后重载')
+                event.update(state='deferred')
         except Exception as error:
             event.update(state='failed', error=str(error))
             logger.warning("File source reload failed: %s", error)
@@ -1151,6 +1218,15 @@ def create_app(
         _state['file_source_change'] = event
 
     app.state.check_file_sources = check_file_sources
+
+    @app.post('/api/symbols/reload-sources')
+    async def reload_file_sources():
+        # Runtime middleware already holds operation admission for this route.
+        await check_file_sources(apply=True, admitted=True)
+        event = _state.get('file_source_change') or {}
+        if event.get('state') in {'failed', 'deferred'}:
+            raise HTTPException(409, event.get('error') or 'Another operation is active; retry after it finishes')
+        return event
 
     async def monitor_file_sources():
         while True:
@@ -2493,6 +2569,7 @@ def create_app(
         addr: str | None = Body(default=None),
         channel: Annotated[StrictInt, Body()] = 0,
         channels: list[StrictInt] | None = Body(default=None),
+        all_channels: StrictBool = Body(default=False),
         mode: Annotated[StrictInt, Body()] = 0,
         search_size: Annotated[StrictInt, Body()] = 0,
         encoding: str = Body(default="utf-8"),
@@ -2551,6 +2628,7 @@ def create_app(
                 search_size=search_size,
                 encoding=encoding,
                 channels=channels,
+                all_channels=all_channels,
             ),
         )
         return {"status": status, "stopped": stopped}
@@ -3830,6 +3908,7 @@ def create_app(
             "total": len(catalog.items),
             "container_count": len(catalog.containers),
             "truncated_roots": list(catalog.truncated_roots),
+            "file_source_change": _state.get('file_source_change'),
         }
 
     @app.get("/api/symbols/catalog")

@@ -306,6 +306,7 @@ export interface SymbolCatalogPage {
 }
 
 export interface SymbolCatalogStatus {
+  file_source_change?: { sequence: number, state?: string, error?: string } | null
   loaded: boolean
   generation: number
   axf_path: string
