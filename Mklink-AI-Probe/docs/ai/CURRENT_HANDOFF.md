@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-15T13:45:06+08:00`
+- 更新时间：`2026-10-15T14:24:14+08:00`
 - 分支：`codex/0.3.5-fixes`
-- HEAD：`bdd3c3e3 0.3.5 version/notes and local NSIS; 53b4ebb2 tracked Web and Skill source; subsequent installation evidence commit.`
-- 远端 HEAD：`codex/0.3.5-fixes pushed; PR43 draft against microkeen/main.`
-- 工作树：0.3.5 repair branch locally packaged and overwrite-installed; global Skill updated; no main merge or publication.
-- 当前任务：按用户要求完成0.3.5本机测试包及覆盖安装：bdd3c3e3版本/说明，53b4ebb2生产Web及Skill归档。949GUI、26版本/runtime/更新器通过；NSIS退出0，安装登记0.3.5，四载荷哈希一致。冻结195Python/38Web源码一致，Windows-only PATH下CLI/SVD/MCP/HTTP/原生及真实Edge通过；界面v0.3.5 · bdd3c3e3ef32，正常关闭无进程/端口残留。全局Skill实际更新0.3.5，2600文件逐一核对、pip元数据/CLI/MCP通过，旧版本备份保留。重新打开常用安装版供用户复测；本轮未操作目标硬件。用户电脑一次性ucrtbase.dll解压拒绝重启后恢复，未推测性修改。未签名更新、合并或发布。见v035-local-install.md。
+- HEAD：`交接更新前 HEAD 75cc3106；应用版本/本机NSIS源 bdd3c3e3，生产Web与Skill归档源 53b4ebb2。后续文档提交不改变已安装载荷。`
+- 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
+- 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
+- 当前任务：本会话收尾交接；用户将开启新会话，继续现有0.3.5分支修复。0.3.5本机测试NSIS已覆盖安装，全局Skill已同步，用户待复测；应用显示v0.3.5 · bdd3c3e3ef32。已包含SuperWatch环境时钟、System变量/位域、Pack外设同步及手动SVD修复。949GUI、26版本/runtime/更新器及实际安装/冻结后端/原生WebView/Edge检查通过，见docs/verification/v035-local-install.md；此前V3/F103真机证据见专项报告，本轮打包未操作目标硬件。客户ucrtbase.dll临时解压拒绝在重启后恢复，按用户要求暂不追加修复；不能据此判定软件绝无问题。未签名、合并或正式发布。
 - 状态：`complete`
 
 ## 里程碑
@@ -23,9 +23,9 @@
 
 ## 验证证据
 
-- **0.3.5 本机测试包与覆盖安装**：bdd3c3e3版本和NSIS，53b4ebb2 Web/Skill；949GUI、26版本/启动/更新器通过。NSIS退出0，登记0.3.5，四载荷哈希一致；195Python/38Web与源一致；Windows-only PATH冻结CLI/SVD/MCP/HTTP、原生WebView及Edge通过，版本说明和手动SVD可见。正常关闭进程/endpoint/8765释放。全局Skill0.3.5、2600文件一致及CLI/MCP通过，旧Skill备份。无新硬件操作，未签名/合并/发布，详见docs/verification/v035-local-install.md。
-- **0.3.5 Pack外设同步与手动SVD**：d5a65482：非空SVD索引随Pack状态/索引/工程配置变化刷新；聚焦重查/显式刷新；浏览器SVD校验持久化、桌面本地路径。138Python、33GUI、生产构建通过；真实Edge+HTTP在线导入后原查询找到型号、手动文件选择显示12项、错误XML保留当前配置、重载恢复均通过。离线夹具不访问硬件；未实装新桌面或更新全局Skill，详见docs/verification/v035-peripheral-import.md。
-- **0.3.5 位域解析和整变量曲线**：62faad0e：客户ELF815→872标量叶，gSystemState6成员256模式1536比较通过，System23成员。旧MSB offset与data_bit_offset分离、显式存储宽度、cache6、位域只读、搜索generation刷新。450项Python通过，后加2个文本解析用例所在15项通过，共452覆盖；53GUI、TS/生产构建通过。V3/F103原工程Keil编译/烧录验证通过；15路一个8字节块、30MHz，1ms12343/50us245540/50us272200浏览器行全部一致、各256状态、signed -16..15；最后序号含元数据0缺口，读/CRC/固件/队列丢弃0、真实位域曲线通过。所有会话释放，测试固件保留；未改下载器固件/供电。见docs/verification/v035-dwarf-bitfields.md；新位域尚未打包安装。 旧/新生产GUI对照确认手动重解析未刷新不变查询的独立bug；旧2叶、新29叶，后台均System23，已补普通根回归。
+- **0.3.5 本机测试包与覆盖安装**：bdd3c3e3版本和NSIS，53b4ebb2 Web/Skill；949GUI、26版本/启动/更新器通过。NSIS退出0，登记0.3.5，四载荷哈希一致；195Python/38Web与源一致；Windows-only PATH冻结CLI/SVD/MCP/HTTP、原生WebView及Edge通过，版本说明和手动SVD可见。正常关闭进程/endpoint/8765释放。全局Skill0.3.5、2600文件一致及CLI/MCP通过，旧Skill备份。无新硬件操作，未签名/合并/发布，详见docs/verification/v035-local-install.md。 交接前75cc3106的shared-runtime-contract、shared-gui-contract、feedback-contract均成功；新文档提交的CI须按新HEAD另查。
+- **0.3.5 Pack外设同步与手动SVD**：d5a65482：非空SVD索引随Pack状态/索引/工程配置变化刷新；聚焦重查/显式刷新；浏览器SVD校验持久化、桌面本地路径。138Python、33GUI、生产构建通过；真实Edge+HTTP在线导入后原查询找到型号、手动文件选择显示12项、错误XML保留当前配置、重载恢复均通过。离线夹具不访问硬件；该专项当时未实装；后续已随0.3.5完成桌面覆盖安装和全局Skill更新，详见docs/verification/v035-peripheral-import.md。
+- **0.3.5 位域解析和整变量曲线**：62faad0e：客户ELF815→872标量叶，gSystemState6成员256模式1536比较通过，System23成员。旧MSB offset与data_bit_offset分离、显式存储宽度、cache6、位域只读、搜索generation刷新。450项Python通过，后加2个文本解析用例所在15项通过，共452覆盖；53GUI、TS/生产构建通过。V3/F103原工程Keil编译/烧录验证通过；15路一个8字节块、30MHz，1ms12343/50us245540/50us272200浏览器行全部一致、各256状态、signed -16..15；最后序号含元数据0缺口，读/CRC/固件/队列丢弃0、真实位域曲线通过。所有会话释放，测试固件保留；未改下载器固件/供电。见docs/verification/v035-dwarf-bitfields.md；该专项当时未打包，后续已随0.3.5覆盖安装并更新Skill。 旧/新生产GUI对照确认手动重解析未刷新不变查询的独立bug；旧2叶、新29叶，后台均System23，已补普通根回归。
 - **0.3.5 SuperWatch环境时钟差异**：默认时钟与注入时钟、正负34.8秒偏差、无batch_time、1秒边界和64批队列回归；Python3.11.16 152通过，Python3.14.5 392通过。V3/F103单float、30MHz、每组约10秒：1us 261664/259304Hz，50us 21685/21676Hz；四组浏览器与后台丢弃0。详见docs/verification/v035-superwatch-clock.md。 另107项分发/runtime/MCP通过、1项可选hil_core跳过；GUI206通过。195源码/38Web资源及冻结方法字节码一致。Skill/冻结MCP各测1us/50us零缺口丢弃；Windows-only PATH原生WebView35秒9230741读零错误/丢弃，关闭窗口后台正常退出。首次UAC取消，用户要求重试后NSIS退出0；4安装载荷哈希一致，已安装MCP/真实Edge两组约262k/20k零缺口丢弃，原生窗口和后台正常退出。运行代码75a73a5a三个PR CI通过；最终文档头需另核对CI。
 - **0.3.4 正式发布与本地升级**：最终源a8fd3fab0403；正式NSIS176582092字节，实装载荷哈希匹配；冻结CLI/MCP/38 Web文件/原生窗口及退出通过。F103双探针固定后台、采集中24写应答、5766周期零读错误通过；SystemView54字节仅证生命周期。三平台native CI38144587775、五份签名实际验签、17附件匿名下载及三渠道索引、本地Skill逐文件/CLI/MCP通过。见v034-release-handoff.md，早期准备与体积审计证据仍保留原报告。
 - **0.3.4 明确断开与切换自动收尾**：源34834d08/5f4b9728，协议52，生产Web已构建。830项相关Python通过，随后队列/SDK115、最后迟到请求71通过；87项GUI/TypeScript/构建通过。V3/F103原ELF、30MHz/1ms、RTT+Watch双AI订阅直接断开成功；共享AI下采集中切到第二只、旧会话拒绝，AI断开和SDK A→B→A均保持后台身份。最终代码再次完整真机复核通过且读错误0。两个真实页面自动同步断开/切换，额外页已关。SystemView短程54字节/0解码事件，AI断开成功，仅证明生命周期不宣称解码性能。异步烧录和迟到请求用确定性夹具覆盖，未中断实物烧录。见v034-explicit-connection-control.md。
@@ -47,13 +47,13 @@
 
 ## 真机环境
 
-- **state**：2026-10-15 V3/F103：原Keil工程增加位域测试并下载Verify OK；源62faad0e生产Web/共享SDK15路、一个8字节块完成三组逐行验证。测试固件仍运行，全部采集/浏览器/SDK后台退出，runtime status为空；未改下载器固件/供电。此前时钟修复分发实机证据见v035-superwatch-clock.md。
+- **state**：历史真机验证：V3/F103原Keil工程位域测试下载Verify OK；62faad0e生产Web/共享SDK15路、一个8字节块完成三组逐行验证，测试固件保留；当时全部采集/SDK后台退出，未改下载器固件/供电。最后安装验证后已重新打开常用桌面供用户测试，最后观察为后台正常、MCU未连接；不能把此前runtime为空当作当前状态。后续接硬件前重新确认设备身份、占用及用户当前操作，不自动中断其测试。
 - **installer**：用户明确授权后已实际覆盖安装0.3.5本机测试NSIS，源bdd3c3e3、生产Web53b4ebb2。退出0，四载荷哈希一致；冻结195Python/38Web一致，Windows-only PATH原生/HTTP/MCP及正常退出通过。全局Skill也实际更新0.3.5、2600文件一致、CLI/MCP通过；备份在构建根artifacts/v035-local-bdd3c3e3/skill-backups。用户待复测，未正式发布。
 - **backups**：原Git根.build/artifacts/v033-official保存17正式文件、archive-manifest及qualification（含候选实装/F103、正式冻结/签名/渠道/Skill证据）；旧0.3.2正式归档及用户备份保持。F盘保留共享缓存；联接测试目录和旧安装器占用文件不强删。
 
 ## 下一动作
 
-1. 用户复测已安装0.3.5桌面及Skill（既有AI/MCP重载生效），重点时钟吞吐/丢弃、System与位域曲线、Pack导入和手动SVD。审查PR43及最终CI；客户原电脑需升级验证。合并和正式签名/发布仍需授权，未完成全量发布平台门禁。
+1. 新会话进入现有0.3.5工作树，先读本交接、校验memory、检查分支/改动并fetch匹配远端；继续PR43。优先按用户新复测反馈修复：SuperWatch吞吐/丢弃、System/位域曲线、Pack导入和手动SVD，客户原电脑仍待升级确认。既有AI/MCP需重载才能用新Skill。不因交接重复安装或操作硬件；后续代码变更按影响重新验证。正式合并/签名/发布仍需授权。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史联接/占用目录留人工处理。
@@ -72,4 +72,8 @@
 
 ## 延续协议
 
-- 交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。
+- 新会话固定继续 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe 的 codex/0.3.5-fixes；读取该目录AGENTS.md和本交接，运行 python scripts/ai_memory.py validate，核对 git status、log、worktree及远端。不要从原0.3.4目录另起修复分支。
+- 区分源码与安装态：桌面 D:/Program Files/Mklink AI Probe；全局Skill C:/Users/akqbd/.codex/skills/mklink-ai-probe；本机测试包、哈希、安装证据及旧Skill备份在 F:/MKLink-Build/artifacts/v035-local-bdd3c3e3。版本0.3.5，Web build bdd3c3e3ef32；后续文档提交不会更新已安装二进制。
+- 修复索引：docs/verification/v035-superwatch-clock.md、v035-dwarf-bitfields.md、v035-peripheral-import.md；安装索引v035-local-install.md。真机、离线夹具、安装验证分开解释，不能把本地短测当客户环境验收。
+- 客户启动故障仅确认PyInstaller解压ucrtbase.dll时Permission denied，重启后恢复；未定位权限/杀软/占用的具体来源，按用户意见暂不做推测性修复。若再现，结合新startup/runtime日志复查。
+- 仅继续修复和验证；PR43仍为草稿，未授权合并或正式发布。遵循AGENTS提交推送任务分支、更新memory并render/validate；详细历史保留docs/verification，敏感日志/硬件标识及本机产物不提交。
