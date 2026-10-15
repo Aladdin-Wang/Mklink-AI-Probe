@@ -32,6 +32,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'latest-values': [values: Record<string, number>]
+  'replay-channels': [channels: string[] | null]
 }>()
 
 const container = ref<HTMLDivElement>()
@@ -71,6 +72,7 @@ function requestLatestVisibleRange(interactive = false): void {
     return
   }
   const viewer = (window as any).__waveformViewers?.[props.mode]
+  if (viewer?.isReplaying?.()) return
   const range = viewer?.getBinaryVisibleRange?.()
   if (!range) return
   const { start, end, pixelWidth } = range
@@ -132,7 +134,15 @@ function applyVofaChannels(channels: readonly Record<string, unknown>[]): void {
 
 function applyHiddenChannels(): void {
   const names = [...(props.hiddenChannels ?? [])].sort()
-  ;(window as any).__waveformViewers?.[props.mode]?.setHiddenChannels?.(names)
+  const viewer = (window as any).__waveformViewers?.[props.mode]
+  if (viewer?.isReplaying?.()) viewer.setReplayHiddenChannels?.(names)
+  else viewer?.setHiddenChannels?.(names)
+}
+
+function onReplay(event: Event) {
+  const detail = (event as CustomEvent).detail
+  emit('replay-channels', detail.channels)
+  emit('latest-values', detail.values)
 }
 
 function stopArraySnapshotPolling(): void {
@@ -247,6 +257,7 @@ function onVofaStreamState(event: Event): void {
 
 watch(() => binary.waveformBatch.value, batch => {
   if (!batch) return
+  if ((window as any).__waveformViewers?.[props.mode]?.isReplaying?.()) return
   pendingBatch = batch
   if (
     props.mode === 'SuperWatch'
@@ -277,6 +288,7 @@ watch(() => binary.waveformBatch.value, batch => {
 
 watch(() => binary.waveformSummary?.value, summary => {
   if (!summary || props.mode !== 'SuperWatch') return
+  if ((window as any).__waveformViewers?.SuperWatch?.isReplaying?.()) return
   const values = new Float32Array(summary.latestValues)
   if (summary.channelCount === vofaChannels.length && values.length === summary.channelCount) {
     const latest: Record<string, number> = {}
@@ -338,6 +350,7 @@ watch([
 onMounted(() => {
   if (!container.value) return
   const el = container.value
+  el.addEventListener('mklink:replay', onReplay)
 
   const saveViewerFile = (filename: string, text: string) => saveTextFile(filename, text)
   ;(window as any).__MKLINK_SAVE_FILE__ = saveViewerFile
@@ -379,6 +392,7 @@ watch(language, value => {
 })
 
 onUnmounted(() => {
+  container.value?.removeEventListener('mklink:replay', onReplay)
   disposeReplay?.()
   disposed = true
   stopVofaStatusPolling()
@@ -414,10 +428,7 @@ function compactSuperwatchControls(el: HTMLElement): void {
   const logs = document.createElement('details')
   logs.className = 'watch-log-controls'
   logs.innerHTML = '<summary data-i18n="logs">日志</summary><div class="watch-log-menu"></div>'
-  const exportButton = el.querySelector('#btn-export-csv')!
-  exportButton.setAttribute('data-i18n', 'export_sample_log')
-  exportButton.textContent = '导出采样日志'
-  logs.querySelector('.watch-log-menu')!.append(exportButton)
+  el.querySelector('#btn-export-csv')?.remove()
   actions.append(logs)
   const trigger = el.querySelector('#trigger-toolbar')!
   const dialog = document.createElement('dialog')

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 // The same ES module is used by the packaged standalone page and Vite Worker.
 // @ts-ignore JavaScript runtime module with test-only exports.
-import { ReplayParser, parseReplayFile, replayView, csvCells } from '../../../mklink/static/superwatch_replay_data.js'
+import { ReplayParser, parseReplayFile, replayView, replayRange, csvCells } from '../../../mklink/static/superwatch_replay_data.js'
 
 function parse(text: string) {
   const parser = new ReplayParser()
@@ -10,6 +10,11 @@ function parse(text: string) {
 }
 
 describe('SuperWatch file replay', () => {
+  it('lets the original paused chart inspect later history while playback clips at its timestamp', () => {
+    const data = parse('timestamp,a\n0,1\n5,99\n10,3\n')
+    expect(replayRange(data, 4, 10, 1, 800, ['a'], false).channels[0].points).toEqual([[5, 99], [10, 3]])
+    expect(replayRange(data, 4, 10, 1, 800, ['a'], true).channels[0].points).toEqual([])
+  })
   it.each([
     ['[2026-10-02 00:00:00.000] gain=1', '[2026-10-02 00:00:00.100] gain=2'],
     ['{"_t":0,"gain":1}', '{"_t":0.1,"gain":2}'],

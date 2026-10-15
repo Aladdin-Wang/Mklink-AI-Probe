@@ -1,11 +1,18 @@
 <template>
   <div ref="workspace" class="superwatch-workspace" :class="{ focused: focusMode }" :style="{ gridTemplateColumns: `${panelWidth}px 5px minmax(0, 1fr)` }">
     <div class="watch-catalog-pane">
-      <div class="watch-source-tabs">
+      <div v-if="replayChannels" class="replay-catalog">
+        <strong>{{ tr('日志通道', 'Log channels') }}</strong>
+        <label v-for="name in replayChannels" :key="name">
+          <input type="checkbox" :checked="!replayHidden.has(name)" @change="setReplayVisibility(name, ($event.target as HTMLInputElement).checked)">
+          <span>{{ name }}<small>{{ latestValues[name] ?? '—' }}</small></span>
+        </label>
+      </div>
+      <div v-show="!replayChannels" class="watch-source-tabs">
         <button :class="{ active: source === 'variables' }" @click="source = 'variables'">{{ tr('程序变量', 'Variables') }}</button>
         <button :class="{ active: source === 'peripherals' }" @click="source = 'peripherals'">{{ tr('芯片外设', 'Peripherals') }}</button>
       </div>
-    <SymbolVariablePanel v-show="source === 'variables'"
+    <SymbolVariablePanel v-show="!replayChannels && source === 'variables'"
       :device-connected="deviceConnected"
       :symbol-loaded="symbolLoaded"
       :symbol-error="symbolError"
@@ -16,7 +23,7 @@
       @selection-removed="clearChannelVisibility"
       @snapshot-change="snapshotPath = $event"
     />
-      <PeripheralWatchPanel v-show="source === 'peripherals'" :device-connected="deviceConnected" :latest-values="latestValues" />
+      <PeripheralWatchPanel v-show="!replayChannels && source === 'peripherals'" :device-connected="deviceConnected" :latest-values="latestValues" />
     </div>
     <div class="workspace-resizer" role="separator" tabindex="0" aria-orientation="vertical"
       :aria-valuenow="panelWidth" :aria-valuemin="280" :aria-valuemax="maxPanelWidth()"
@@ -28,7 +35,7 @@
         <div class="workspace-actions">
           <button @click="focusMode = !focusMode">{{ focusMode ? tr('退出专注', 'Exit focus') : tr('展开工作区', 'Focus workspace') }}</button>
         </div>
-        <div class="speed-controls">
+        <div v-show="!replayChannels" class="speed-controls">
           <label for="superwatch-speed">{{ tr('调试速率', 'Debug clock') }}</label>
           <select id="superwatch-speed" v-model="speedProfile" @change="speedDirty = true" data-testid="superwatch-speed" class="form-select" :disabled="applyingSpeed">
             <option value="low">{{ tr('低速 · 4 MHz', 'Low · 4 MHz') }}</option>
@@ -43,9 +50,10 @@
       <WaveformViewer
         mode="SuperWatch"
         :device-connected="deviceConnected"
-        :hidden-channels="hiddenChannels"
+        :hidden-channels="replayChannels ? replayHidden : hiddenChannels"
         :array-snapshot-path="snapshotPath"
         @latest-values="latestValues = $event"
+        @replay-channels="setReplayChannels"
       />
     </div>
   </div>
@@ -78,6 +86,17 @@ const workspace = ref<HTMLElement | null>(null)
 let workspaceObserver: ResizeObserver | undefined
 const source = ref('variables')
 const latestValues = shallowRef<Record<string, number | boolean>>({})
+const replayChannels = shallowRef<string[] | null>(null)
+const replayHidden = shallowRef(new Set<string>())
+function setReplayChannels(channels: string[] | null) {
+  if (!replayChannels.value || !channels) replayHidden.value = new Set()
+  replayChannels.value = channels
+}
+function setReplayVisibility(name: string, visible: boolean) {
+  const hidden = new Set(replayHidden.value)
+  if (visible) hidden.delete(name); else hidden.add(name)
+  replayHidden.value = hidden
+}
 const hiddenChannels = shallowRef(new Set<string>())
 const layoutStorageKey = DESKTOP_SETTINGS_STORAGE_KEY + '.superwatch-layout'
 try {
@@ -228,6 +247,9 @@ watch(() => props.deviceConnected, loadSpeed)
 .workspace-actions button { background:var(--surface);color:var(--text);border:1px solid var(--border);padding:5px 8px;border-radius:4px; }
 
 .watch-catalog-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.replay-catalog { padding: 12px; overflow: auto; }
+.replay-catalog label { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.replay-catalog small { display: block; color: var(--accent); margin-top: 4px; }
 .watch-catalog-pane :deep(.symbol-panel) { flex: 1; min-height: 0; }
 .watch-source-tabs { display: flex; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
 .watch-source-tabs button { flex: 1; padding: 10px; border: 0; background: var(--surface); color: var(--muted); cursor: pointer; }

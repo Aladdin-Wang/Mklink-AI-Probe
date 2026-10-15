@@ -1,6 +1,5 @@
 <template>
-  <button class="panel-btn" data-testid="sw-record-start" :disabled="busy || status.active" @click="showPicker">{{ tr('开始记录', 'Start recording') }}</button>
-  <button class="panel-btn" data-testid="sw-record-stop" :disabled="busy || !status.active" @click="stop">{{ tr('停止记录', 'Stop recording') }}</button>
+  <button class="panel-btn" data-testid="sw-record-toggle" :class="{ active: status.active }" :disabled="busy" @click="status.active ? stop() : showPicker()">{{ status.active ? tr('停止记录', 'Stop recording') : tr('开始记录', 'Start recording') }}</button>
   <span v-if="status.path" class="record-result" :title="status.path">{{ status.active ? tr('记录中', 'Recording') : tr('已保存', 'Saved') }} · {{ status.samples || 0 }} {{ tr('条', 'samples') }}</span>
   <span v-if="error || status.error" role="alert" class="record-error">{{ error || status.error }}</span>
   <Teleport to="body">

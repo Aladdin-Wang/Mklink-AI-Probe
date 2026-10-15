@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-15T23:28:32+08:00",
+  "updated_at": "2026-10-15T23:58:23+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/0.3.5-fixes",
-    "head": "a8a99df3修复链接阶段短暂AXF缺失提示；当前保存该版本生产Web，最终NSIS/Skill待覆盖。",
+    "head": "9056e676后继续：SuperWatch原图日志回放、单按钮记录及取消CSV导出；新源码待构建安装。",
     "remote_head": "microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。",
     "working_tree": "继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。"
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "全部请求已实现，4b520381安装态GUI/CLI/MCP记录交叉验证、PNG实际文件、用户确认回放可播放、RTT通道及直接换探针自动连接通过；下载免预连接/型号默认/Pack目录检查通过。Keil链接短暂缺失AXF闪错已修复a8a99df3，14+49测试及NSIS构建通过。等待用户关闭桌面并换回F103探针，覆盖最终包并做稳定等待实机验证。"
+    "current_task": "按用户最新要求取消独立回放弹窗，日志直接接入原SuperWatch图表，开始/暂停/停止复用，保持缩放/光标/PNG，实时数据隔离，返回实时恢复最新通道；记录合成一个按钮。GUI全量964及后续受影响测试通过，生产构建通过。Chrome文件选择器导致调试连接丢失，用户已手动载入，画面交互尚待最终安装复测；正在重建NSIS/Skill。a8a99df3已覆盖安装并连回F103，Keil稳定等待实测仍待完成。"
   },
   "milestones": [
     {
@@ -110,7 +110,7 @@
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。 HPM5301组18/19永久锁定的历史状态及用户字先写/组锁最后、全部固件独立校验后才写OTP等边界见docs/ai/hpm-offline-otp-handoff.md；接手重新确认芯片，其他型号不继承验收。"
   ],
   "next_actions": [
-    "完成本机NSIS/Skill重建和覆盖安装，实机验证日志/回放/PNG、RTT通道、显式符号重载、拔插自动连接、下载免预连接及芯片/Pack同步；保持历史unknown不自动重放。完成后记录安装证据、更新PR43；未授权合并或正式发布。",
+    "完成原图回放最终NSIS/Skill覆盖安装，复测原图播放/暂停/缩放/PNG及单按钮记录、Keil不变地址静默更新；记录工具限制和实机结果，更新PR43。未知烧录不自动重放，不合并发布。",
     "收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。",
     "继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。",
     "Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。",

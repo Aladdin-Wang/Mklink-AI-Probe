@@ -201,8 +201,14 @@ export function replayView(data, position, span, width, names) {
   const end = Math.max(0, Math.min(data.duration, position));
   const start = Math.max(0, end - span);
   const displayEnd = Math.max(end, Math.min(data.duration, span), .001);
+  return replayRange(data, start, displayEnd, end, width, names);
+}
+
+// The original chart supplies its viewport; inspect the complete log while paused.
+export function replayRange(data, start, displayEnd, position, width, names, playing = true) {
+  const end = playing ? Math.min(displayEnd, position) : displayEnd;
   const pixels = Math.max(1, Math.min(2048, Math.floor(width)));
-  return { start, end: displayEnd, position: end, channels: data.channels.filter(c => names.includes(c.name)).map(c => {
+  return { start, end: displayEnd, position, width: pixels, channels: data.channels.filter(c => names.includes(c.name)).map(c => {
     const from = lowerBound(c.times, start), to = lowerBound(c.times, end, true), points = [];
     if (to - from <= pixels * 2) { for (let i = from; i < to; i++) points.push([c.times[i], c.values[i]]); }
     else {
@@ -212,7 +218,7 @@ export function replayView(data, position, span, width, names) {
         if (b > a) { for (const i of extrema(c, a, b)) points.push([c.times[i], c.values[i]]); a = b; }
       }
     }
-    const last = lowerBound(c.times, end, true) - 1;
+    const last = lowerBound(c.times, position, true) - 1;
     return { name: c.name, points, latest: last >= 0 ? c.values[last] : null };
   }) };
 }

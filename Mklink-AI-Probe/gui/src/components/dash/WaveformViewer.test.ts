@@ -286,6 +286,44 @@ beforeEach(() => {
 })
 
 describe('WaveformViewer VOFA binary transport', () => {
+  it('replays in the original canvas, isolates live updates, and restores the current live channels', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      const { viewer, probe } = runtime
+      viewer.configureBinaryChannels([{ name: 'live', type: 'float' }])
+      viewer.updateAcquisitionStatus({ state: 'running' })
+      const control = vi.fn()
+      const canvas = document.querySelector('#chart')
+      expect(viewer.beginReplay({ duration: 60, rows: 100, channels: [{ name: 'log' }] }, control)).toBe(true)
+      viewer.setReplayPosition(20, true, true)
+      viewer.renderReplayView({ id: 1, position: 20, width: 800, channels: [{ name: 'log', latest: 5, points: [[10, 2], [20, 5]] }] })
+      expect(document.querySelector('#chart')).toBe(canvas)
+      expect(probe.binaryEnvelope().values).toEqual(Float64Array.of(2, 5))
+      viewer.updateAcquisitionStatus({ state: 'stopped', channel_metadata: { wrong: { type: 'float' } } })
+      viewer.configureBinaryChannels([{ name: 'new_live', type: 'float' }])
+      viewer.resetBinaryStream()
+      viewer.acceptBinarySummary({ channelCount: 1, sequence: 99n }, [{ name: 'new_live' }])
+      viewer.setArraySnapshot({ name: 'array', values: [1, 2] })
+      expect(probe.binary().names).toEqual(['log'])
+      expect(probe.binaryEnvelope().values).toEqual(Float64Array.of(2, 5))
+      viewer.setDeviceConnected(false)
+      expect((document.querySelector('#btn-pause') as HTMLButtonElement).disabled).toBe(false)
+      ;(document.querySelector('#btn-pause') as HTMLButtonElement).click()
+      expect(control).toHaveBeenLastCalledWith('toggle')
+      ;(document.querySelector('#btn-stop') as HTMLButtonElement).click()
+      expect(control).toHaveBeenLastCalledWith('stop')
+      const before = probe.visibleTimeRange()
+      document.querySelector('#x-axis-hit')!.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 400, bubbles: true }))
+      expect(control).toHaveBeenLastCalledWith('inspect')
+      const after = probe.visibleTimeRange()
+      expect(after.tMax - after.tMin).toBeLessThan(before.tMax - before.tMin)
+      expect(document.querySelector('#btn-export-csv')).toBeNull()
+      viewer.endReplay()
+      expect(viewer.isReplaying()).toBe(false)
+      expect(probe.binary().names).toEqual(['new_live'])
+      expect(probe.collectionState().state).toBe('stopped')
+    } finally { runtime.cleanup() }
+  })
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -2859,7 +2897,7 @@ describe('VOFA viewer hot path source guard', () => {
       for (const id of ['raw-log-panel', 'btn-save-project', 'btn-load-project', 'project-load-input']) {
         expect(document.getElementById(id)).toBeNull()
       }
-      expect(document.querySelector('.watch-log-menu #btn-export-csv')).not.toBeNull()
+      expect(document.querySelector('.watch-log-menu #btn-export-csv')).toBeNull()
       expect(document.querySelector('.watch-trigger-dialog #trigger-toolbar')).not.toBeNull()
     } finally { runtime.cleanup() }
   })
