@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-15T11:53:29+08:00`
+- 更新时间：`2026-10-15T12:26:37+08:00`
 - 分支：`codex/0.3.5-fixes`
-- HEAD：`62faad0e bit-field source/tests/production Web; earlier cf118751 clock repair; subsequent verification documentation commit.`
+- HEAD：`d5a65482 Pack/SVD source, tests and production Web; earlier 62faad0e bitfields and cf118751 clock repair; subsequent verification documentation commit.`
 - 远端 HEAD：`codex/0.3.5-fixes pushed; PR43 draft against microkeen/main.`
-- 工作树：Isolated repair branch; bit-field source, tests and production Web verified on V3/F103. Installed desktop remains the earlier clock candidate; no merge/release.
-- 当前任务：0.3.5位域修复及V3/F103真机完成，62faad0e，PR43草稿。客户ELF恢复57位域叶，gSystemState六成员/真实布局256模式1536值通过；读取整块RAM拆位域，签名扩展及跨字节支持。15路一次8字节读取，浏览器三组530083行逐项一致；50us最终272200行零序号缺口/后台丢弃，曲线目视通过。452项Python覆盖、53项GUI和生产构建通过。测试固件留在原工程和板上；采集/客户端/后台均释放。新位域修复未打包覆盖安装；此前时钟候选已安装，全局Skill未替换，客户原机和正式发布仍待后续。 补充System普通变量显示：旧生产GUI在保持System查询的手动重解析后仍2叶，新GUI恢复System23/gSystemState6；实际客户ELF+真实HTTP/浏览器离线fixture验证，不推断原截图全部历史。
+- 工作树：Isolated 0.3.5 repair branch; Pack/SVD browser and offline regression verified. Installed desktop remains the earlier clock candidate; no merge/release.
+- 当前任务：0.3.5追加Pack外设同步及手动SVD，源d5a65482，PR43草稿。根因是外设非空索引永久缓存，在线烧录导入只刷新烧录目录；现在根据Pack状态/索引/工程配置自动失效，聚焦型号框重查，并可强制刷新。浏览器上传校验后持久保存SVD，桌面选择本地路径；复用只读过滤、采集互斥及工程恢复。138Python/33GUI/生产构建通过，真实Edge+HTTP导入Pack后无需重启显示，独立SVD加载/坏文件保留/重载恢复通过。此轮离线设备夹具无硬件访问；未打包安装或更新全局Skill。此前客户ELF普通System/位域及V3-F103验证见v035-dwarf-bitfields.md，时钟候选实装见v035-superwatch-clock.md。
 - 状态：`complete`
 
 ## 里程碑
 
-- **0.3.5 SuperWatch时钟与DWARF位域修复** — `complete`。时钟修复候选已实装；后续位域源修复/生产Web/客户ELF回放/V3-F103真实浏览器通过。PR43草稿，新位域未打包实装，未发布0.3.5。
+- **0.3.5 SuperWatch时钟、DWARF及Pack/SVD修复** — `complete`。时钟修复候选已实装；后续位域源修复/生产Web/客户ELF回放/V3-F103真实浏览器通过。PR43草稿，新位域未打包实装，未发布0.3.5。
 - **0.3.4正式版** — `complete`。PR40，源a8fd3fab0403；实际覆盖安装/Skill更新、五份更新验签、三平台原生CI38144587775、三渠道正式发布完成。后续交接与正式Web另走PR，标签不移动。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
@@ -23,6 +23,7 @@
 
 ## 验证证据
 
+- **0.3.5 Pack外设同步与手动SVD**：d5a65482：非空SVD索引随Pack状态/索引/工程配置变化刷新；聚焦重查/显式刷新；浏览器SVD校验持久化、桌面本地路径。138Python、33GUI、生产构建通过；真实Edge+HTTP在线导入后原查询找到型号、手动文件选择显示12项、错误XML保留当前配置、重载恢复均通过。离线夹具不访问硬件；未实装新桌面或更新全局Skill，详见docs/verification/v035-peripheral-import.md。
 - **0.3.5 位域解析和整变量曲线**：62faad0e：客户ELF815→872标量叶，gSystemState6成员256模式1536比较通过，System23成员。旧MSB offset与data_bit_offset分离、显式存储宽度、cache6、位域只读、搜索generation刷新。450项Python通过，后加2个文本解析用例所在15项通过，共452覆盖；53GUI、TS/生产构建通过。V3/F103原工程Keil编译/烧录验证通过；15路一个8字节块、30MHz，1ms12343/50us245540/50us272200浏览器行全部一致、各256状态、signed -16..15；最后序号含元数据0缺口，读/CRC/固件/队列丢弃0、真实位域曲线通过。所有会话释放，测试固件保留；未改下载器固件/供电。见docs/verification/v035-dwarf-bitfields.md；新位域尚未打包安装。 旧/新生产GUI对照确认手动重解析未刷新不变查询的独立bug；旧2叶、新29叶，后台均System23，已补普通根回归。
 - **0.3.5 SuperWatch环境时钟差异**：默认时钟与注入时钟、正负34.8秒偏差、无batch_time、1秒边界和64批队列回归；Python3.11.16 152通过，Python3.14.5 392通过。V3/F103单float、30MHz、每组约10秒：1us 261664/259304Hz，50us 21685/21676Hz；四组浏览器与后台丢弃0。详见docs/verification/v035-superwatch-clock.md。 另107项分发/runtime/MCP通过、1项可选hil_core跳过；GUI206通过。195源码/38Web资源及冻结方法字节码一致。Skill/冻结MCP各测1us/50us零缺口丢弃；Windows-only PATH原生WebView35秒9230741读零错误/丢弃，关闭窗口后台正常退出。首次UAC取消，用户要求重试后NSIS退出0；4安装载荷哈希一致，已安装MCP/真实Edge两组约262k/20k零缺口丢弃，原生窗口和后台正常退出。运行代码75a73a5a三个PR CI通过；最终文档头需另核对CI。
 - **0.3.4 正式发布与本地升级**：最终源a8fd3fab0403；正式NSIS176582092字节，实装载荷哈希匹配；冻结CLI/MCP/38 Web文件/原生窗口及退出通过。F103双探针固定后台、采集中24写应答、5766周期零读错误通过；SystemView54字节仅证生命周期。三平台native CI38144587775、五份签名实际验签、17附件匿名下载及三渠道索引、本地Skill逐文件/CLI/MCP通过。见v034-release-handoff.md，早期准备与体积审计证据仍保留原报告。
@@ -30,7 +31,6 @@
 - **0.3.4 SuperWatch取消回读校验**：源267b175f及其生产Web。旧版真实复现自增变量写入readback mismatch并停止采集。385项Python、72项GUI、TypeScript和生产构建通过。V3.6.4/F103原ELF、30MHz/1ms两波形+RTT，24次写入应答全部成功，4450周期零读错误、RTT31行；独立测试读确认静态字变化再恢复，70605周期零读错误。真实浏览器动态变量写12后显示已写入且运行中，最新GUI保留。旧SW01/HPM仅源码及模拟协议验证，无新固件修改。见v034-superwatch-write.md。
 - **0.3.4 窗口固定后台与原地切换**：源50eb6c52/Web504e690d。Python全量初跑4771通过/2跳过，1旧参数断言失败及4缺FLM资源夹具错误；更新断言后相关1177通过，最后双页面保护29通过。指定既有本地资源后干净实包5通过，冻结后台用runtime_id发现后复用新实包重跑1通过。GUI全量938通过/2旧导航夹具失败，补充状态及换目标清空表单断言后2通过，最终940项覆盖；生产构建通过。两只实物、两个独立代理/Web：A→B→A后台身份不变，RTT+Watch及Trace运行中切换清空旧目标。独立窗口占用B时拒绝切入而A采集继续；双方释放/接手均不重启后台。最终代码再次A→B→A保持PID/端口。原位置ELF5365变量；3秒RTT30行/Watch283周期读错误0，Trace14093事件。B无目标板。保留一最终WebGUI供用户测试。见v034-window-owned-backend.md。
 - **0.3.4 采集启动与通信**：源 ddda89c5；Python 全量4752通过/2旧读取顺序断言失败/2跳过，更新断言后相关487通过，最后边界与断连177通过；最终合计4757通过用例/2跳过。GUI全量936通过，补改冲突提示后SystemView25通过，最终937用例；生产构建通过。6万符号ELF基准20–22秒→1.45–1.51秒；V3/F103 RTT8+Watch3+跨客户端内存约126秒，读错误0；Trace三次0.53–0.66秒。最终冷启RTT0.328秒、Watch35209周期0错误、Trace0.354秒/123150事件；Web13任务72MHz/331969事件/drop0，停止释放通过。见v034-rtt-startup.md。 后续原工程原地编译/烧录校验通过，直接加载原 Obj AXF：RTT 0.246秒，Watch 35225周期0错误，Trace 0.379秒/122139事件；后台释放。05faf1e3 的三项 PR CI 全通过。 切换源4c1227b9：最终594项Python、70项GUI及生产构建通过；失效偏好下真机连接/RAM/RTT成功，页面重选后4876外设项、两次新后台冷启恢复；双实体A→B→A→B不影响另一窗口RTT，126次内存检查0错误，符号generation不变，后台释放。见v034-probe-switch-peripherals.md。 上述跨后台跳转属于旧方案，已被50eb6c52窗口固定后台方案取代，见最新验证。
-- **0.3.3 正式发布**：精确main11616f80重建Windows/Skill/SiteAgent；ARM/Linux CI38069170299，Intel详细重跑38071279659成功。三个native清单及冻结CLI/MCP/退出通过，五份签名实际验签。正式Windows提取包Windows-only PATH、35Web资源、原生界面/区域高度/退出通过；不计本次UAC取消为重新安装。两GitHub各17公开附件与三渠道回读验证，本地Skill逐文件核对并验证CLI/SVD/MCP；详见v033-release-handoff.md。
 
 ## 架构决策
 
@@ -53,7 +53,7 @@
 
 ## 下一动作
 
-1. 审查PR43时钟与位域修复并核对最终CI；需要用户使用新桌面/Skill时先重新打包、实际安装和分发验证。客户原电脑仍待升级确认。合并、版本提升和正式发布仍需维护者授权；本轮定向测试不替代全量发布门禁。
+1. 审查PR43时钟、位域、普通System搜索及Pack/SVD修复并核对最终CI；新桌面/Skill交付前重新打包并实际安装验证。客户原电脑仍待升级确认。合并、版本提升和正式发布需维护者授权；定向测试不替代全量发布门禁。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史联接/占用目录留人工处理。
