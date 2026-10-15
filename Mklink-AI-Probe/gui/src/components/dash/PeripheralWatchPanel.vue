@@ -13,7 +13,6 @@
     </select>
     <p v-if="chipQuery.trim() && !searching && !matchingSvds.length" data-testid="peripheral-no-match">{{ tr('没有匹配的 SVD。可导入包含该芯片 SVD 的 Pack，或手动加载 SVD 文件。', 'No matching SVD. Import a Pack containing its SVD, or load an SVD file manually.') }}</p>
     <button class="btn btn-primary" data-testid="peripheral-load" :disabled="!deviceConnected || !targetId || busy" @click="loadChip">{{ tr('加载外设', 'Load peripherals') }}</button>
-    <button class="btn" data-testid="peripheral-refresh" :disabled="busy || searching" @click="loadTargets(true)">{{ tr('刷新芯片包', 'Refresh packs') }}</button>
     <button class="btn" data-testid="peripheral-load-svd" :disabled="!deviceConnected || busy" @click="loadSvd">{{ tr('加载 SVD 文件', 'Load SVD file') }}</button>
     <p v-if="selection" data-testid="peripheral-source">{{ tr('当前已加载：', 'Currently loaded: ') }}{{ selection.target }} · {{ selection.pack }} · {{ selection.svd }} · {{ items.length }} {{ tr('项（只读）', 'items (read only)') }}</p>
     <p v-if="restoreError" role="status" data-testid="peripheral-restore-warning">{{ tr('上次的外设选择已失效，请重新选择实际芯片和 Pack。下载器连接及其他功能可继续使用。', 'The previous peripheral selection is unavailable. Select the actual chip and Pack again. The probe connection and other features remain available.') }} <span>{{ restoreError }}</span></p>
@@ -34,7 +33,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { consumerTarget, saveConsumerTarget, TARGET_SELECTION_CHANGED, PACKS_CHANGED } from '../../lib/targetSelection'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 import { tr } from '../../composables/useLanguage'
 import { pickSvdFile } from '../../lib/filePicker'
@@ -51,7 +51,7 @@ const busy = ref(false)
 type Target = { id: string; target: string; pack: string; svd: string }
 const targets = ref<Target[]>([])
 const targetId = ref('')
-const chipQuery = ref('')
+const chipQuery = ref(consumerTarget('peripheral'))
 const chosenModel = ref('')
 const searching = ref(false)
 const matchingSvds = computed(() => chosenModel.value
@@ -79,6 +79,11 @@ async function loadTargets(force = false) {
     if (epoch === targetRequest) {
       targets.value = payload.targets ?? []
       if (targetId.value && !targets.value.some(target => target.id === targetId.value)) targetId.value = ''
+      const exact = targets.value.filter(target => target.target.toLowerCase() === chipQuery.value.trim().toLowerCase())
+      if (!targetId.value && exact.length === 1) {
+        targetId.value = exact[0]!.id
+        chosenModel.value = exact[0]!.target
+      }
       activeSuggestion.value = targets.value.length ? 0 : -1
     }
   } catch (cause) { if (epoch === targetRequest) error.value = String(cause) }
@@ -125,6 +130,7 @@ function chooseTarget(target: Target) {
   targetRequest++
   searching.value = false
   chipQuery.value = target.target
+  saveConsumerTarget('peripheral', target.target)
   chosenModel.value = target.target
   targetId.value = target.id
   suggestionsOpen.value = false
@@ -134,6 +140,7 @@ function chooseSvd() {
   if (target) chooseTarget(target)
 }
 function searchInput() {
+  saveConsumerTarget('peripheral', chipQuery.value)
   chosenModel.value = ''
   targetId.value = ''
   targetRequest++
@@ -163,7 +170,22 @@ function searchKeydown(event: KeyboardEvent) {
     chooseTarget(targets.value[activeSuggestion.value]!)
   }
 }
-onMounted(() => void loadTargets())
+function syncTarget() {
+  const part = consumerTarget('peripheral')
+  if (part !== chipQuery.value) {
+    chipQuery.value = part
+    chosenModel.value = ''
+    targetId.value = ''
+  }
+  void loadTargets()
+}
+function refreshPacks() { void loadTargets() }
+onMounted(() => {
+  window.addEventListener(TARGET_SELECTION_CHANGED, syncTarget)
+  window.addEventListener(PACKS_CHANGED, refreshPacks)
+  void loadTargets()
+})
+onActivated(syncTarget)
 
 async function request(path: string, body?: object) {
   const response = await fetch(`${API_BASE}/api/dash/superwatch/${path}`, body ? {
@@ -229,7 +251,11 @@ watch(() => props.deviceConnected, async connected => {
   }
 }, { immediate: true })
 
-onUnmounted(() => { generation++; targetRequest++; clearTimeout(timer); clearTimeout(searchTimer); clearTimeout(blurTimer) })
+onUnmounted(() => {
+  window.removeEventListener(TARGET_SELECTION_CHANGED, syncTarget)
+  window.removeEventListener(PACKS_CHANGED, refreshPacks)
+  generation++; targetRequest++; clearTimeout(timer); clearTimeout(searchTimer); clearTimeout(blurTimer)
+})
 </script>
 
 <style scoped>

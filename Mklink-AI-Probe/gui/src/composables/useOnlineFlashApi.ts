@@ -25,6 +25,8 @@ import type {
 } from '../types/onlineFlash'
 import { tr } from './useLanguage'
 import { API_BASE } from '../lib/runtimeEndpoint'
+import { selectDownloadProbe } from '../lib/downloadProbe'
+import { notifyPacksChanged } from '../lib/targetSelection'
 const ONLINE_FLASH_BASE = '/api/online-flash'
 const TERMINAL_STATES = new Set(['succeeded', 'failed', 'stopped'])
 
@@ -268,20 +270,20 @@ export function useOnlineFlashApi() {
   }
 
   function updatePackIndex(onEvent?: (event: PackEvent) => void): Promise<PackOperationResponse> {
-    return packOperationRequest('/packs/index/update', { method: 'POST' }, onEvent)
+    return packOperationRequest('/packs/index/update', { method: 'POST' }, onEvent).then(result => { notifyPacksChanged(); return result })
   }
 
   function installPack(partNumber: string, onEvent?: (event: PackEvent) => void): Promise<PackOperationResponse> {
     return packOperationRequest('/packs/install', {
       method: 'POST',
       body: JSON.stringify({ part_number: partNumber }),
-    }, onEvent)
+    }, onEvent).then(result => { notifyPacksChanged(); return result })
   }
 
   function importPack(file: File, onEvent?: (event: PackEvent) => void): Promise<PackOperationResponse> {
     const body = new FormData()
     body.append('file', file)
-    return packOperationRequest('/packs/import', { method: 'POST', body }, onEvent)
+    return packOperationRequest('/packs/import', { method: 'POST', body }, onEvent).then(result => { notifyPacksChanged(); return result })
   }
 
   function cancelPackOperation(): Promise<PackCancelResult> {
@@ -289,7 +291,7 @@ export function useOnlineFlashApi() {
   }
 
   function removePack(packId: string, version: string): Promise<PackRemoveResult> {
-    return request(`/packs/${encoded(packId)}/${encoded(version)}`, { method: 'DELETE' })
+    return request<PackRemoveResult>(`/packs/${encoded(packId)}/${encoded(version)}`, { method: 'DELETE' }).then(result => { notifyPacksChanged(); return result })
   }
 
   function listCustomFlms(partNumber: string): Promise<CustomFlmRecord[]> {
@@ -365,24 +367,30 @@ export function useOnlineFlashApi() {
     return request(`/images/${encoded(imageId)}/preview?${params.toString()}`, { signal })
   }
 
-  function readMemory(payload: ReadMemoryRequest): Promise<Blob> {
+  async function readMemory(payload: ReadMemoryRequest): Promise<Blob> {
+    const headers = await selectDownloadProbe(payload.probe_id, true)
     return binaryRequest('/memory/read', {
-      method: 'POST',
+      method: 'POST', headers,
       body: JSON.stringify(payload),
     })
   }
 
-  function readMemoryStream(payload: ReadMemoryRequest, onProgress: (received: number) => void): Promise<Blob> {
+  async function readMemoryStream(payload: ReadMemoryRequest, onProgress: (received: number) => void): Promise<Blob> {
+    const headers = await selectDownloadProbe(payload.probe_id, true)
     return binaryStreamRequest('/memory/read-stream', {
-      method: 'POST',
+      method: 'POST', headers,
       body: JSON.stringify(payload),
     }, onProgress)
   }
 
-  async function createJob(job: JobRequest, requestId: string = crypto.randomUUID()): Promise<JobCreateResult> {
+  async function createJob(job: JobRequest, requestId: string = crypto.randomUUID(), isCurrent = () => true): Promise<JobCreateResult> {
     try {
+      let identityHeaders = {}
+      try { if (job.probe_id) identityHeaders = await selectDownloadProbe(job.probe_id, true) }
+      catch (error) { throw new OnlineFlashApiError(409, String(error), { detail: String(error) }, true) }
+      if (!isCurrent()) throw new OnlineFlashApiError(409, 'Download selection changed', { detail: 'Download selection changed' }, true)
       return await request('/jobs', { method: 'POST', body: JSON.stringify(job),
-        headers: { 'X-MKLink-Request-Id': requestId } })
+        headers: { ...identityHeaders, 'X-MKLink-Request-Id': requestId } })
     } catch (error) {
       if (error instanceof Error) {
         error.message += `; request_id=${requestId}`

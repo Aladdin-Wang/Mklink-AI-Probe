@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-15T21:12:59+08:00",
+  "updated_at": "2026-10-15T22:24:27+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/0.3.5-fixes",
-    "head": "本次在0093c392之后修复RTT通道界面与符号重载时序；精确提交以Git为准。已安装NSIS仍为bdd3c3e3、Web/Skill仍为53b4ebb2，不含本次及拔插自动连接源码修复。",
+    "head": "本次在e3e2f4c0后修复下载免预连接及芯片/Pack同步；精确提交以Git为准。安装态仍为bdd3c3e3/53b4ebb2，不含后续自动连接、RTT重载及本次下载修复。",
     "remote_head": "microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。",
     "working_tree": "继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。"
   },
@@ -14,13 +14,13 @@
   },
   "current_session": {
     "status": "verified",
-    "current_task": "RTT控制块自动发现通道并以复选框控制显示，配置压为一行。编译后布局不变时静默更新；RTT地址或已选SuperWatch布局变化时保留旧状态，用户烧录后点击重新加载才切换，迁移同名新地址并移除消失旧名，短toast。490 Python、102 GUI、生产构建及Chrome/F103真实重载通过；见docs/verification/v035-rtt-symbol-reload.md。本轮后台HEX烧录2%失败unknown未重放，用户Keil下载后完成重载验证。提交现有PR43，未打包安装；测试后台和浏览器完成后正常退出。"
+    "current_task": "在线/脱机下载无需先连接目标；操作前按物理身份预留下载器，保留所有权/代际保护。在线型号同步脱机和外设默认值，允许分别修改；Pack完成后自动刷新，取消外设刷新按钮。301 Python、185 GUI、TS/Vite及Chrome/V3/F103只读验证通过，见docs/verification/v035-download-target-sync.md。未擦除/烧录/改电压，历史unknown未重放。源码测试后台已退出，测试Pack已移除；未打包安装，提交PR43。"
   },
   "milestones": [
     {
-      "name": "0.3.5 时钟、符号、Pack/SVD、拔插连接及RTT重载修复",
+      "name": "0.3.5 调试、重连与下载流程修复",
       "status": "complete",
-      "notes": "0.3.5本机NSIS覆盖安装及全局Skill更新完成；代码含时钟、位域、普通System搜索及Pack/SVD修复，用户待复测。PR43草稿，未合并或正式发布。 源码修复及用户配合物理拔插验证完成；332 Python、89 GUI通过。仅显式Connect在旧身份消失时选择唯一新设备，保持所有权和旧会话隔离。待后续打包安装，见v035-auto-connect.md。 RTT通道复选框/一行配置与用户决定重载时序完成，490 Python、102 GUI及原工程实机通过；本次及自动连接尚未安装。"
+      "notes": "时钟、位域、System搜索及Pack/SVD已随0.3.5本机NSIS/Skill更新；PR43草稿，未合并发布。后续拔插自动连接、RTT通道/显式符号重载、免预连接下载及型号/Pack同步已完成源码验证，尚未安装。详见各v035专项报告。"
     },
     {
       "name": "0.3.4正式版",
@@ -50,8 +50,8 @@
   ],
   "verification": [
     {
-      "area": "0.3.5 拔插自动连接及RTT/符号重载",
-      "result": "拔插自动连接332 Python、89 GUI及用户实际换下载器通过，详见v035-auto-connect.md。新增RTT通道自动发现/显示复选框、紧凑布局和显式符号重载：490 Python、102 GUI、TS/Vite通过；HTTP夹具修正origin/token后7项重跑通过。Chrome原F103工程三次Keil编译零错误；布局不变RTT会话保持，地址/名称变化先待用户。用户Keil下载后点击重载，RTT 0x20000b80→0x20000d00且0/1通道持续；sin迁移0x20006fa4→0x200071a4、旧count移除新counter可选。快照RTT1624行、Watch累计534843周期、读错误/丢弃0；勾选隐藏跨标签保持。一次后台HEX烧录2%失败unknown未重放，不视为修复。源码后台/浏览器正常退出，未打包安装，见docs/verification/v035-rtt-symbol-reload.md。"
+      "area": "0.3.5 连接、RTT重载及下载流程",
+      "result": "拔插自动连接332 Python/89 GUI及用户实际换探针通过；RTT通道/显式符号重载490 Python/102 GUI及原工程Keil下载后实机通过，详见v035-auto-connect.md、v035-rtt-symbol-reload.md。最新下载免预连接/型号同步301 Python、185 GUI、TS/Vite通过；Chrome未连接时识别USB卷及算法，在线直接读取Flash64字节并保留结果；型号默认/独立修改及真实Pack导入后目录自动更新通过。未执行烧录，历史unknown仍保留。见v035-download-target-sync.md。"
     },
     {
       "area": "0.3.5 本机测试包与覆盖安装",
@@ -59,7 +59,7 @@
     },
     {
       "area": "0.3.5 Pack外设同步与手动SVD",
-      "result": "d5a65482：非空SVD索引随Pack状态/索引/工程配置变化刷新；聚焦重查/显式刷新；浏览器SVD校验持久化、桌面本地路径。138Python、33GUI、生产构建通过；真实Edge+HTTP在线导入后原查询找到型号、手动文件选择显示12项、错误XML保留当前配置、重载恢复均通过。离线夹具不访问硬件；该专项当时未实装；后续已随0.3.5完成桌面覆盖安装和全局Skill更新，详见docs/verification/v035-peripheral-import.md。"
+      "result": "d5a65482：非空SVD索引随Pack状态/索引/工程配置变化刷新；当时支持聚焦重查/显式刷新（本次改为自动刷新并移除按钮）；浏览器SVD校验持久化、桌面本地路径。138Python、33GUI、生产构建通过；真实Edge+HTTP在线导入后原查询找到型号、手动文件选择显示12项、错误XML保留当前配置、重载恢复均通过。离线夹具不访问硬件；该专项当时未实装；后续已随0.3.5完成桌面覆盖安装和全局Skill更新，详见docs/verification/v035-peripheral-import.md。"
     },
     {
       "area": "0.3.5 位域解析和整变量曲线",
@@ -86,7 +86,7 @@
     "当前维护入口是现有codex/0.3.5-fixes工作树及PR43；旧0.3.4交接的回原目录/保留旧分支要求是历史状态。继续既有任务分支，经PR/检查整合；合并、签名、发布需明确授权，既有标签/资产/更新公钥/应用ID不覆盖。07846c1a的文档内容已吸收，不需要再次cherry-pick覆盖当前记忆。",
     "后台协议 52：一个 GUI 客户端持有一个固定后台，同窗口切换只改下载器，RTT/Watch/Trace 跟随当前设备并清空旧目标状态；另开客户端才建独立后台。已有 URL 的额外页面共享该后台。工程上下文固定，换工程须停止原后台后重开。",
     "物理探针唯一 OS 所有权、USB 身份核对和 epoch 隔离保留。GUI/AI 明确断开或切换自动停止采集、排空在途操作并释放端口；旧会话不得跨设备，未知结果不得自动重放，不偷取其他后台占用。MCP disconnect 物理断开，detach 仅退出自身；独立 UART 保留。",
-    "SuperWatch 变量写入只认写应答，不做自动回读；烧录/显式内存校验仍保留，真实写错误不得吞掉或重放。外设 ID 基于 Pack 版本/芯片/SVD 相对路径；失效选择不得阻断物理连接，无法迁移时重选。",
+    "SuperWatch 变量写入只认写应答，不做自动回读；烧录/显式内存校验仍保留，真实写错误不得吞掉或重放。外设 ID 基于 Pack 版本/芯片/SVD 相对路径；失效选择不得阻断物理连接，无法迁移时重选。 在线型号提供脱机/外设默认值，各页可独立修改；Pack操作完成自动刷新。下载先预留唯一物理身份，不要求先连接目标；自身预留不重建下载表单，其他设备切换仍清理。",
     "应用主索引 MicroKeen/release，旧 GitHub/updates 和 Gitee/updates 兼容，固件使用独立索引。Gitee 仅要求 Windows 与 Skill；本次 Windows 超 100MB 被拒，索引指向 GitHub；Skill 已真实镜像，GitHub 不可达回退实测通过。其他平台仅 GitHub。",
     "测试直接使用用户原工程及 build/keil/Obj ELF，允许修改且无需备份还原，不复制工程；硬件路径只留本地。HPM 使用 ROM API，不使用 FLM/第二次通用 SWD reset；VCC 每次改动需确认具体电压，固件修改另开会话。",
     "构建使用scripts/build_workspace.ps1与F:/MKLink-Build，保留正式包、独有证据、依赖和缓存；联接或不可访问路径不强删。0.3.4清理已完成，不能沿用早期startup-cdc待删除任务。长期硬件跟进仍暂停，不因交接自动接管硬件或重复发布。",
@@ -95,8 +95,8 @@
     "编译完成不代表目标已下载：RTT地址或已选SuperWatch名字/地址/类型变化必须等用户点击重新加载才应用，保留旧布局及采集；不变时静默更新。重载同名迁移新地址，旧名消失移出采集，新名供重新选择；用户显式停止不自动恢复。无自动等待控制块重启逻辑。"
   ],
   "hardware": {
-    "state": "用户授权连接采集，重新拔插后V3/F103目标ID恢复。原测试工程直接修改并Keil编译，后台一次HEX烧录2%失败unknown，未重放；用户自行Keil下载并通知后，Chrome符号重载及RTT/Watch真实采集通过。原工程测试变更保留，未改电压/下载器固件；完成后测试后台和浏览器退出并释放下载器。详见v035-rtt-symbol-reload.md；之后接硬件前重新核实。",
-    "installer": "用户明确授权后已实际覆盖安装0.3.5本机测试NSIS，源bdd3c3e3、生产Web53b4ebb2。退出0，四载荷哈希一致；冻结195Python/38Web一致，Windows-only PATH原生/HTTP/MCP及正常退出通过。全局Skill也实际更新0.3.5、2600文件一致、CLI/MCP通过；备份在构建根artifacts/v035-local-bdd3c3e3/skill-backups。用户待复测，未正式发布。 本次RTT/符号重载及拔插自动连接修复尚未重新打包/安装或更新全局Skill。",
+    "state": "V3/F103原工程RTT重载验证已完成；之前HEX2%失败unknown未重放，用户Keil下载已完成。本次下载流程测试先查占用后台无采集/任务并按已有授权断开，再用源码未连接状态在线读Flash64字节成功；脱机只验证真实卷/算法，未部署/触发，未改固件/电压。测试后台已退出、测试Pack移除，浏览器一个旧测试标签失去调试连接未能关闭。",
+    "installer": "用户明确授权后已实际覆盖安装0.3.5本机测试NSIS，源bdd3c3e3、生产Web53b4ebb2。退出0，四载荷哈希一致；冻结195Python/38Web一致，Windows-only PATH原生/HTTP/MCP及正常退出通过。全局Skill也实际更新0.3.5、2600文件一致、CLI/MCP通过；备份在构建根artifacts/v035-local-bdd3c3e3/skill-backups。用户待复测，未正式发布。 后续RTT/符号重载、拔插自动连接及下载同步修复尚未重新打包/安装或更新全局Skill。",
     "backups": "0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。"
   },
   "known_limits": [
@@ -110,7 +110,7 @@
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。 HPM5301组18/19永久锁定的历史状态及用户字先写/组锁最后、全部固件独立校验后才写OTP等边界见docs/ai/hpm-offline-otp-handoff.md；接手重新确认芯片，其他型号不继承验收。"
   ],
   "next_actions": [
-    "继续现有0.3.5工作树及PR43处理反馈；RTT通道UI/显式符号重载与拔插自动连接已完成源码及实机验证，当前桌面/全局Skill尚未包含。后续打包安装纳入并验证安装态。旧时钟、System/位域、Pack/SVD继续收集客户复测；正式合并、签名、发布需授权。",
+    "继续现有0.3.5工作树及PR43处理反馈；自动连接、RTT通道/显式重载、下载免预连接及型号/Pack同步均为源码修复，桌面/全局Skill尚未包含，后续授权打包时纳入。完整实机烧录不由本轮只读验证证明；历史HEX失败仍待另案排查。正式合并、签名、发布需授权。",
     "收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。",
     "继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。",
     "Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。",
@@ -118,8 +118,8 @@
   ],
   "continuation_protocol": [
     "新会话固定继续 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe 的 codex/0.3.5-fixes；读取该目录AGENTS.md和本交接，运行 python scripts/ai_memory.py validate，核对 git status、log、worktree及远端。不要从原0.3.4目录另起修复分支。",
-    "区分源码与安装态：桌面 D:/Program Files/Mklink AI Probe；全局Skill C:/Users/akqbd/.codex/skills/mklink-ai-probe；本机测试包、哈希、安装证据及旧Skill备份在 F:/MKLink-Build/artifacts/v035-local-bdd3c3e3。版本0.3.5，Web build bdd3c3e3ef32；后续文档提交不会更新已安装二进制。 本次源码RTT/符号重载及自动连接修复未装入桌面/Skill；源码浏览器实测通过不能当作安装态验收。",
-    "合并来源：原0.3.4工作树07846c1a的CURRENT_HANDOFF/project-memory与v034-workspace-cleanup；历史v030/v031/v032/v033/v034-release-handoff、v032-archive-handoff和hpm-offline-otp-handoff已核对。其已完成发布/清理和当时安装/连接状态仅属历史；当前以本文件0.3.5断点为准。专项修复见docs/verification/v035-superwatch-clock.md、v035-dwarf-bitfields.md、v035-peripheral-import.md，安装见v035-local-install.md。 最新RTT/符号重载见v035-rtt-symbol-reload.md；用户Keil下载后的验证已完成，不再等待用户下载，不重放unknown烧录。",
+    "区分源码与安装态：桌面 D:/Program Files/Mklink AI Probe；全局Skill C:/Users/akqbd/.codex/skills/mklink-ai-probe；本机测试包、哈希、安装证据及旧Skill备份在 F:/MKLink-Build/artifacts/v035-local-bdd3c3e3。版本0.3.5，Web build bdd3c3e3ef32；后续文档提交不会更新已安装二进制。 后续源码RTT/符号重载、自动连接及下载同步修复未装入桌面/Skill；源码浏览器实测通过不能当作安装态验收。",
+    "合并来源：原0.3.4工作树07846c1a的CURRENT_HANDOFF/project-memory与v034-workspace-cleanup；历史v030/v031/v032/v033/v034-release-handoff、v032-archive-handoff和hpm-offline-otp-handoff已核对。其已完成发布/清理和当时安装/连接状态仅属历史；当前以本文件0.3.5断点为准。专项修复见docs/verification/v035-superwatch-clock.md、v035-dwarf-bitfields.md、v035-peripheral-import.md，安装见v035-local-install.md。 最新RTT/符号重载见v035-rtt-symbol-reload.md；用户Keil下载后的验证已完成，不再等待用户下载，不重放unknown烧录。 最新下载流程见v035-download-target-sync.md；未新增烧录或安装。",
     "客户启动故障仅确认PyInstaller解压ucrtbase.dll时Permission denied，重启后恢复；未定位权限/杀软/占用的具体来源，按用户意见暂不做推测性修复。若再现，结合新startup/runtime日志复查。",
     "仅继续修复和验证；PR43仍为草稿，未授权合并或正式发布。遵循AGENTS提交推送任务分支、更新memory并render/validate；详细历史保留docs/verification，敏感日志/硬件标识及本机产物不提交。"
   ]

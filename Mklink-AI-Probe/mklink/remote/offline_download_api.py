@@ -71,7 +71,7 @@ def _hex(value: int) -> str:
 
 
 def _profile_candidates(part_number: str, disk_root: Optional[Path]) -> list[dict]:
-    from mklink.discovery import check_flm_on_microkeen, resolve_keil_flm_path
+    from mklink.discovery import resolve_keil_flm_path
     from mklink.profiles import load_mcu_profiles, match_mcu_by_device
 
     profiles = load_mcu_profiles()
@@ -84,9 +84,7 @@ def _profile_candidates(part_number: str, disk_root: Optional[Path]) -> list[dic
     if not file_name:
         return []
     local_path = resolve_keil_flm_path(file_name)
-    on_probe, _probe_path = check_flm_on_microkeen(file_name)
-    if disk_root is not None:
-        on_probe = (disk_root / "FLM" / file_name).is_file()
+    on_probe = disk_root is not None and (disk_root / "FLM" / file_name).is_file()
     return [{
         "id": f"profile-{key}",
         "file_name": file_name,
@@ -744,20 +742,35 @@ def create_offline_download_router(
             raise HTTPException(422, str(error)) from error
 
     @router.get("/status")
-    async def status() -> object:
+    async def status(request: Request, probe: str | None = None) -> object:
         from mklink.discovery import find_microkeen_disk
-
+        runtime = getattr(request.app.state, 'shared_runtime', None)
+        choices = {}
         try:
-            disk = await asyncio.to_thread(find_microkeen_disk)
-        except ConnectionError as error:
+            if runtime is not None:
+                from mklink.probes import inventory, select_probe
+                from mklink.probe_volumes import resolve_volume
+                candidates = await asyncio.to_thread(inventory)
+                choices['probes'] = [{'probe_id': item['probe_id'], 'port': item['port']}
+                                     for item in candidates]
+                selector = probe or runtime.info.get('probe_id')
+                if not probe and not any(item['probe_id'] == selector for item in candidates):
+                    selector = None
+                selected = await asyncio.to_thread(select_probe, selector)
+                choices['probe_id'] = selected['probe_id']
+                disk = (await asyncio.to_thread(resolve_volume, selected['probe_id']))['root']
+            else:
+                disk = await asyncio.to_thread(find_microkeen_disk)
+        except (ConnectionError, RuntimeError) as error:
             return {"available": False, "disk_path": None, "python_dir": None,
-                    "flm_dir": None, "reason": str(error)}
+                    "flm_dir": None, "reason": str(error), **choices}
         root = Path(disk) if disk else None
         return {
             "available": root is not None,
             "disk_path": str(root) if root else None,
             "python_dir": str(root / "python") if root else None,
             "flm_dir": str(root / "FLM") if root else None,
+            **choices,
         }
 
     @router.get("/algorithms")
@@ -766,7 +779,7 @@ def create_offline_download_router(
 
         try:
             disk = await asyncio.to_thread(find_microkeen_disk)
-        except ConnectionError:
+        except (ConnectionError, RuntimeError):
             disk = None  # Local catalog remains usable without a selected probe.
         root = Path(disk) if disk else None
         try:

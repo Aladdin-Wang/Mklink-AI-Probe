@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import OfflineFlashView from './OfflineFlashView.vue'
 import DeviceConfigurationPanel from '../components/DeviceConfigurationPanel.vue'
 import router from '../router'
+import { notifyPacksChanged, publishOnlineTarget } from '../lib/targetSelection'
 
 const offlineMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
@@ -36,6 +37,21 @@ vi.mock('../composables/useOnlineFlashApi', () => ({
 }))
 
 describe('OfflineFlashView', () => {
+  it('adopts online chip defaults and refreshes imported targets without a device connection', async () => {
+    onlineMocks.searchTargets.mockImplementation(async (part: string) => [{ part_number: part, installed: true, vendor: 'Fixture' }])
+    publishOnlineTarget('STM32F103RC')
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+    expect(wrapper.text()).toContain('STM32F103RC')
+    expect(offlineMocks.listAlgorithms).toHaveBeenCalledWith('STM32F103RC')
+    publishOnlineTarget('STM32F407VG'); await flushPromises()
+    expect(offlineMocks.listAlgorithms).toHaveBeenCalledWith('STM32F407VG')
+    onlineMocks.searchTargets.mockClear()
+    notifyPacksChanged(); await flushPromises()
+    expect(onlineMocks.searchTargets).toHaveBeenCalledWith('STM32F407VG', { limit: 30 })
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/device/connect'))).toBe(false)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
@@ -443,6 +459,7 @@ describe('OfflineFlashView', () => {
       'V4',
       'factory-download.py',
       expect.any(Function),
+      undefined, {},
     )
 
     await wrapper.get('[data-testid="offline-model"]').setValue('V3')

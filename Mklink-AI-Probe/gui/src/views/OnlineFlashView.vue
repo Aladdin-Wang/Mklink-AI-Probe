@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { fileContentStamp } from '../lib/fileContent'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { onlineTarget, publishOnlineTarget } from '../lib/targetSelection'
 import FlashActionBar from '../components/online-flash/FlashActionBar.vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import { provideConfirmation } from '../composables/useConfirmation'
@@ -414,7 +415,7 @@ async function refreshProbes(retryWhenEmpty = false): Promise<void> {
       }
       await new Promise(resolve => setTimeout(resolve, PROBE_DISCOVERY_DELAY_MS))
     }
-    if (!probes.value.some(item => item.unique_id === probeId.value)) probeId.value = probes.value[0]?.unique_id ?? ''
+    if (!probes.value.some(item => item.unique_id === probeId.value)) probeId.value = probes.value.length === 1 ? probes.value[0]!.unique_id : ''
   } catch (error) { probeError.value = message(error) } finally { probeBusy.value = false }
 }
 
@@ -540,6 +541,10 @@ async function selectTarget(target: TargetRecord): Promise<void> {
   } else selectedTarget.value = target
   persist()
 }
+
+watch(selectedTarget, target => {
+  if (target?.installed && onlineTarget().part !== target.part_number) publishOnlineTarget(target.part_number)
+})
 
 async function loadCustomFlms(partNumber = selectedTarget.value?.part_number || ''): Promise<void> {
   const token = ++customFlmToken
@@ -1042,7 +1047,7 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
     pendingRequest.value = requestId
     progressOwner.value = 'flash'
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0
-    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, algorithm_id: selectedAlgorithmId.value || null, algorithm_ids: [...selectedAlgorithmIds.value], probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null }, requestId)
+    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, algorithm_id: selectedAlgorithmId.value || null, algorithm_ids: [...selectedAlgorithmIds.value], probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null }, requestId, current)
     if (!current() || pendingRequest.value !== requestId) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(tr(`[JOB] 已创建 ${result.job_id}`, `[JOB] Created ${result.job_id}`)); subscribe(0)

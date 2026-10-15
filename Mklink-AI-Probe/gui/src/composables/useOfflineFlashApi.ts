@@ -67,8 +67,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function useOfflineFlashApi() {
-  function getStatus(): Promise<OfflineDiskStatus> {
-    return request('/status')
+  function getStatus(probe = ''): Promise<OfflineDiskStatus> {
+    return request('/status' + (probe ? `?probe=${encodeURIComponent(probe)}` : ''))
   }
 
   function listAlgorithms(partNumber: string): Promise<OfflineAlgorithmCandidate[]> {
@@ -88,6 +88,7 @@ export function useOfflineFlashApi() {
     firmwareFiles: File[],
     flmFiles: File[],
     requestId: string = crypto.randomUUID(),
+    identityHeaders: Record<string, string> = {},
   ): Promise<OfflineDeployResult> {
     const body = new FormData()
     body.append('config_json', JSON.stringify(config))
@@ -95,7 +96,7 @@ export function useOfflineFlashApi() {
     firmwareFiles.forEach(file => body.append('firmware_files', file, file.name))
     flmFiles.forEach(file => body.append('flm_files', file, file.name))
     return request<OfflineDeployResult>('/deploy', { method: 'POST', body,
-      headers: { 'X-MKLink-Request-Id': requestId } }).catch(error => {
+      headers: { ...identityHeaders, 'X-MKLink-Request-Id': requestId } }).catch(error => {
       if (error instanceof Error) { error.message += `; request_id=${requestId}`; throw error }
       throw new Error(`${String(error)}; request_id=${requestId}`)
     })
@@ -117,8 +118,10 @@ export function useOfflineFlashApi() {
     scriptName: string,
     onLine?: (line: string) => void,
     port?: string,
+    identityHeaders: Record<string, string> = {},
   ): Promise<OfflineTriggerResult> {
     const headers = new Headers({
+      ...identityHeaders,
       'Content-Type': 'application/json',
       Accept: 'application/x-ndjson',
     })

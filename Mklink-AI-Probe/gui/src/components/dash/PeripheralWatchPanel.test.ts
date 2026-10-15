@@ -1,11 +1,35 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import PeripheralWatchPanel from './PeripheralWatchPanel.vue'
+import { notifyPacksChanged, publishOnlineTarget } from '../../lib/targetSelection'
 
 const files = vi.hoisted(() => ({ pick: vi.fn(), upload: vi.fn() }))
 vi.mock('../../lib/filePicker', () => ({ pickSvdFile: files.pick }))
 vi.mock('../../composables/useMklinkApi', () => ({ useMklinkApi: () => ({ uploadFileSource: files.upload }) }))
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); files.pick.mockReset(); files.upload.mockReset() })
+
+it('adopts the online chip while disconnected and preserves a manual choice after Pack refresh', async () => {
+  const values = new Map<string, string>()
+  vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value) })
+  const fetchMock = vi.fn(async (url: string) => {
+    const part = new URL(url, 'http://localhost').searchParams.get('q') || ''
+    return { ok: true, json: async () => ({ targets: [{ id: part, target: part, pack: 'Fixture', svd: 'chip.svd' }] }) }
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  publishOnlineTarget('STM32F103RC')
+  const wrapper = mount(PeripheralWatchPanel, { props: { deviceConnected: false, latestValues: {} } })
+  await flushPromises()
+  expect((wrapper.get('[data-testid="peripheral-chip-search"]').element as HTMLInputElement).value).toBe('STM32F103RC')
+  expect((wrapper.get('[data-testid="peripheral-svd"]').element as HTMLSelectElement).value).toBe('STM32F103RC')
+  await wrapper.get('[data-testid="peripheral-chip-search"]').setValue('STM32F407VG')
+  notifyPacksChanged(); await flushPromises()
+  expect((wrapper.get('[data-testid="peripheral-chip-search"]').element as HTMLInputElement).value).toBe('STM32F407VG')
+  publishOnlineTarget('STM32F103RE'); await flushPromises()
+  expect((wrapper.get('[data-testid="peripheral-svd"]').element as HTMLSelectElement).value).toBe('STM32F103RE')
+  expect(fetchMock.mock.calls.every(([url]) => url.includes('/targets?'))).toBe(true)
+  wrapper.unmount()
+})
 
 it.each(['desktop', 'browser'])('loads a manual SVD through the %s picker', async mode => {
   const path = '/project/persistent.svd'
@@ -69,8 +93,9 @@ it('does not load a picker result after the device has changed', async () => {
 
 it('refreshes the Pack index with the existing search', async () => {
   vi.useFakeTimers()
+  let imported = false
   const fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => ({
-    targets: url.includes('refresh=true') ? [{ id: 'new', target: 'IMPORTED', pack: 'Test@1', svd: 'new.svd' }] : [], items: [],
+    targets: imported ? [{ id: 'new', target: 'IMPORTED', pack: 'Test@1', svd: 'new.svd' }] : [], items: [],
   }) }))
   vi.stubGlobal('fetch', fetchMock)
   const wrapper = mount(PeripheralWatchPanel, { props: { deviceConnected: true, latestValues: {} } })
@@ -78,8 +103,10 @@ it('refreshes the Pack index with the existing search', async () => {
     await flushPromises()
     await wrapper.get('[data-testid="peripheral-chip-search"]').setValue('IMPORTED')
     await vi.advanceTimersByTimeAsync(160); await flushPromises()
-    await wrapper.get('[data-testid="peripheral-refresh"]').trigger('click'); await flushPromises()
-    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('q=IMPORTED&refresh=true'))).toBe(true)
+    expect(wrapper.find('[data-testid="peripheral-refresh"]').exists()).toBe(false)
+    imported = true
+    notifyPacksChanged(); await flushPromises()
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('q=IMPORTED')).length).toBeGreaterThan(1)
     expect(wrapper.get('[data-testid="peripheral-svd"]').text()).toContain('new.svd')
   } finally { wrapper.unmount() }
 })

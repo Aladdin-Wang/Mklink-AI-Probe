@@ -82,7 +82,7 @@
       <DashboardView v-if="initialBackendReady && dashboardVisited" v-show="currentTab === 'dashboard'" />
       <router-view v-if="initialBackendReady" v-slot="{ Component, route: viewRoute }">
         <!-- Override the shared v-if branch key so cached flash pages stay distinct. -->
-        <KeepAlive :key="deviceStatus.device_generation || 0" include="OnlineFlashView,OfflineFlashView">
+        <KeepAlive :key="downloadViewKey" include="OnlineFlashView,OfflineFlashView">
           <component :is="Component" v-if="viewRoute.name !== 'dashboard'" :key="viewRoute.path" />
         </KeepAlive>
       </router-view>
@@ -115,6 +115,7 @@ import { nextTick, computed, defineAsyncComponent, onMounted, onUnmounted, ref, 
 import { useRouter, useRoute } from 'vue-router'
 import { Languages } from '@lucide/vue'
 import { IS_REMOTE } from './lib/runtimeEndpoint'
+import { useDownloadViewKey } from './lib/downloadProbe'
 import RemoteSessionBar from './components/RemoteSessionBar.vue'
 import StatusBar from './components/StatusBar.vue'
 import ToastContainer from './components/ToastContainer.vue'
@@ -134,6 +135,7 @@ const router = useRouter()
 const DashboardView = defineAsyncComponent(() => import('./views/DashboardView.vue'))
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling, deviceStatus } = useMklinkApi()
+const downloadViewKey = useDownloadViewKey(computed(() => deviceStatus.value.device_generation))
 const { backendState, sharedRuntime, authenticationRequired, backendStartupError, startHealthPolling, stopHealthPolling, restart, refreshHealth, isTauri } = useBackendHealth()
 const recoveryTitle = computed(() => authenticationRequired.value
   ? tr('当前页面授权已失效', 'This page is no longer authorized')

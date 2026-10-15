@@ -1724,6 +1724,9 @@ def create_app(
         from mklink.probes import select_probe
         from mklink.runtime import RuntimeErrorResponse
         selector = body.get("probe") or body.get("port")
+        dap_id = body.get('cmsis_dap_id')
+        if dap_id is not None and (not isinstance(dap_id, str) or not dap_id.strip() or selector):
+            raise HTTPException(422, 'cmsis_dap_id must identify one probe without another selector')
         if "connect" in body and not isinstance(body["connect"], dict):
             raise HTTPException(422, "connect must be an object")
         if selector is not None and not isinstance(selector, str):
@@ -1733,6 +1736,13 @@ def create_app(
             async def switch():
                 runtime.prune()
                 current_selector = selector
+                if dap_id is not None:
+                    from mklink.probes import inventory
+                    matches = [probe for probe in inventory()
+                               if str(probe.get('serial_number', '')).casefold() == dap_id.casefold()]
+                    if len(matches) != 1:
+                        raise HTTPException(409, 'CMSIS-DAP identity is unavailable or ambiguous')
+                    current_selector = matches[0]['probe_id']
                 if not current_selector and _state.get('shared_probe_id') != 'lobby':
                     # Only an explicit Connect may replace an unplugged probe.
                     # Keep a present binding (including a changed COM number),
@@ -1746,7 +1756,8 @@ def create_app(
                 # the current inventory, and auto search requires one candidate.
                 selected = select_probe(current_selector)
                 if selected['probe_id'] == _state.get('shared_probe_id'):
-                    return {'same_runtime': True}
+                    return {'same_runtime': True, 'probe_id': selected['probe_id'],
+                            'device_generation': _state.get('device_generation', 0)}
                 binding = getattr(runtime, 'binding', None)
                 if binding is None:
                     raise HTTPException(503, 'Backend does not support in-place probe switching; restart it')
