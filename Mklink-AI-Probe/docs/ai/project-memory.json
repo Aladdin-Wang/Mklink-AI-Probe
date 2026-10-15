@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-15T23:05:08+08:00",
+  "updated_at": "2026-10-15T23:23:13+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "SuperWatch按需持续记录、时间回放/缩放、PNG已完成源码和实机验证；PNG实际保存在用户桌面CSV目录，1850×720波形内容正常。4b520381本机NSIS已构建，提取包196 Python/40 Web与源码一致、冻结CLI/SVD/MCP/HTTP验证通过。正在覆盖安装及更新全局Skill，随后安装态实机验证。见docs/verification/v035-continuous-recording.md。"
+    "current_task": "4b520381本机NSIS已覆盖安装，全局Skill2603文件一致；安装态真实GUI/Skill CLI/冻结CLI/MCP共用记录器，96385及14767行落盘通过、停止后文件不再增长。在线免预连接读取Flash64字节、脱机卷与型号默认同步、RTT 0/1勾选通过。发现Keil链接暂时移走AXF会闪错，补充后台文件稳定等待与错误恢复，14+49测试通过；正在重建最终包。原生PNG/回放请用户协助操作（工具无法操作原生窗口），记录于专项报告。"
   },
   "milestones": [
     {

@@ -1091,24 +1091,29 @@ def create_app(
     source_monitor = SourceMonitor()
     source_monitor_task = None
     reload_captures = {}
+    attempted_sources = {}
     _state["file_source_change"] = None
 
-    async def check_file_sources(*, apply: bool = False, admitted: bool = False):
+    async def check_file_sources(*, apply: bool = False, admitted: bool = False, background: bool = False):
         device = _state.get("device")
         if device is None or not device.connected:
             return
         if source_monitor.device is not device:
             _state["file_source_change"] = None
             reload_captures.clear()
+            attempted_sources.clear()
         project = load_project_info(_state["project_root"]) or {}
-        changed = await run_in_threadpool(source_monitor.changed, device, project)
+        await run_in_threadpool(source_monitor.changed, device, project)
         pending = dict(source_monitor.pending)
         if not pending or device is not _state.get("device"):
             return
+        if background and not apply and not source_monitor.settled(pending):
+            return
+        new_content = pending != attempted_sources
         previous = _state['file_source_change'] or {}
         # A failed parse is not retried every second against identical content.
         # New content or a newly selected device permits another attempt.
-        if not apply and not changed and previous.get('state') in {'failed', 'awaiting-reload'}:
+        if not apply and not new_content and previous.get('state') in {'failed', 'awaiting-reload'}:
             return
         event = {'sequence': previous.get('sequence', time.time_ns()),
                  'files': [Path(path).name for path in pending], 'pending': True}
@@ -1213,8 +1218,10 @@ def create_app(
             logger.warning("File source reload failed: %s", error)
         if device is not _state.get('device'):
             return
-        if changed or previous.get('state') != event.get('state'):
+        if new_content or previous.get('state') != event.get('state'):
             event['sequence'] = time.time_ns()
+        attempted_sources.clear()
+        attempted_sources.update(pending)
         _state['file_source_change'] = event
 
     app.state.check_file_sources = check_file_sources
@@ -1232,7 +1239,7 @@ def create_app(
         while True:
             await asyncio.sleep(1)
             try:
-                await check_file_sources()
+                await check_file_sources(background=True)
             except Exception:
                 logger.exception("File source monitor failed")
 

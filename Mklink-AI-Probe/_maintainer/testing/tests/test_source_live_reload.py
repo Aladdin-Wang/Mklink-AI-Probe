@@ -26,6 +26,54 @@ def source(tmp_path, monkeypatch):
     return app, device, axf, control
 
 
+def test_background_linker_replacement_is_silent_and_recovers_after_persistent_error(source, monkeypatch):
+    app, device, axf, control = source
+    now = [0.0]
+    monkeypatch.setattr('mklink.source_monitor.time.monotonic', lambda: now[0])
+    parses = []
+
+    def config(*args, **kwargs):
+        if not axf.exists():
+            raise ValueError('symbol file unavailable')
+        return {'rtt_addr': '0x20000020'}
+
+    def parse(*args, **kwargs):
+        parses.append(axf.read_bytes())
+        device.symbol_catalog = SymbolCatalog.from_dwarf(device._dwarf_info, axf_path=str(axf), generation=2)
+        return {'loaded': True}
+
+    monkeypatch.setattr('mklink.project_config.ensure_rtt_config_updated', config)
+    monkeypatch.setattr(device, 'parse_axf', parse)
+
+    def poll(at):
+        now[0] = at
+        asyncio.run(app.state.check_file_sources(background=True))
+
+    poll(0)
+    axf.unlink()  # Keil briefly removes the output while linking.
+    poll(1)
+    axf.write_bytes(b'partial output')
+    poll(2)
+    axf.write_bytes(b'complete output')
+    poll(3)
+    poll(4)
+    assert app.state.mklink_state['file_source_change'] is None and parses == []
+    poll(5)
+    assert app.state.mklink_state['file_source_change']['state'] == 'applied'
+    assert parses == [b'complete output']
+    axf.unlink()
+    poll(6)
+    poll(10)
+    assert app.state.mklink_state['file_source_change']['state'] == 'applied'
+    poll(11)
+    assert app.state.mklink_state['file_source_change']['state'] == 'failed'
+    axf.write_bytes(b'next complete build')
+    poll(12)
+    poll(14)  # New content must retry even though its change was observed at 12.
+    assert app.state.mklink_state['file_source_change']['state'] == 'applied'
+    assert parses == [b'complete output', b'next complete build']
+
+
 @pytest.mark.parametrize('address', ['0x20000020', '0x20000040', None])
 def test_live_rtt_restarts_only_for_changed_address_and_retains_subscribers(source, monkeypatch, address):
     app, device, axf, control = source

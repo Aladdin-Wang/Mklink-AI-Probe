@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-15T23:05:08+08:00`
+- 更新时间：`2026-10-15T23:23:13+08:00`
 - 分支：`codex/0.3.5-fixes`
 - HEAD：`4b520381实现记录/回放/PNG；当前提交保存该源码生成的生产Web资产。NSIS本机包已生成，正在覆盖安装。`
 - 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
 - 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
-- 当前任务：SuperWatch按需持续记录、时间回放/缩放、PNG已完成源码和实机验证；PNG实际保存在用户桌面CSV目录，1850×720波形内容正常。4b520381本机NSIS已构建，提取包196 Python/40 Web与源码一致、冻结CLI/SVD/MCP/HTTP验证通过。正在覆盖安装及更新全局Skill，随后安装态实机验证。见docs/verification/v035-continuous-recording.md。
+- 当前任务：4b520381本机NSIS已覆盖安装，全局Skill2603文件一致；安装态真实GUI/Skill CLI/冻结CLI/MCP共用记录器，96385及14767行落盘通过、停止后文件不再增长。在线免预连接读取Flash64字节、脱机卷与型号默认同步、RTT 0/1勾选通过。发现Keil链接暂时移走AXF会闪错，补充后台文件稳定等待与错误恢复，14+49测试通过；正在重建最终包。原生PNG/回放请用户协助操作（工具无法操作原生窗口），记录于专项报告。
 - 状态：`in_progress`
 
 ## 里程碑
