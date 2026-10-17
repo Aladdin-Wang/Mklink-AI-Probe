@@ -276,8 +276,6 @@ export class StreamDecoder {
   private serialPort = ''
   private serialSource = ''
   private serialDecoder = new TextDecoder('utf-8')
-  private serialLineBytes: number[] = []
-  private serialLineTimestampNs = 0n
   private serialBufferedItems = 0
 
   constructor(post: PostOutput) {
@@ -341,7 +339,6 @@ export class StreamDecoder {
           this.serialPort = message.port
           this.serialSource = ''
           this.serialDecoder = new TextDecoder('utf-8')
-          this.serialLineBytes = []
           this.serialBufferedItems = 0
         }
         break
@@ -518,7 +515,6 @@ export class StreamDecoder {
     if (session !== this.serialSource) {
       this.serialSource = session
       this.serialDecoder = new TextDecoder('utf-8')
-      this.serialLineBytes = []
       this.serialBufferedItems = 0
     }
 
@@ -537,36 +533,11 @@ export class StreamDecoder {
       throw new RangeError('Serial frames require a serial decoder mode')
     }
 
-    const lines: Array<{
-      timestampNs: bigint
-      direction: 'RX' | 'TX'
-      rawHex: string
-      ascii: string
-    }> = []
-    if (direction === 'TX') {
-      lines.push(this.serialLine(decoded.timestampNs, direction, bytes))
-    } else {
-      for (const byte of bytes) {
-        if (this.serialLineBytes.length === 0) this.serialLineTimestampNs = decoded.timestampNs
-        this.serialLineBytes.push(byte)
-        if (byte === 0x0a || this.serialLineBytes.length >= 4096) {
-          lines.push(this.serialLine(
-            this.serialLineTimestampNs,
-            direction,
-            Uint8Array.from(this.serialLineBytes),
-          ))
-          this.serialLineBytes = []
-          this.serialLineTimestampNs = 0n
-        }
-      }
-    }
-    if (lines.length) {
-      this.serialBufferedItems = Math.min(
-        this.configuredCapacity,
-        this.serialBufferedItems + lines.length,
-      )
-      this.post({ type: 'serial-lines', sequence: decoded.sequence, lines, port, session })
-    }
+    // Serial batches are arbitrary bytes, not newline-delimited protocol packets.
+    // Publish every batch so a short binary reply or a final tail is visible now.
+    const lines = [this.serialLine(decoded.timestampNs, direction, bytes)]
+    this.serialBufferedItems = Math.min(this.configuredCapacity, this.serialBufferedItems + 1)
+    this.post({ type: 'serial-lines', sequence: decoded.sequence, lines, port, session })
   }
 
   private serialLine(
@@ -580,7 +551,9 @@ export class StreamDecoder {
       timestampNs,
       direction,
       rawHex,
-      ascii: new TextDecoder('utf-8').decode(bytes),
+      ascii: direction === 'RX'
+        ? this.serialDecoder.decode(bytes, { stream: true })
+        : new TextDecoder('utf-8').decode(bytes),
     }
   }
 
@@ -1283,8 +1256,6 @@ export class StreamDecoder {
     this.superwatchMetadataVersion = 0
     this.superwatchMetadataSignature = null
     this.serialDecoder = new TextDecoder('utf-8')
-    this.serialLineBytes = []
-    this.serialLineTimestampNs = 0n
     this.serialBufferedItems = 0
     this.clearTelemetry()
   }
