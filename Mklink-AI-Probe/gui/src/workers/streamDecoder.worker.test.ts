@@ -226,15 +226,18 @@ describe('StreamDecoder worker controller', () => {
     expect(batches).toEqual([
       {
         type: 'serial-lines', sequence: 1n, port: 'COM7', session: '11'.repeat(16),
-        lines: [{ timestampNs: 10n, direction: 'RX', rawHex: '4F4B', ascii: 'OK' }],
+        lines: [{ timestampNs: 10n, direction: 'RX', rawHex: '4F4B', ascii: 'OK', continuesPrevious: false }],
       },
       {
         type: 'serial-lines', sequence: 2n, port: 'COM7', session: '11'.repeat(16),
-        lines: [{ timestampNs: 20n, direction: 'RX', rawHex: '0A58', ascii: '\nX' }],
+        lines: [
+          { timestampNs: 20n, direction: 'RX', rawHex: '0A', ascii: '\n', continuesPrevious: true },
+          { timestampNs: 20n, direction: 'RX', rawHex: '58', ascii: 'X', continuesPrevious: false },
+        ],
       },
       {
         type: 'serial-lines', sequence: 3n, port: 'COM7', session: '11'.repeat(16),
-        lines: [{ timestampNs: 30n, direction: 'TX', rawHex: 'ABCD', ascii: '��' }],
+        lines: [{ timestampNs: 30n, direction: 'TX', rawHex: 'ABCD', ascii: '��', continuesPrevious: false }],
       },
     ])
     expect(messages.some(message => message.type === 'serial-terminal')).toBe(false)
@@ -253,11 +256,13 @@ describe('StreamDecoder worker controller', () => {
         StreamType.SERIAL, BigInt(index + 10), SERIAL_RX_BYTES), connectionGeneration: 1, frameTicket: index + 1 })
       const batches = messages.filter(m => m.type === 'serial-lines')
       expect(batches).toHaveLength(index + 1)
-      expect(batches.at(-1)!.lines).toHaveLength(1)
+      expect(batches.at(-1)!.lines.map(line => line.rawHex).join('')).toBe(
+        Array.from(data, byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase(),
+      )
     })
     decoder.handle({ type: 'reset' })
     const rows = messages.filter(m => m.type === 'serial-lines').flatMap(m => m.lines)
-    expect(rows.map(row => row.rawHex)).toEqual(['FE000A0DFF', '42'])
+    expect(rows.map(row => row.rawHex).join('')).toEqual('FE000A0DFF42')
   })
 
   it('decodes split RX UTF-8 independently of TX while publishing all raw bytes immediately', () => {

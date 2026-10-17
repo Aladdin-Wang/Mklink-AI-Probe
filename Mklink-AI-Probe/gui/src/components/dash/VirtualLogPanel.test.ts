@@ -6,6 +6,34 @@ import VirtualLogPanel from './VirtualLogPanel.vue'
 describe('VirtualLogPanel', () => {
   afterEach(() => vi.useRealTimers())
 
+  it('updates a visible partial row in place while preserving bytes and its first timestamp', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(VirtualLogPanel)
+    const append = (text: string, raw: string, continuesPrevious = false) => (wrapper.vm as any).append([{
+      time: 1_000_000n, level: 'data', label: 'RX', text, raw: new TextEncoder().encode(raw), continuesPrevious,
+    }])
+    append('UART5 seq=000', 'UART5 seq=000')
+    vi.advanceTimersByTime(33); await nextTick()
+    expect(wrapper.get('.virtual-log-text').text()).toBe('UART5 seq=000')
+    append('25058 tick=2900384 DATA', '25058 tick=2900384 DATA\r', true)
+    vi.advanceTimersByTime(33); await nextTick()
+    expect(wrapper.findAll('.virtual-log-row')).toHaveLength(1)
+    expect(wrapper.get('.virtual-log-text').text()).toBe('UART5 seq=00025058 tick=2900384 DATA')
+    append('', '\n', true)
+    append('tail', 'tail')
+    expect(new TextDecoder().decode((wrapper.vm as any).exportRaw()))
+      .toBe('UART5 seq=00025058 tick=2900384 DATA\r\ntail')
+    await nextTick()
+    expect(wrapper.findAll('.virtual-log-text').map(row => row.text())).toEqual([
+      'UART5 seq=00025058 tick=2900384 DATA', 'tail',
+    ])
+    ;(wrapper.vm as any).clear()
+    append('fresh', 'fresh', true)
+    vi.advanceTimersByTime(33); await nextTick()
+    expect(wrapper.get('.virtual-log-text').text()).toBe('fresh')
+    wrapper.unmount()
+  })
+
   it('trims to 5000 entries and renders only visible rows with spacers', async () => {
     vi.useFakeTimers()
     const wrapper = mount(VirtualLogPanel)

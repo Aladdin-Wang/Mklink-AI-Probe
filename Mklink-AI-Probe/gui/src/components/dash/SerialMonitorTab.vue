@@ -797,7 +797,8 @@ watch(() => logBinary.serialLines.value, batch => {
     time: line.timestampNs,
     level: line.direction === 'RX' ? 'data' : 'warning',
     label: line.direction,
-    text: visibleAscii(line.ascii),
+    text: visibleAscii(line.ascii.replace(/[\r\n]/g, '')),
+    continuesPrevious: line.continuesPrevious,
     raw: hexToBytes(line.rawHex),
   } satisfies VirtualLogInput)))
 })

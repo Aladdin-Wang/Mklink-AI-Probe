@@ -273,6 +273,20 @@ describe('SerialMonitorTab', () => {
     const saved = mocks.saveBlobFile.mock.calls[0][1] as Blob
     expect(Array.from(new Uint8Array(await saved.arrayBuffer()))).toEqual([0x4f, 0x4b])
 
+    mocks.logBinary.serialLines.value = {
+      type: 'serial-lines', port: 'TEST_UART', session: '11'.repeat(16), sequence: 3n,
+      lines: [
+        { timestampNs: 2_000_000n, direction: 'RX', rawHex: '210D', ascii: '!\r', continuesPrevious: true },
+        { timestampNs: 2_000_000n, direction: 'RX', rawHex: '0A', ascii: '\n', continuesPrevious: true },
+        { timestampNs: 2_000_000n, direction: 'RX', rawHex: '7461696C', ascii: 'tail', continuesPrevious: false },
+      ],
+    }
+    await wrapper.get('[data-testid="serial-log-text"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('.virtual-log-text').map(row => row.text())).toEqual(['OK!', 'tail']))
+    await wrapper.get('[data-testid="serial-save-log"]').trigger('click')
+    const continued = mocks.saveBlobFile.mock.calls.at(-1)![1] as Blob
+    expect(new TextDecoder().decode(await continued.arrayBuffer())).toBe('OK!\r\ntail')
+
     wrapper.unmount()
     expect(fetchMock.mock.calls.some(call => String(call[0]).endsWith('/api/dash/serial/stop'))).toBe(false)
     expect(mocks.logBinary.stop).toHaveBeenCalled()

@@ -11,6 +11,8 @@ import {
   SystemViewIntervalRing,
 } from '../lib/stream/systemViewRing'
 
+import { SerialLineFramer } from '../lib/stream/serialLineFramer'
+
 export type DecoderMode = 'default' | 'serial-log' | 'serial-terminal'
 
 export type WorkerInput =
@@ -145,6 +147,7 @@ export type WorkerOutput =
         direction: 'RX' | 'TX'
         rawHex: string
         ascii: string
+        continuesPrevious?: boolean
       }>
     }
   | { type: 'serial-terminal'; sequence: bigint; text: string; port: string; session: string }
@@ -276,6 +279,7 @@ export class StreamDecoder {
   private serialPort = ''
   private serialSource = ''
   private serialDecoder = new TextDecoder('utf-8')
+  private serialLineFramer = new SerialLineFramer()
   private serialBufferedItems = 0
 
   constructor(post: PostOutput) {
@@ -339,6 +343,7 @@ export class StreamDecoder {
           this.serialPort = message.port
           this.serialSource = ''
           this.serialDecoder = new TextDecoder('utf-8')
+          this.serialLineFramer = new SerialLineFramer()
           this.serialBufferedItems = 0
         }
         break
@@ -515,6 +520,7 @@ export class StreamDecoder {
     if (session !== this.serialSource) {
       this.serialSource = session
       this.serialDecoder = new TextDecoder('utf-8')
+      this.serialLineFramer = new SerialLineFramer()
       this.serialBufferedItems = 0
     }
 
@@ -533,9 +539,11 @@ export class StreamDecoder {
       throw new RangeError('Serial frames require a serial decoder mode')
     }
 
-    // Serial batches are arbitrary bytes, not newline-delimited protocol packets.
-    // Publish every batch so a short binary reply or a final tail is visible now.
-    const lines = [this.serialLine(decoded.timestampNs, direction, bytes)]
+    // Publish incomplete lines now and extend them when later transport chunks arrive.
+    const lines = this.serialLineFramer.frame(bytes, direction).map(fragment => ({
+      ...this.serialLine(decoded.timestampNs, direction, fragment.bytes),
+      continuesPrevious: fragment.continuesPrevious,
+    }))
     this.serialBufferedItems = Math.min(this.configuredCapacity, this.serialBufferedItems + 1)
     this.post({ type: 'serial-lines', sequence: decoded.sequence, lines, port, session })
   }
@@ -1256,6 +1264,7 @@ export class StreamDecoder {
     this.superwatchMetadataVersion = 0
     this.superwatchMetadataSignature = null
     this.serialDecoder = new TextDecoder('utf-8')
+    this.serialLineFramer = new SerialLineFramer()
     this.serialBufferedItems = 0
     this.clearTelemetry()
   }
