@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-17T13:02:51.415594+08:00",
+  "updated_at": "2026-10-17T13:55:10.7372658+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "SuperWatch每次稳定编译仅提示手动重载、明显按钮、移除添加/粘贴入口、点击图例及六条更新说明完成。Web句柄自动解析旁路、Site Agent版本和Skill契约已修复。e577候选覆盖安装与全局Skill同步成功，自行Keil编译下载Verify OK，安装态重载/RTT/UART/记录回放/PNG及四入口一致性已测。发布前验收报告已完成，仍有明确实机缺口，未合并签名发布。"
+    "current_task": "最新用户现场：持续采集时CDC WinError995。只读核对确认Windows在13:47:57及13:48:32记录同一下载器整个USB复合设备意外删除，随后重枚举；898249已交付样本零CRC/目标读错。根因仍需区分USB供电/线缆/主机与下载器固件重启。后台窗口保持运行，未重连或改代码。此前SuperWatch手动重载、安装与发布验收已完成，限制见报告，未合并发布。 已对照V3.6.4固件：心跳超时不重启USB，快采线程每约100ms喂狗；SDK异常死循环和USB无超时等待需故障快照证实，未修改或刷写固件。"
   },
   "milestones": [
     {
@@ -95,7 +95,7 @@
     "编译完成不代表目标已下载：所有稳定文件变化（包括地址不变/仅时间戳）仅发待重载事件，不后台解析或应用。SuperWatch每次变化弹窗一次，稍后保留顶部醒目按钮。用户明确重新加载后才执行共享符号迁移和采集恢复；用户主动停止不恢复。"
   ],
   "hardware": {
-    "state": "最新安装版已停止RTT/UART/SuperWatch、断开下载器并正常关闭原生窗口和测试Chrome页；全部MKLink进程、endpoint及8765/8766端口释放。用户明确授权后自行Keil重编译/下载原测试工程并Verify OK，板上保持该测试程序。没有重放历史MKLink unknown操作。",
+    "state": "用户另行启动的安装版后台仍运行，设备因CDC995处于ERROR，RTT/SuperWatch停止，UART未运行。Windows确认13:47:57和13:48:32下载器USB复合设备意外删除；查询时串口重新出现，但旧接收进程保留。本轮只读诊断，没有重连、清除状态或关闭用户窗口。此前验收后台已正常退出，不能与当前现场混淆。",
     "installer": "e577efc7 NSIS已覆盖成功，196Python/40Web及4载荷一致；全局Skill3efa7abf已更新，2603文件一致，CLI/SVD/MCP通过。未签名候选及证据MKLINK_BUILD_ROOT/artifacts/v035-local-e577efc7；初次UAC取消后按用户明确要求重试成功。",
     "backups": "0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。"
   },
@@ -110,7 +110,7 @@
     "nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。 HPM5301组18/19永久锁定的历史状态及用户字先写/组锁最后、全部固件独立校验后才写OTP等边界见docs/ai/hpm-offline-otp-handoff.md；接手重新确认芯片，其他型号不继承验收。"
   ],
   "next_actions": [
-    "发布前处理UART重配置后首帧前额外F0/FE字节来源，补齐Web真实文件句柄跟踪；本轮同址重载实机通过，变址/旧名移除有自动化与历史专项。真实Modbus/远程跨机/其他MCU/完整RTOS Trace、YMODEM及保护供电矩阵仍未全测。仅发布准备，不擅自签名、合并、打标签或更新渠道。",
+    "优先定位持续采集CDC995：Windows已确认整个USB复合设备掉线/重枚举，保存现场后受控重连，采集USB事件及下载器复位原因，区分线缆/供电/主机与固件。见v035-cdc-995-disconnect.md。其余发布缺口为UART额外首字节、Web真实句柄及完整实机矩阵；未授权正式发布。",
     "收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。",
     "继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。",
     "Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。",
@@ -119,7 +119,7 @@
   "continuation_protocol": [
     "新会话固定继续 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe 的 codex/0.3.5-fixes；读取该目录AGENTS.md和本交接，运行 python scripts/ai_memory.py validate，核对 git status、log、worktree及远端。不要从原0.3.4目录另起修复分支。",
     "最新运行源码e577efc7、生产Web3efa7abf；候选F:/MKLink-Build/artifacts/v035-local-e577efc7。覆盖安装及Skill同步已完成，不再运行含重复编排的qualify-install.ps1。最终Python全量证据在候选full-python.log/xml，链接scratch保留在isolated-final-e577efc7，不递归强删。",
-    "用户后续明确授权自行编译和下载；已用原Keil配置完成Verify OK，重编译/手动重载/RTT/UART实际验证完成。早期等待用户Keil和UAC状态已失效。原生与Chrome测试页关闭，资源已释放；无待答问题。历史MKLink unknown烧录故障仍独立保留。",
+    "此前自行Keil编译下载和验收已结束；用户新启动的安装版当前保持CDC995故障现场，不能按旧交接关闭或声称资源已释放。已保存状态和PnP证据于v035-cdc-995-20261017。本轮未重连，先读取最新现场再判断恢复。历史MKLink unknown烧录仍独立保留。",
     "客户启动故障仅确认PyInstaller解压ucrtbase.dll时Permission denied，重启后恢复；未定位权限/杀软/占用的具体来源，按用户意见暂不做推测性修复。若再现，结合新startup/runtime日志复查。",
     "仅继续修复和验证；PR43仍为草稿，未授权合并或正式发布。遵循AGENTS提交推送任务分支、更新memory并render/validate；详细历史保留docs/verification，敏感日志/硬件标识及本机产物不提交。"
   ]
