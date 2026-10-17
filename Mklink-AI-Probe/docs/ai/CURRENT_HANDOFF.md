@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-17T10:54:38+08:00`
+- 更新时间：`2026-10-17T11:09:31+08:00`
 - 分支：`codex/0.3.5-fixes`
-- HEAD：`继续2baff8ca后的串口文本分行修正：f517088c即时显示按传输批次换行导致字段拆开，新增即时片段续接，构建/实页/安装复测进行中。`
+- HEAD：`串口文本续接代码d9ac3a26、生产Web/Skill 2d029f18；三CI通过。本机已覆盖安装，实页续行验证通过，最终导出/退出待核对。`
 - 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
 - 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
-- 当前任务：用户反馈串口字符串换行错乱。修正即时发布的半行续接和跨批次CRLF，保留原始导出与有界记录。100项相关测试通过，补充页面续接导出回归通过；待构建和实页/安装验证。当前安装仍f517088c，不将新源码当作已安装。
+- 当前任务：串口文本换行修正已安装d9ac3a26：100相关测试、TS/Vite、实机周期文本与六段49字节CRLF/UTF-8实页验证通过。Skill/CLI/MCP更新通过。等待用户原生保存serial-lines.log并关闭窗口；保持COM9/COM10样本不变。
 - 状态：`in_progress`
 
 ## 里程碑
 
-- **0.3.5 调试、重连与下载流程修复** — `in_progress`。f517088c已完成原始字节导出及退出，但新增文本分行反馈暴露传输批次被当成行。续接修正进行中；PR43未合并发布。
+- **0.3.5 调试、重连与下载流程修复** — `in_progress`。串口半行即时显示且后续接回同一逻辑行；d9ac3a26已实装。最终49字节导出及正常退出待核对；PR43未合并发布。
 - **0.3.4正式版** — `complete`。不可变源a8fd3fab0403，PR40正式发布；PR41已保存正式Web/交接，合并提交185678c59623。17附件、5份验签、3渠道及实装/Skill通过。07846c1a记录后续清理完成，本次补入0.3.5；见v034-release-handoff.md及v034-workspace-cleanup.md。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
@@ -23,6 +23,7 @@
 
 ## 验证证据
 
+- **0.3.5 串口文本续行**：100相关测试、TS/Vite通过；d9ac3a26 NSIS实装、196Python/40Web/四载荷一致，冻结CLI/SVD/MCP/HTTP通过；Skill 2d029f18的2603文件及CLI/SVD/MCP通过。Chrome实机周期文本完整，六次发送显示为三行，跨批次CRLF/UTF-8正确，样本49字节；原生导出/最终退出待核对。2d029f18三个CI成功。详见v035-serial-lines.md。
 - **0.3.5 串口即时显示与 MSH 安装实测**：串口Worker/页面89、RTT页面/终端69、相关后端372通过，TS/Vite通过。NSIS提取/实装196Python/40Web、四载荷、Windows-only CLI/SVD/MCP/HTTP通过，Skill2603文件匹配。安装F103 ls三尾端15次与Chrome整条/逐键完整，CH1 256字节校验/120周期连续；UART115200下1000帧、38400下300帧序号CRC一致，两轮反向256字节一致。重新配置UART后首帧前各有一个额外字节单列保留；Chrome无换行7字节即时显示，最终导出文件恰好4f4b000a0dfeff共7字节；原生关闭后全部进程/endpoint及8765/8766释放。Skill/冻结CLI/MCP目标回显与UART累计校验一致。026b0bf3三CI通过。详见v035-serial-immediate.md。
 - **0.3.5 连接、RTT重载及下载流程**：拔插自动连接332 Python/89 GUI及用户实际换探针通过；RTT通道/显式符号重载490 Python/102 GUI及原工程Keil下载后实机通过，详见v035-auto-connect.md、v035-rtt-symbol-reload.md。最新下载免预连接/型号同步301 Python、185 GUI、TS/Vite通过；Chrome未连接时识别USB卷及算法，在线直接读取Flash64字节并保留结果；型号默认/独立修改及真实Pack导入后目录自动更新通过。未执行烧录，历史unknown仍保留。见v035-download-target-sync.md。
 - **0.3.5 本机测试包与覆盖安装**：bdd3c3e3 NSIS、53b4ebb2 Web/Skill；949GUI、26版本/启动/更新器通过。NSIS退出0，登记0.3.5，四载荷哈希一致；195Python/38Web与源一致；Windows-only PATH冻结CLI/SVD/MCP/HTTP、原生WebView/Edge及正常退出通过。全局Skill2600文件一致及CLI/MCP通过，旧Skill备份保留。未签名/合并/发布，详见v035-local-install.md。75cc3106三PR CI成功；后续提交须核对新HEAD。
@@ -30,7 +31,6 @@
 - **0.3.5 位域解析和整变量曲线**：62faad0e：客户ELF815→872标量叶，gSystemState6成员256模式1536比较通过，System23成员。旧MSB offset与data_bit_offset分离、显式存储宽度、cache6、位域只读、generation刷新。452 Python、53 GUI、TS/Vite通过。V3/F103原工程Keil下载验证15路一个8字节块、30MHz，1ms12343/50us245540及272200浏览器行一致，256状态、signed -16..15，序号零缺口、各错误/丢弃0。旧生产Web手动重解析只显示2叶、新29叶，后台System23；新增普通根搜索回归。详见v035-dwarf-bitfields.md，后随0.3.5安装及Skill更新。
 - **0.3.5 SuperWatch环境时钟差异**：时钟偏差注入：Python3.11.16 152、3.14.5 392通过；V3/F103单float、30MHz、1us约261k/259kHz，50us约21kHz，四组浏览器/后台丢弃0。另107分发/runtime/MCP通过、1可选hil_core跳过；GUI206通过。195源码/38Web及冻结字节码一致。Skill/冻结MCP各1us/50us零缺口；Windows-only PATH原生9230741读零错。UAC初次取消、用户重试NSIS退出0，4载荷哈希一致；安装MCP/Edge实测零缺口。详见docs/verification/v035-superwatch-clock.md。运行代码75a73a5a三PR CI通过；最新HEAD须另查。
 - **0.3.4 正式发布与本地升级**：最终源a8fd3fab0403；正式NSIS176582092字节，实装载荷哈希匹配；冻结CLI/MCP/38 Web文件/原生窗口及退出通过。F103双探针固定后台、采集中24写应答、5766周期零读错误通过；SystemView54字节仅证生命周期。三平台native CI38144587775、五份签名实际验签、17附件匿名下载及三渠道索引、本地Skill逐文件/CLI/MCP通过。见v034-release-handoff.md，早期准备与体积审计证据仍保留原报告。
-- **0.3.4 共享架构修复（已合并历史证据）**：采集启动、窗口固定后台、变量写入仅认应答、明确断开自动收尾已随0.3.4发布；详情与各轮测试数字分别保留docs/verification/v034-rtt-startup.md、v034-window-owned-backend.md、v034-superwatch-write.md、v034-explicit-connection-control.md。旧按探针跳转后台方案已被固定窗口后台方案取代。最终正式版本实装双探针切换/共享断开通过，SystemView54字节0事件只证生命周期；异步烧录中断场景使用夹具，未中断实物烧录。
 
 ## 架构决策
 
@@ -47,13 +47,13 @@
 
 ## 真机环境
 
-- **state**：F103测试固件CH0 MSH、CH1周期/校验、UART5周期/校验已Keil下载。用户重新接线后UART恢复，两档1300帧CRC无错。当前UART恢复115200每100ms周期文本，末次143条发送无短写；目标连续运行约7分钟，RTT采集期间target-drop未增长。用户保存的最终日志恰好7字节；原生窗口已正常关闭，所有MKLink进程/endpoint及8765/8766释放。未重放历史unknown烧录。
-- **installer**：f517088c NSIS已覆盖安装并实装资格检查通过；全局Skill d08426c0/Web f517088c已更新、2603文件匹配。证据及当前原生运行目录MKLINK_BUILD_ROOT/artifacts/v035-local-f517088c，旧固件编辑/编译记录artifacts/v035-rtt-uart。
+- **state**：F103原测试固件保持，UART5 115200周期文本实页续行验证通过。当前原生桌面运行，COM9/COM10共享串口保存六段49字节样本，等用户保存serial-lines.log后关闭；不要在核对导出前改变会话或清除数据。无重新烧录。
+- **installer**：d9ac3a26 NSIS已覆盖安装；全局Skill 2d029f18/Web d9ac3a26已更新，2603文件匹配。证据及当前原生运行目录MKLINK_BUILD_ROOT/artifacts/v035-local-d9ac3a26。
 - **backups**：0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。
 
 ## 下一动作
 
-1. 完成串口文本续接修正的构建、真实分批/无换行/CRLF/原始导出与安装态验证，更新Skill。沿用本机F103测试固件，无需重新烧录；不重放unknown操作。
+1. 核对用户保存的artifacts/v035-local-d9ac3a26/serial-lines.log与expected-lines.bin恰好49字节一致；用户正常关闭后关测试Chrome页，检查全部MKLink进程/endpoint及8765/8766释放。完成最终证据和交接。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。
@@ -73,7 +73,7 @@
 ## 延续协议
 
 - 新会话固定继续 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe 的 codex/0.3.5-fixes；读取该目录AGENTS.md和本交接，运行 python scripts/ai_memory.py validate，核对 git status、log、worktree及远端。不要从原0.3.4目录另起修复分支。
-- 用户新增串口文本分行反馈，继续当前修复，详见v035-serial-lines.md。当前安装f517088c，上一轮最终导出和正常退出已通过，但不能替代新分行修正的真实界面验证。
+- 串口文本续行已实装d9ac3a26并完成真实浏览器分段验证，详见v035-serial-lines.md；原生保存与退出待用户。保持样本，不沿用f517088c的旧导出结果替代本轮。
 - 历史来源及专项报告继续保留。用户Keil下载已完成，不等待下载，不重放unknown烧录。拔插、RTT/符号重载、下载同步及记录修复均已进入本机安装包；原图回放最新实页证据见v035-inline-replay.md。
 - 客户启动故障仅确认PyInstaller解压ucrtbase.dll时Permission denied，重启后恢复；未定位权限/杀软/占用的具体来源，按用户意见暂不做推测性修复。若再现，结合新startup/runtime日志复查。
 - 仅继续修复和验证；PR43仍为草稿，未授权合并或正式发布。遵循AGENTS提交推送任务分支、更新memory并render/validate；详细历史保留docs/verification，敏感日志/硬件标识及本机产物不提交。

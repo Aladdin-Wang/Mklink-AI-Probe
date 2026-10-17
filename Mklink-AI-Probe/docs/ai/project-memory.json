@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-17T11:09:18+08:00",
+  "updated_at": "2026-10-17T11:09:31+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -80,10 +80,6 @@
     {
       "area": "0.3.4 正式发布与本地升级",
       "result": "最终源a8fd3fab0403；正式NSIS176582092字节，实装载荷哈希匹配；冻结CLI/MCP/38 Web文件/原生窗口及退出通过。F103双探针固定后台、采集中24写应答、5766周期零读错误通过；SystemView54字节仅证生命周期。三平台native CI38144587775、五份签名实际验签、17附件匿名下载及三渠道索引、本地Skill逐文件/CLI/MCP通过。见v034-release-handoff.md，早期准备与体积审计证据仍保留原报告。"
-    },
-    {
-      "area": "0.3.4 共享架构修复（已合并历史证据）",
-      "result": "采集启动、窗口固定后台、变量写入仅认应答、明确断开自动收尾已随0.3.4发布；详情与各轮测试数字分别保留docs/verification/v034-rtt-startup.md、v034-window-owned-backend.md、v034-superwatch-write.md、v034-explicit-connection-control.md。旧按探针跳转后台方案已被固定窗口后台方案取代。最终正式版本实装双探针切换/共享断开通过，SystemView54字节0事件只证生命周期；异步烧录中断场景使用夹具，未中断实物烧录。"
     }
   ],
   "decisions": [
