@@ -143,6 +143,67 @@ describe('RttViewTab binary migration', () => {
     }
   }
 
+  it('reads channels immediately after search and retains the preview across idle polling', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetch).mockImplementation(async (url) => ({ ok: true, json: async () =>
+      String(url).endsWith('/api/device/status') ? { connected: true, idcode: '0x1ba01477' } :
+      String(url).endsWith('/rtt-control-block') ? { channels: [0, 2], up_buffers: [{ channel: 0 }, { channel: 2 }] } : mocks.status,
+    }) as Response)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    await wrapper.get('[data-testid=rtt-search]').trigger('click')
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledWith('/api/device/rtt-control-block', expect.objectContaining({
+      body: JSON.stringify({ address: '0x20001A40' }),
+    }))
+    expect(wrapper.get('[data-testid=rtt-channel-2]').element).toHaveProperty('checked', true)
+    expect(wrapper.text()).toContain('CH 2')
+    expect(mocks.dash.start).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(wrapper.find('[data-testid=rtt-channel-2]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('does not read control blocks without a recognized chip', async () => {
+    vi.mocked(fetch).mockImplementation(async (url) => ({ ok: true, json: async () =>
+      String(url).endsWith('/api/device/status') ? { connected: true, idcode: '0x0' } : mocks.status,
+    }) as Response)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid=rtt-search]').trigger('click'); await flushPromises()
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/rtt-control-block'))).toBe(false)
+    expect(wrapper.get('[data-testid=rtt-address]').element).toHaveProperty('value', '0x20001A40')
+    wrapper.unmount()
+  })
+
+  it('ignores a control-block response after the address is edited', async () => {
+    let resolve!: (value: unknown) => void
+    vi.mocked(fetch).mockImplementation(async (url) => ({ ok: true, json: async () =>
+      String(url).endsWith('/api/device/status') ? { connected: true, idcode: '0x1ba01477' } :
+      String(url).endsWith('/rtt-control-block') ? new Promise(r => { resolve = r }) : mocks.status,
+    }) as Response)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid=rtt-search]').trigger('click'); await flushPromises()
+    await wrapper.get('[data-testid=rtt-address]').setValue('0x20000200')
+    resolve({ channels: [0, 7], up_buffers: [] }); await flushPromises()
+    expect(wrapper.find('[data-testid=rtt-channel-7]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('fits manually resized panels on blank double-click without resetting on controls', async () => {
+    mocks.status = { running: false, channels: [0, 1] }
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const panels = wrapper.findAll('.rtt-channel-panel')
+    for (const panel of panels) (panel.element as HTMLElement).style.cssText = 'width: 410px; height: 470px'
+    await wrapper.get('[data-testid=channel-pause]').trigger('dblclick')
+    expect((panels[0]!.element as HTMLElement).style.width).toBe('410px')
+    await wrapper.get('.rtt-channel-grid').trigger('dblclick')
+    expect(wrapper.get('.rtt-channel-grid').classes()).toContain('auto-fit')
+    for (const panel of panels) expect((panel.element as HTMLElement).style.cssText).toBe('')
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('retains independent logs while another channel is paused or switched to terminal', async () => {
     vi.useFakeTimers()
     const streams = new Map<string, typeof mocks.binary>()

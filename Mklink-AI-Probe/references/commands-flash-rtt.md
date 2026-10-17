@@ -5,6 +5,12 @@
 
 ## 命令说明
 
+### RTT 通道预览与窗口适配
+
+Web/桌面 RTT View 点击“自动搜索”后，若已连接并识别芯片 ID，会只读解析该地址的 RTT 控制块，立即显示有效上行通道的 CH 复选框，无需先开始采集。无效或尚未初始化的控制块会显示错误，不自动启动或重试。双击通道面板周围、标题栏或下方空白处恢复自适应布局；按钮、输入框和终端文本的双击保留原行为。
+
+CLI 可调用 `runtime call rtt_inspect --arguments '{"address":"0x20000000"}'`（附上当前工程和探针选择），共享 MCP 可用 `gui_call` 的 `rtt_inspect` 能力查询同样的 `channels`、`up_buffers` 和 `down_buffers`。只读检查不消费 RTT 数据，地址须在目标已知 RAM 内且 4 字节对齐；旧固件采集占用时需显式停止后查询。
+
 ### 连接管理
 
 #### `python -m mklink probes list`

@@ -3705,6 +3705,19 @@ def create_app(
     # Device Memory / Symbols / Registers REST API
     # ===================================================================
 
+    @app.post("/api/device/rtt-control-block")
+    async def inspect_rtt_control_block(body: dict = Body(...)):
+        from mklink.runtime_capabilities import validate_arguments
+        arguments = validate_arguments('rtt_inspect', body)
+        device = _state.get('device')
+        if device is None or not device.connected or not device.idcode:
+            raise HTTPException(400, 'Connect a target with a valid chip ID before inspecting RTT')
+        async with async_target_debug_lease(_state, 'rtt-inspect'):
+            try:
+                return await run_in_threadpool(device.rtt_inspect, int(arguments['address'], 0))
+            except Exception as error:
+                raise HTTPException(400, str(error)) from error
+
     @app.post("/api/device/read-memory")
     async def read_memory(
         address: str = Body(...),

@@ -58,12 +58,13 @@ CAPABILITIES = {
     'superwatch_interval': ('POST', '/api/dash/superwatch/interval'),
     'systemview_capture_history': ('GET', '/api/dash/systemview/history/cursor'),
     'rtt_read_channel': ('GET', '/api/dash/rtt/channels/read'),
+    'rtt_inspect': ('POST', '/api/device/rtt-control-block'),
     'rtt_write': ('POST', '/api/dash/rtt/write'),
 }
 # These operations only use Device's framed memory path. Configuration, flash,
 # debug control and legacy acquisition retain their explicit stop boundary.
 MUX_MEMORY_CAPABILITIES = frozenset({'read_memory', 'write_memory', 'read_variable',
-                                    'write_variable', 'read_register', 'read_memory_regions'})
+                                    'write_variable', 'read_register', 'read_memory_regions', 'rtt_inspect'})
 MUX_MEMORY_PATHS = frozenset(CAPABILITIES[name][1] for name in MUX_MEMORY_CAPABILITIES)
 
 
@@ -124,6 +125,16 @@ UART_CAPABILITIES = frozenset(name for name, (_, path) in CAPABILITIES.items() i
 def validate_arguments(capability, arguments):
     """Reject malformed/range-overflow writes before a device is touched."""
     arguments = dict(arguments)
+    if capability == 'rtt_inspect':
+        try:
+            if set(arguments) != {'address'}:
+                raise ValueError()
+            address = int(str(arguments['address']), 0)
+            if not 0 <= address <= 0xFFFFFFFF or address % 4:
+                raise ValueError()
+            arguments['address'] = hex(address)
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(422, 'RTT control block requires a 4-byte aligned 32-bit address')
     if capability == 'select_peripherals':
         if (arguments.keys() - {'target_id', 'chip', 'svd'} or len(arguments) != 1
                 or any(not isinstance(value, str) or not value.strip() for value in arguments.values())):

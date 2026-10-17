@@ -1687,6 +1687,21 @@ class Device:
             "name": descriptor.get("name", ""),
         }
 
+    def rtt_inspect(self, address: int) -> dict[str, Any]:
+        """Inspect initialized target channels without starting or consuming RTT."""
+        if not self.connected or not self.idcode:
+            raise DeviceError("Connect a target with a valid chip ID before inspecting RTT")
+        info = self._read_rtt_control_block(address)
+        return {
+            "control_block_addr": hex(address),
+            "max_up_buffers": info["max_up_buffers"],
+            "max_down_buffers": info["max_down_buffers"],
+            "channels": [item["channel"] for item in info["up_buffers"]
+                         if item["active"] and item["channel"] < _RTT_FIRMWARE_MAX_CHANNELS],
+            "up_buffers": [self._public_rtt_buffer(item) for item in info["up_buffers"]],
+            "down_buffers": [self._public_rtt_buffer(item) for item in info["down_buffers"]],
+        }
+
     def _read_rtt_down_buffers(self, control_block_addr: int) -> list[dict]:
         info = self._read_rtt_control_block(control_block_addr)
         return [self._public_rtt_buffer(item) for item in info["down_buffers"]]

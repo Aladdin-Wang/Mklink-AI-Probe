@@ -1,5 +1,5 @@
 <template>
-  <div class="rtt-view-tab">
+  <div class="rtt-view-tab" @dblclick="fitPanels">
     <SetupHint
       v-if="!deviceConnected"
       kind="device"
@@ -28,7 +28,7 @@
           <label v-for="ch in availableChannels" :key="ch.channel" :title="ch.name || `RTT ${ch.channel}`">
             <input type="checkbox" :data-testid="`rtt-channel-${ch.channel}`"
               :checked="!hiddenChannels.has(ch.channel)" @change="toggleChannel(ch.channel)">
-            {{ ch.channel }}
+            CH {{ ch.channel }}
           </label>
         </div>
         <ControlToolbar
@@ -37,7 +37,7 @@
           @start="onStart" @stop="onStop" :hide-pause="true"
         />
       </div>
-      <div class="rtt-channel-grid" :class="{ multiple: activeChannels.filter(ch => !hiddenChannels.has(ch)).length > 1 }">
+      <div ref="channelGrid" class="rtt-channel-grid" :class="{ 'auto-fit': autoFit, multiple: activeChannels.filter(ch => !hiddenChannels.has(ch)).length > 1 }">
         <RttChannelPanel v-for="ch in activeChannels" :key="ch" :channel="ch"
           v-show="!hiddenChannels.has(ch)"
           :running="statusRunning && !runtimeError" :session="captureSession" :channel-status="channelStatus[String(ch)]"
@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Search } from '@lucide/vue'
 import { CAPTURE_START_TIMEOUT_MS } from '../../lib/captureStartup'
 import { useDashboard } from '../../composables/useDashboard'
@@ -90,6 +90,25 @@ const actionError = ref<string | null>(null)
 const activeChannels = ref<number[]>([0])
 const hiddenChannels = ref(new Set<number>(settings.value.rttHiddenChannels || []))
 const upBuffers = ref<Array<{ channel: number, name?: string, active?: boolean }>>([])
+const channelGrid = ref<HTMLElement | null>(null)
+const autoFit = ref(false)
+const inspectedChannels = ref<{ address: string, channels: number[], up_buffers: typeof upBuffers.value } | null>(null)
+function fitPanels(event: MouseEvent): void {
+  const target = event.target
+  if (!(target instanceof HTMLElement) || !target.matches(
+    '.rtt-view-tab, .rtt-channel-grid, .rtt-channel-panel, .rtt-channel-panel header, .channel-content, .rtt-view-toolbar, .rtt-primary-tools, .resize-hint',
+  )) return
+  channelGrid.value?.querySelectorAll<HTMLElement>('.rtt-channel-panel').forEach(panel => {
+    panel.style.removeProperty('width')
+    panel.style.removeProperty('height')
+  })
+  autoFit.value = true
+}
+watch(() => props.deviceConnected, () => {
+  searchGeneration++
+  searching.value = false
+  inspectedChannels.value = null
+})
 const availableChannels = computed(() => activeChannels.value.map(channel => ({
   channel, name: upBuffers.value.find(item => item.channel === channel)?.name,
 })))
@@ -125,6 +144,7 @@ function syncRttAddressFromSettings(): void {
   const sourceChanged = !sameRttSearchSource(settings.value.symbolPath, latest.symbolPath)
   const addressChanged = latest.rttAddress !== rttAddress.value
   if (sourceChanged || addressChanged) {
+    inspectedChannels.value = null
     searchGeneration++
     searching.value = false
   }
@@ -149,6 +169,7 @@ function isRttAddress(value: string): boolean {
 }
 
 function onAddressInput(): void {
+  inspectedChannels.value = null
   cancelRttAddressRefresh(desktopStorage)
   searchGeneration++
   searching.value = false
@@ -184,6 +205,27 @@ async function searchRttAddress(): Promise<void> {
     rttAddress.value = result.addr
     addressSource.value = result.source || (source ? tr('所选文件', 'Selected file') : tr('工程自动检测', 'Project auto-detection'))
     persistSettings({ ...latest, rttAddress: result.addr })
+    inspectedChannels.value = null
+    if (props.deviceConnected) {
+      const deviceResponse = await fetch(`${API_BASE}/api/device/status`)
+      if (!deviceResponse.ok) throw new Error(tr('读取设备状态失败', 'Could not read device status'))
+      const device = await deviceResponse.json()
+      if (disposed || generation !== searchGeneration) return
+      if (device.connected && Number(device.idcode) > 0) {
+        const response = await fetch(`${API_BASE}/api/device/rtt-control-block`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: result.addr }),
+        })
+        const info = await response.json()
+        if (disposed || generation !== searchGeneration) return
+        if (!response.ok) throw new Error(typeof info.detail === 'string' ? info.detail : tr('RTT 控制块读取失败', 'Could not read RTT control block'))
+        inspectedChannels.value = { address: result.addr, channels: info.channels, up_buffers: info.up_buffers }
+        if (!statusRunning.value) {
+          activeChannels.value = info.channels
+          upBuffers.value = info.up_buffers
+        }
+      }
+    }
   } catch (caught) {
     if (!disposed && generation === searchGeneration) {
       addressError.value = caught instanceof Error ? caught.message : String(caught)
@@ -228,8 +270,9 @@ async function refreshStatus(): Promise<Record<string, any> | null> {
       const newSession = status.session && status.session !== captureSession.value
       captureSession.value = status.session
       channelStatus.value = status.channel_status || {}
-      activeChannels.value = Array.isArray(status.channels) && status.channels.length ? status.channels : [0]
-      upBuffers.value = Array.isArray(status.up_buffers) ? status.up_buffers : []
+      const preview = !status.running && inspectedChannels.value?.address === rttAddress.value ? inspectedChannels.value : null
+      activeChannels.value = preview ? preview.channels : Array.isArray(status.channels) && status.channels.length ? status.channels : [0]
+      upBuffers.value = preview ? preview.up_buffers : Array.isArray(status.up_buffers) ? status.up_buffers : []
       downBuffers.value = Array.isArray(status.down_buffers) ? status.down_buffers : []
       if (typeof status.error === 'string' && status.error) runtimeError.value = status.error
       else if (newSession) runtimeError.value = null
@@ -342,6 +385,10 @@ onUnmounted(() => {
 <style scoped>
 .rtt-channel-grid { display: flex; flex-wrap: wrap; align-content: start; align-items: flex-start; gap: 12px; flex: 1; min-height: 0; overflow: auto; padding-top: 8px; }
 .rtt-channel-grid.multiple > :deep(.rtt-channel-panel) { width: calc(50% - 6px); }
+.rtt-channel-grid.auto-fit { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(320px, 1fr); align-content: stretch; align-items: stretch; }
+.rtt-channel-grid.auto-fit.multiple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rtt-channel-grid.auto-fit > :deep(.rtt-channel-panel) { width: 100%; height: 100%; }
+@media (max-width: 1000px) { .rtt-channel-grid.auto-fit.multiple { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1000px) { .rtt-channel-grid.multiple > :deep(.rtt-channel-panel) { width: 100%; } }
 .rtt-view-tab { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .rtt-config-row { display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 2px 0 7px; border-bottom: 1px solid var(--border-subtle); overflow-x: auto; }

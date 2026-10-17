@@ -600,6 +600,29 @@ def _device_with_rtt_memory(header, descriptors, bridge=None):
     return device, bridge
 
 
+def test_inspect_rtt_reads_active_descriptors_without_starting_or_consuming():
+    header, descriptors = _rtt_control_block_memory()
+    descriptors = descriptors[:24] + bytes(24) + descriptors[48:]
+    device, bridge = _device_with_rtt_memory(header, descriptors)
+    bridge.idcode = 0x1ba01477
+    result = device.rtt_inspect(0x20000000)
+    assert result['channels'] == [0, 2]
+    assert result['max_up_buffers'] == 3
+    assert result['up_buffers'][1]['active'] is False
+    assert result['down_buffers'][0]['active'] is True
+    assert not bridge.commands and not bridge.raw_writes
+    assert device._rtt_session is None
+
+
+def test_inspect_rtt_requires_chip_identity_before_reading():
+    header, descriptors = _rtt_control_block_memory()
+    device, bridge = _device_with_rtt_memory(header, descriptors)
+    bridge.idcode = 0
+    device.read_memory = lambda *args: pytest.fail('must not read an unidentified target')
+    with pytest.raises(DeviceError, match='valid chip ID'):
+        device.rtt_inspect(0x20000000)
+
+
 def test_device_allows_output_only_rtt_but_rejects_write_without_downbuffer():
     header, descriptors = _rtt_control_block_memory(max_down=0)
     device, bridge = _device_with_rtt_memory(header, descriptors)
