@@ -410,6 +410,28 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('keeps the s and Enter queued while the preceding terminal l is still being sent', async () => {
+    vi.useFakeTimers()
+    mocks.status = { running: true, numeric_channels: [], down_buffers: [{ channel: 0, active: true }] }
+    mocks.dash.state.value = 'running'
+    let finishFirst!: (value: { sent_bytes: number }) => void
+    mocks.api.writeRtt.mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve }))
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const terminal = wrapper.findComponent({ name: 'RttTerminalPanel' })
+    terminal.vm.$emit('input', 'l')
+    await vi.advanceTimersByTimeAsync(8)
+    terminal.vm.$emit('input', 's')
+    await vi.advanceTimersByTimeAsync(8)
+    terminal.vm.$emit('input', '\r')
+    await vi.advanceTimersByTimeAsync(8)
+    expect(mocks.api.writeRtt).toHaveBeenCalledTimes(1)
+    finishFirst({ sent_bytes: 1 })
+    await flushPromises()
+    expect(mocks.api.writeRtt.mock.calls.map(call => Array.from(call[0]))).toEqual([[0x6c], [0x73], [0x0d]])
+    wrapper.unmount()
+  })
+
   it('keeps shared capture controls outside per-channel display controls', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
