@@ -403,14 +403,22 @@ describe('SymbolVariablePanel', () => {
       await flushPromises()
       mocks.refreshStatus.mockResolvedValue({ file_source_change: { sequence: 1, state: 'awaiting-reload' } })
       await vi.advanceTimersByTimeAsync(2000)
-      expect(wrapper.get('[data-testid="reparse-symbols"]').text()).toBe('重新加载')
+      expect(wrapper.get('[data-testid="reparse-symbols"]').text()).toBe('重新加载变量')
+      expect(wrapper.find('[data-testid="reload-symbols-dialog"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="reload-symbols-later"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(wrapper.find('[data-testid="reload-symbols-dialog"]').exists()).toBe(false)
+      expect(wrapper.find('.source-reload-banner').exists()).toBe(true)
+      mocks.refreshStatus.mockResolvedValue({ file_source_change: { sequence: 2, state: 'awaiting-reload' } })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(wrapper.find('[data-testid="reload-symbols-dialog"]').exists()).toBe(true)
       expect(mocks.reparse).not.toHaveBeenCalled()
       expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/reload-sources'))).toBe(false)
       mocks.refreshStatus.mockImplementationOnce(async () => {
         mocks.generation.value = 2
         return { file_source_change: { sequence: 2, state: 'applied' } }
       })
-      await wrapper.get('[data-testid="reparse-symbols"]').trigger('click')
+      await wrapper.get('[data-testid="reload-symbols-confirm"]').trigger('click')
       await flushPromises()
       expect(fetch).toHaveBeenCalledWith('/api/symbols/reload-sources', expect.objectContaining({ method: 'POST' }))
       expect(mocks.toastSuccess).toHaveBeenCalledWith('符号已重新加载', 2500)
@@ -449,26 +457,13 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.emitted('selection-removed')).toEqual([['gain']])
   })
 
-  it('adds a manually entered member path through the shared SuperWatch API', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(okJson({ items: [] }))
-      .mockResolvedValueOnce(okJson({ pins: [], revision: '1', entries: [] }))
-      .mockResolvedValueOnce(okJson({ item: { name: 'data_save.odo', type: 'uint64_t' } }))
-    vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mount(SymbolVariablePanel, {
-      props: { deviceConnected: true, latestValues: {} },
-    })
+  it('omits manual add and paste buttons from the search toolbar', async () => {
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
     await flushPromises()
-
-    await wrapper.get('[data-testid="show-manual-add"]').trigger('click')
-    await wrapper.get('[data-testid="manual-variable-path"]').setValue('data_save.odo')
-    await wrapper.get('[data-testid="add-manual-variable"]').trigger('submit')
-    await flushPromises()
-
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/dash/superwatch/add', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ name: 'data_save.odo' }),
-    }))
-    expect(wrapper.text()).toContain('已选 1')
+    expect(wrapper.find('[data-testid="show-manual-add"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="show-c-layout"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="variable-search"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('opens an unresolved container and applies its pasted C definition', async () => {

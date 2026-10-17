@@ -1118,6 +1118,22 @@ def create_app(
         event = {'sequence': previous.get('sequence', time.time_ns()),
                  'files': [Path(path).name for path in pending], 'pending': True}
 
+        if not apply:
+            # Compilation does not mean the target runs the new firmware. Only
+            # announce the change; even identical layouts require user action.
+            for name in ('rtt', 'superwatch'):
+                capture = get_managers()[name]
+                if capture.running and name not in reload_captures:
+                    paused = capture.paused if name == 'rtt' else not capture._collecting.is_set()
+                    reload_captures[name] = (getattr(capture, '_explicit_stop_version', 0), paused)
+            event['state'] = 'awaiting-reload'
+            if new_content or previous.get('state') != event['state']:
+                event['sequence'] = time.time_ns()
+            attempted_sources.clear()
+            attempted_sources.update(pending)
+            _state['file_source_change'] = event
+            return
+
         async def reload_sources():
             from contextlib import AsyncExitStack
             from mklink.remote.dashboards import active_bridge_dashboards
@@ -1159,19 +1175,6 @@ def create_app(
                 address_changed = bool(old_address) and (
                     not address or int(address, 0) != int(old_address, 0))
                 catalog = getattr(device, 'symbol_catalog', None)
-                if not apply:
-                    from mklink.symbol_catalog import rebind_paths
-                    watch = get_managers()['superwatch']
-                    paths = [item.name for item in getattr(watch._runtime, 'items', ())
-                             if getattr(item, 'source', 'ram') == 'ram']
-                    paths.extend(item.name for item in (watch._array_snapshot or {}).get('items', ()))
-                    summary = None
-                    if paths and catalog is not None and await run_in_threadpool(catalog.is_stale):
-                        preview = await run_in_threadpool(device.preview_axf_catalog)
-                        summary = rebind_paths(catalog, preview, paths)
-                    if address_changed or (summary and (summary.updated or summary.removed)):
-                        event.update(state='awaiting-reload', rtt_addr=address, rtt_changed=address_changed)
-                        return
                 await run_in_threadpool(ensure_rtt_config_updated, _state['project_root'],
                                         source_path=getattr(device, '_axf', None))
                 restart = None

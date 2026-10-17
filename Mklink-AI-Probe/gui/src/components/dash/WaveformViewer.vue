@@ -536,12 +536,12 @@ function buildTemplate(mode: string): string {
       <button
         id="chart-legend-toggle"
         type="button"
-        aria-expanded="true"
+        aria-expanded="false"
         aria-controls="chart-legend"
-        data-i18n-title="hide_channel_legend_tip"
-        title="隐藏通道列表"
+        data-i18n-title="show_channel_legend_tip"
+        title="显示通道列表"
       ><span aria-hidden="true">&#9776;</span></button>
-      <div id="chart-legend" class="is-visible" aria-label="Channel layout" aria-hidden="false"></div>
+      <div id="chart-legend" aria-label="Channel layout" aria-hidden="true"></div>
       <div id="split-panel-control" class="split-panel-control" hidden>
         <span class="split-panel-label" data-i18n="split_panel">独立通道</span>
         <span id="split-panel-name" class="split-panel-name"></span>

@@ -499,8 +499,7 @@ var chartLegendToggle = document.getElementById('chart-legend-toggle');
 var splitPanelControl = document.getElementById('split-panel-control');
 var splitPanelName = document.getElementById('split-panel-name');
 var splitPanelMerge = document.getElementById('split-panel-merge');
-var chartLegendVisible = true;
-var chartLegendHideTimer = null;
+var chartLegendVisible = false;
 
 function updateTimelineInteractionUI() {
   if (!IS_SUPERWATCH_MODE) return;
@@ -512,12 +511,6 @@ function updateTimelineInteractionUI() {
   }
   var minimapWrap = document.getElementById('minimap-wrap');
   if (minimapWrap) minimapWrap.classList.remove('is-live-locked');
-}
-
-function clearChartLegendHideTimer() {
-  if (chartLegendHideTimer === null) return;
-  clearTimeout(chartLegendHideTimer);
-  chartLegendHideTimer = null;
 }
 
 function setChartLegendVisible(visible) {
@@ -536,29 +529,9 @@ function setChartLegendVisible(visible) {
   }
 }
 
-function hideChartLegend() {
-  clearChartLegendHideTimer();
-  setChartLegendVisible(false);
-}
-
-function scheduleChartLegendHide(delay) {
-  clearChartLegendHideTimer();
-  if (!chartLegendVisible) return;
-  chartLegendHideTimer = setTimeout(hideChartLegend, delay === undefined ? 700 : delay);
-}
-
-function showChartLegend(autoHideDelay) {
-  clearChartLegendHideTimer();
-  setChartLegendVisible(true);
-  if (autoHideDelay !== undefined) scheduleChartLegendHide(autoHideDelay);
-}
-
-function revealChartLegendAfterAction() {
-  showChartLegend();
-  var pointerInside = (chartLegend && chartLegend.matches(':hover')) ||
-    (chartLegendToggle && chartLegendToggle.matches(':hover'));
-  if (!pointerInside) scheduleChartLegendHide(2000);
-}
+function hideChartLegend() { setChartLegendVisible(false); }
+function showChartLegend() { setChartLegendVisible(true); }
+function revealChartLegendAfterAction() { showChartLegend(); }
 
 function visibleChartChannelNames() {
   var names = [];
@@ -582,7 +555,6 @@ function updateChartLegend() {
   var hasLegend = IS_BINARY_WAVEFORM_MODE && names.length > 0;
   if (chartLegendToggle) chartLegendToggle.hidden = !hasLegend;
   if (!hasLegend) {
-    clearChartLegendHideTimer();
     setChartLegendVisible(false);
     return;
   }
@@ -613,7 +585,7 @@ function updateChartLegend() {
     }
     chartLegend.appendChild(row);
   }
-  showChartLegend(2000);
+  setChartLegendVisible(chartLegendVisible);
 }
 
 function updateSplitPanelControl(active, dividerY) {
@@ -673,17 +645,9 @@ if (chartLegend) {
     e.stopPropagation();
     setSplitChannel(action.dataset.channel || '');
   }, { signal: viewerAbortController.signal });
-  chartLegend.addEventListener('mouseenter', clearChartLegendHideTimer,
-    { signal: viewerAbortController.signal });
-  chartLegend.addEventListener('mouseleave', function() { scheduleChartLegendHide(); },
-    { signal: viewerAbortController.signal });
 }
 
 if (chartLegendToggle) {
-  chartLegendToggle.addEventListener('mouseenter', function() { showChartLegend(); },
-    { signal: viewerAbortController.signal });
-  chartLegendToggle.addEventListener('mouseleave', function() { scheduleChartLegendHide(); },
-    { signal: viewerAbortController.signal });
   chartLegendToggle.addEventListener('click', function() {
     if (chartLegendVisible) hideChartLegend();
     else showChartLegend();
@@ -3669,7 +3633,6 @@ function endReplay() {
 function disposeViewer() {
   saveViewerPreferences();
   clearTimeout(viewerPreferenceTimer);
-  clearChartLegendHideTimer();
   stopWatchColumnResize();
   viewerResizeObserver.disconnect();
   viewerAbortController.abort();

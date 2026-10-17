@@ -1,4 +1,4 @@
-"""Unchanged layouts refresh silently; changed addresses await explicit reload."""
+"""Every stable build change awaits explicit reload; running captures stay untouched."""
 import asyncio
 from unittest.mock import Mock
 
@@ -59,18 +59,23 @@ def test_background_linker_replacement_is_silent_and_recovers_after_persistent_e
     poll(4)
     assert app.state.mklink_state['file_source_change'] is None and parses == []
     poll(5)
-    assert app.state.mklink_state['file_source_change']['state'] == 'applied'
+    first = dict(app.state.mklink_state['file_source_change'])
+    assert first['state'] == 'awaiting-reload' and parses == []
+    poll(10)
+    assert app.state.mklink_state['file_source_change']['sequence'] == first['sequence']
+    asyncio.run(app.state.check_file_sources(apply=True))
     assert parses == [b'complete output']
     axf.unlink()
-    poll(6)
-    poll(10)
-    assert app.state.mklink_state['file_source_change']['state'] == 'applied'
     poll(11)
-    assert app.state.mklink_state['file_source_change']['state'] == 'failed'
+    poll(16)
+    assert app.state.mklink_state['file_source_change']['state'] == 'awaiting-reload'
+    assert len(parses) == 1
     axf.write_bytes(b'next complete build')
-    poll(12)
-    poll(14)  # New content must retry even though its change was observed at 12.
-    assert app.state.mklink_state['file_source_change']['state'] == 'applied'
+    poll(17)
+    poll(19)
+    assert app.state.mklink_state['file_source_change']['state'] == 'awaiting-reload'
+    assert len(parses) == 1
+    asyncio.run(app.state.check_file_sources(apply=True))
     assert parses == [b'complete output', b'next complete build']
 
 
@@ -103,15 +108,14 @@ def test_live_rtt_restarts_only_for_changed_address_and_retains_subscribers(sour
     axf.write_bytes(b'new build')
     asyncio.run(app.state.check_file_sources())
     event = app.state.mklink_state['file_source_change']
-    if address != '0x20000020':
-        assert event['state'] == 'awaiting-reload' and actions == []
-        assert rtt.running and device.symbol_catalog.generation == 1
-        asyncio.run(app.state.check_file_sources())
-        assert actions == []
-        response = TestClient(app, base_url='http://127.0.0.1:8765',
-                              headers={'X-Auth-Token': 'fixture'}).post('/api/symbols/reload-sources')
-        assert response.status_code == (409 if address is None else 200), response.text
-        event = app.state.mklink_state['file_source_change']
+    assert event['state'] == 'awaiting-reload' and actions == []
+    assert rtt.running and device.symbol_catalog.generation == 1
+    asyncio.run(app.state.check_file_sources())
+    assert actions == []
+    response = TestClient(app, base_url='http://127.0.0.1:8765',
+                          headers={'X-Auth-Token': 'fixture'}).post('/api/symbols/reload-sources')
+    assert response.status_code == (409 if address is None else 200), response.text
+    event = app.state.mklink_state['file_source_change']
     if address is None:
         assert actions == ['stop', 'parse'] and event['state'] == 'failed'
         assert not rtt.running
@@ -217,3 +221,19 @@ def test_monitor_rebinds_superwatch_addresses_removes_renamed_items_and_restores
     event = app.state.mklink_state['file_source_change']
     assert event['state'] == 'applied' and event['symbols_reloaded']
     assert event['rebind']['removed'] == ['removed']
+
+def test_timestamp_only_rebuild_requires_manual_reload_without_preview(source, monkeypatch):
+    import os
+    app, device, axf, control = source
+    preview = Mock(side_effect=AssertionError('background parsing is forbidden'))
+    monkeypatch.setattr(device, 'preview_axf_catalog', preview, raising=False)
+    parse = Mock(side_effect=AssertionError('background reloading is forbidden'))
+    monkeypatch.setattr(device, 'parse_axf', parse)
+    asyncio.run(app.state.check_file_sources())
+    stat = axf.stat()
+    os.utime(axf, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1000000000))
+    asyncio.run(app.state.check_file_sources())
+    assert app.state.mklink_state['file_source_change']['state'] == 'awaiting-reload'
+    assert device.symbol_catalog.generation == 1
+    preview.assert_not_called()
+    parse.assert_not_called()
