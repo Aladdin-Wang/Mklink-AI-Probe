@@ -29,5 +29,23 @@
   已恢复原 AXF，停止测试采集并通过正常 API 断开、关闭测试代理。
 
 证据位于构建根 `artifacts/v035-auto-recovery`，包括恢复前后状态、时间线、AI 读取和 UI 截图。
-最终安装包及 5 秒窗口的实机结果待补；尚未合并、签名或正式发布。
+## 最终安装版验收
 
+- 运行源码 `925cadc8`、生产 Web/Skill 归档 `cb1223d2`。本地 NSIS 覆盖安装退出 0；
+  提取包和实装的 197 个 Python 文件、40 个 Web 文件及四份载荷逐项一致。
+  Windows-only PATH 下冻结 CLI/SVD、实际 stdio MCP、HTTP 与正常关闭检查通过。
+  全局 Skill 的 2604 个文件与归档一致，CLI/SVD 和实际 stdio MCP 检查通过。
+- 安装版 V3.6.5/F103 同时运行 RTT 双通道、SuperWatch 三变量和冻结 MCP 订阅。
+  用户立即拔插同一下载器：首次重连成功，从观测到等待至恢复约 3.1 秒；
+  RTT/SuperWatch 自动继续、原 MCP 会话 ID 不变，CPUID 读取正确，无恢复错误。
+- 第二轮用户拔掉超过 8 秒：约 5 秒进入 `expired`。重新插回后继续观察，设备保持断开，
+  RTT/SuperWatch 停止；旧 MCP 读取返回错误，没有自动附着或重放。
+- Chrome 安装版页面确认超时后“已断开”。显式点击连接成功、恢复状态重置为 `idle`，
+  采集保持停止；更新后的全局 Skill CLI 通过同一后台读取 CPUID 正确。
+- 用户关闭原生窗口后，全部 MKLink 桌面/sidecar 进程、测试端点及 8765/8766 监听均释放。
+  本轮拔插主动诱发的 995 不作为历史无人操作断链根因证据；旧故障继续待排查。
+
+最终证据在构建根 `artifacts/v035-local-925cadc8`，含包资格、安装/Skill 核对、两轮 MCP
+时间线、CLI 读数与页面截图。NSIS SHA256：
+`57ddc6e45dc983bedc8f5a5cdff520c62723cfc89c29b9cb4dbdd48abfc58b75`。
+本轮是 Windows 针对性验收，不替代后续提交的全量及跨平台发布门禁；未合并、签名或正式发布。
