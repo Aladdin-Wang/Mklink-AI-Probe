@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-17T11:11:32+08:00`
+- 更新时间：`2026-10-17T11:12:02+08:00`
 - 分支：`codex/0.3.5-fixes`
-- HEAD：`d9ac3a26代码及NSIS、2d029f18生产资源/Skill已验证，三CI成功；后续为验证文档。原生进程仍在运行，已请用户关闭后再次核对；测试Chrome已关闭。`
+- HEAD：`d9ac3a26代码及NSIS、2d029f18生产资源/Skill已验证，三CI成功；后续为验证文档。原生窗口正常关闭，全部MKLink进程、endpoint及8765/8766端口释放。`
 - 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
 - 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
-- 当前任务：串口文本续行修正已安装，100相关测试、TS/Vite、实机周期文本、六段CRLF/UTF-8真实界面验证通过。原生保存日志49字节与输入完全一致，Skill/CLI/MCP已同步。原生进程仍在运行，已请用户关闭后再次核对；测试Chrome已关闭。
-- 状态：`in_progress`
+- 当前任务：串口文本续行修正已安装，100相关测试、TS/Vite、实机周期文本、六段CRLF/UTF-8真实界面验证通过。原生保存日志49字节与输入完全一致，Skill/CLI/MCP已同步。原生窗口正常关闭，全部MKLink进程、endpoint及8765/8766端口释放。
+- 状态：`complete`
 
 ## 里程碑
 
-- **0.3.5 调试、重连与下载流程修复** — `in_progress`。串口文本续行已实装d9ac3a26并验证原生49字节导出。原生进程仍在运行，已请用户关闭后再次核对；测试Chrome已关闭。PR43仍草稿，未合并发布。
+- **0.3.5 调试、重连与下载流程修复** — `in_progress`。串口文本续行已实装d9ac3a26并验证原生49字节导出。原生窗口正常关闭，全部MKLink进程、endpoint及8765/8766端口释放。PR43仍草稿，未合并发布。
 - **0.3.4正式版** — `complete`。不可变源a8fd3fab0403，PR40正式发布；PR41已保存正式Web/交接，合并提交185678c59623。17附件、5份验签、3渠道及实装/Skill通过。07846c1a记录后续清理完成，本次补入0.3.5；见v034-release-handoff.md及v034-workspace-cleanup.md。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
@@ -23,7 +23,7 @@
 
 ## 验证证据
 
-- **0.3.5 串口文本续行**：100相关测试、TS/Vite通过；d9ac3a26 NSIS实装、196Python/40Web/四载荷一致，冻结CLI/SVD/MCP/HTTP通过；Skill 2d029f18的2603文件及CLI/SVD/MCP通过。Chrome实机周期文本完整，六段发送恢复三行，跨批次CRLF/UTF-8正确。原生导出49字节与输入逐字节一致。原生进程仍在运行，已请用户关闭后再次核对；测试Chrome已关闭。2d029f18三个CI成功。详见v035-serial-lines.md。
+- **0.3.5 串口文本续行**：100相关测试、TS/Vite通过；d9ac3a26 NSIS实装、196Python/40Web/四载荷一致，冻结CLI/SVD/MCP/HTTP通过；Skill 2d029f18的2603文件及CLI/SVD/MCP通过。Chrome实机周期文本完整，六段发送恢复三行，跨批次CRLF/UTF-8正确。原生导出49字节与输入逐字节一致。原生窗口正常关闭，全部MKLink进程、endpoint及8765/8766端口释放。2d029f18三个CI成功。详见v035-serial-lines.md。
 - **0.3.5 串口即时显示与 MSH 安装实测**：串口Worker/页面89、RTT页面/终端69、相关后端372通过，TS/Vite通过。NSIS提取/实装196Python/40Web、四载荷、Windows-only CLI/SVD/MCP/HTTP通过，Skill2603文件匹配。安装F103 ls三尾端15次与Chrome整条/逐键完整，CH1 256字节校验/120周期连续；UART115200下1000帧、38400下300帧序号CRC一致，两轮反向256字节一致。重新配置UART后首帧前各有一个额外字节单列保留；Chrome无换行7字节即时显示，最终导出文件恰好4f4b000a0dfeff共7字节；原生关闭后全部进程/endpoint及8765/8766释放。Skill/冻结CLI/MCP目标回显与UART累计校验一致。026b0bf3三CI通过。详见v035-serial-immediate.md。
 - **0.3.5 连接、RTT重载及下载流程**：拔插自动连接332 Python/89 GUI及用户实际换探针通过；RTT通道/显式符号重载490 Python/102 GUI及原工程Keil下载后实机通过，详见v035-auto-connect.md、v035-rtt-symbol-reload.md。最新下载免预连接/型号同步301 Python、185 GUI、TS/Vite通过；Chrome未连接时识别USB卷及算法，在线直接读取Flash64字节并保留结果；型号默认/独立修改及真实Pack导入后目录自动更新通过。未执行烧录，历史unknown仍保留。见v035-download-target-sync.md。
 - **0.3.5 本机测试包与覆盖安装**：bdd3c3e3 NSIS、53b4ebb2 Web/Skill；949GUI、26版本/启动/更新器通过。NSIS退出0，登记0.3.5，四载荷哈希一致；195Python/38Web与源一致；Windows-only PATH冻结CLI/SVD/MCP/HTTP、原生WebView/Edge及正常退出通过。全局Skill2600文件一致及CLI/MCP通过，旧Skill备份保留。未签名/合并/发布，详见v035-local-install.md。75cc3106三PR CI成功；后续提交须核对新HEAD。
@@ -47,13 +47,13 @@
 
 ## 真机环境
 
-- **state**：F103原测试固件保持，UART5 115200周期文本实页续行通过，无重新烧录。虚拟串口六段样本49字节的原生导出核对通过。原生进程仍在运行，已请用户关闭后再次核对；测试Chrome已关闭。
+- **state**：F103原测试固件保持，UART5 115200周期文本实页续行通过，无重新烧录。虚拟串口六段样本49字节的原生导出核对通过。原生窗口正常关闭，全部MKLink进程、endpoint及8765/8766端口释放。
 - **installer**：d9ac3a26 NSIS已覆盖安装；全局Skill 2d029f18/Web d9ac3a26已更新，2603文件匹配。证据及当前原生运行目录MKLINK_BUILD_ROOT/artifacts/v035-local-d9ac3a26。
 - **backups**：0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。
 
 ## 下一动作
 
-1. 用户已保存serial-lines.log且49字节一致。等待用户关闭MKLink原生窗口，随后运行本机artifacts/v035-local-d9ac3a26/check-close.py核对进程/端口，完成最终交接；不要强杀。
+1. 等待新复测反馈，继续0.3.5修复分支；串口文本续行已安装且导出/退出验证完成。无需重复烧录或重放unknown。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。
@@ -73,7 +73,7 @@
 ## 延续协议
 
 - 新会话固定继续 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe 的 codex/0.3.5-fixes；读取该目录AGENTS.md和本交接，运行 python scripts/ai_memory.py validate，核对 git status、log、worktree及远端。不要从原0.3.4目录另起修复分支。
-- 串口文本续行已实装d9ac3a26，真实分段及原生49字节导出验证通过；详见v035-serial-lines.md。原生进程仍在运行，已请用户关闭后再次核对；测试Chrome已关闭。
+- 串口文本续行已实装d9ac3a26，真实分段及原生49字节导出验证通过；详见v035-serial-lines.md。原生窗口正常关闭，全部MKLink进程、endpoint及8765/8766端口释放。
 - 历史来源及专项报告继续保留。用户Keil下载已完成，不等待下载，不重放unknown烧录。拔插、RTT/符号重载、下载同步及记录修复均已进入本机安装包；原图回放最新实页证据见v035-inline-replay.md。
 - 客户启动故障仅确认PyInstaller解压ucrtbase.dll时Permission denied，重启后恢复；未定位权限/杀软/占用的具体来源，按用户意见暂不做推测性修复。若再现，结合新startup/runtime日志复查。
 - 仅继续修复和验证；PR43仍为草稿，未授权合并或正式发布。遵循AGENTS提交推送任务分支、更新memory并render/validate；详细历史保留docs/verification，敏感日志/硬件标识及本机产物不提交。
