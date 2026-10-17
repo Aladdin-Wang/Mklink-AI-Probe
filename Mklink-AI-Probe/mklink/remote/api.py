@@ -1094,10 +1094,28 @@ def create_app(
     attempted_sources = {}
     _state["file_source_change"] = None
 
-    async def check_file_sources(*, apply: bool = False, admitted: bool = False, background: bool = False):
+    async def check_file_sources(*, apply: bool = False, admitted: bool = False, background: bool = False,
+                                 source_path: str | None = None, expected_axf: str | None = None):
         device = _state.get("device")
         if device is None or not device.connected:
+            if source_path:
+                raise HTTPException(409, 'Connect the target before reloading symbols')
             return
+        if source_path:
+            def expected_source_active():
+                active = getattr(device, '_axf', None)
+                previous = _state.get('file_source_change') or {}
+                # Parsing can succeed before a capture restart fails. A later
+                # explicit retry of that same transaction may finish recovery.
+                return _same_file_source_path(expected_axf, active) or (
+                    previous.get('state') == 'failed'
+                    and _same_file_source_path(source_path, active)
+                    and previous.get('requested_axf') == source_path
+                    and previous.get('expected_axf') == expected_axf)
+            if not apply or not expected_axf or not expected_source_active():
+                raise HTTPException(409, 'The active symbol source changed; select it again before reloading')
+            if Path(source_path).suffix.lower() not in {'.axf', '.elf', '.out'} or not Path(source_path).is_file():
+                raise HTTPException(400, 'A valid AXF, ELF or OUT file is required')
         if source_monitor.device is not device:
             _state["file_source_change"] = None
             reload_captures.clear()
@@ -1105,6 +1123,9 @@ def create_app(
         project = load_project_info(_state["project_root"]) or {}
         await run_in_threadpool(source_monitor.changed, device, project)
         pending = dict(source_monitor.pending)
+        if source_path:
+            from mklink.file_content import source_fingerprint
+            pending[source_path] = await run_in_threadpool(source_fingerprint, source_path)
         if not pending or device is not _state.get("device"):
             return
         if background and not apply and not source_monitor.settled(pending):
@@ -1117,6 +1138,8 @@ def create_app(
             return
         event = {'sequence': previous.get('sequence', time.time_ns()),
                  'files': [Path(path).name for path in pending], 'pending': True}
+        if source_path:
+            event.update(requested_axf=source_path, expected_axf=expected_axf)
 
         if not apply:
             # Compilation does not mean the target runs the new firmware. Only
@@ -1150,7 +1173,9 @@ def create_app(
                 await stack.enter_async_context(_dashboard_start_lock(_state))
                 await stack.enter_async_context(_async_target_lock())
                 if device is not _state.get('device') or not device.connected:
-                    return
+                    raise HTTPException(409, 'The target connection changed')
+                if source_path and not expected_source_active():
+                    raise HTTPException(409, 'The active symbol source changed')
                 if set(active_bridge_dashboards()) - {'rtt', 'superwatch'}:
                     raise HTTPException(409, 'Another target capture is active')
                 event['state'] = 'reloading'
@@ -1166,7 +1191,7 @@ def create_app(
                 previous_rtt = manager.get_status()
                 config = await run_in_threadpool(
                     ensure_rtt_config_updated, _state['project_root'],
-                    source_path=getattr(device, '_axf', None), persist=False)
+                    source_path=source_path or getattr(device, '_axf', None), persist=False)
                 address = (config or {}).get('rtt_addr')
                 from mklink.project_config import load_rtt_config
                 old_address = (previous_rtt.get('control_block_addr')
@@ -1175,8 +1200,6 @@ def create_app(
                 address_changed = bool(old_address) and (
                     not address or int(address, 0) != int(old_address, 0))
                 catalog = getattr(device, 'symbol_catalog', None)
-                await run_in_threadpool(ensure_rtt_config_updated, _state['project_root'],
-                                        source_path=getattr(device, '_axf', None))
                 restart = None
                 if ((address_changed and previous_rtt['running']) or
                         (apply and not previous_rtt['running'] and resume_requested('rtt', manager))):
@@ -1185,12 +1208,14 @@ def create_app(
                     # Retain ownership/subscriptions during this automatic
                     # transition, and wait for the old worker before rebinding.
                     await run_in_threadpool(stop_dashboard_manager, _state, 'rtt', manager)
-                if getattr(device, '_axf', None):
+                if source_path or getattr(device, '_axf', None):
                     catalog = getattr(device, 'symbol_catalog', None)
-                    if catalog is None or await run_in_threadpool(catalog.is_stale):
-                        result = await _reparse_active_symbols(automatic=True)
+                    if source_path or catalog is None or await run_in_threadpool(catalog.is_stale):
+                        result = await _reparse_active_symbols(axf=source_path, automatic=True)
                         event['rebind'] = result.get('rebind', {})
                         event['symbols_reloaded'] = True
+                await run_in_threadpool(ensure_rtt_config_updated, _state['project_root'],
+                                        source_path=source_path or getattr(device, '_axf', None))
                 if restart is not None:
                     if not address:
                         raise ValueError('RTT symbol is absent from the rebuilt firmware')
@@ -1200,7 +1225,7 @@ def create_app(
                                                               lambda: watch_manager.start(device))
                     if reload_captures['superwatch'][1]:
                         watch_manager.pause()
-                event.update(rtt_addr=address, rtt_changed=address_changed,
+                event.update(axf_path=getattr(device, '_axf', None), rtt_addr=address, rtt_changed=address_changed,
                              rtt_restarted=restart is not None, pending=False, state='applied')
                 source_monitor.acknowledge(device, pending)
                 reload_captures.clear()
@@ -1230,9 +1255,9 @@ def create_app(
     app.state.check_file_sources = check_file_sources
 
     @app.post('/api/symbols/reload-sources')
-    async def reload_file_sources():
+    async def reload_file_sources(source_path: str | None = None, expected_axf: str | None = None):
         # Runtime middleware already holds operation admission for this route.
-        await check_file_sources(apply=True, admitted=True)
+        await check_file_sources(apply=True, admitted=True, source_path=source_path, expected_axf=expected_axf)
         event = _state.get('file_source_change') or {}
         if event.get('state') in {'failed', 'deferred'}:
             raise HTTPException(409, event.get('error') or 'Another operation is active; retry after it finishes')

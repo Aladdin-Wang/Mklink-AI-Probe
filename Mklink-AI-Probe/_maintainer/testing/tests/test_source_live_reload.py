@@ -237,3 +237,56 @@ def test_timestamp_only_rebuild_requires_manual_reload_without_preview(source, m
     assert device.symbol_catalog.generation == 1
     preview.assert_not_called()
     parse.assert_not_called()
+
+
+@pytest.mark.parametrize('fail_after_parse', [False, True])
+def test_explicit_browser_snapshot_reload_uses_shared_transaction(source, monkeypatch, fail_after_parse):
+    app, device, axf, control = source
+    uploaded = axf.with_name('new-upload.axf')
+    uploaded.write_bytes(b'uploaded rebuilt firmware')
+    parses = []
+    configs = []
+
+    def parse(path, **kwargs):
+        parses.append(path)
+        device._axf = path
+        device.symbol_catalog = SymbolCatalog.from_dwarf(device._dwarf_info, axf_path=path, generation=2)
+        return {'loaded': True, 'axf_path': path}
+
+    def config(*args, **kwargs):
+        configs.append(kwargs['source_path'])
+        if fail_after_parse and len(configs) == 2:
+            raise OSError('configuration storage temporarily unavailable')
+        return {'rtt_addr': '0x20000040'}
+
+    monkeypatch.setattr(device, 'parse_axf', parse)
+    monkeypatch.setattr('mklink.project_config.ensure_rtt_config_updated', config)
+    asyncio.run(app.state.check_file_sources())
+    assert parses == [] and device._axf == str(axf)
+    client = TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'fixture'})
+    result = client.post('/api/symbols/reload-sources', params={
+        'source_path': str(uploaded), 'expected_axf': str(axf)})
+    if fail_after_parse:
+        assert result.status_code == 409 and device._axf == str(uploaded)
+        result = client.post('/api/symbols/reload-sources', params={
+            'source_path': str(uploaded), 'expected_axf': str(axf)})
+    assert result.status_code == 200, result.text
+    assert result.json()['state'] == 'applied'
+    assert result.json()['axf_path'] == str(uploaded)
+    attempts = 2 if fail_after_parse else 1
+    assert parses == [str(uploaded)] * attempts and configs == [str(uploaded)] * (attempts * 2)
+    assert device.symbol_catalog.generation == 2
+    # A stale browser must not replace a source activated by another client.
+    result = client.post('/api/symbols/reload-sources', params={
+        'source_path': str(axf), 'expected_axf': str(axf)})
+    assert result.status_code == 409
+    assert parses == [str(uploaded)] * attempts
+
+
+def test_browser_snapshot_reload_requires_connected_target(source):
+    app, device, axf, control = source
+    device.connected = False
+    client = TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'fixture'})
+    result = client.post('/api/symbols/reload-sources', params={
+        'source_path': str(axf), 'expected_axf': str(axf)})
+    assert result.status_code == 409

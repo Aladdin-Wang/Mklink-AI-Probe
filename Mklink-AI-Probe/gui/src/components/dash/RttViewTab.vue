@@ -48,6 +48,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { trackedSymbolPending, reloadTrackedSymbolSource } from '../../lib/trackedSymbolSource'
 import { Search } from '@lucide/vue'
 import { CAPTURE_START_TIMEOUT_MS } from '../../lib/captureStartup'
 import { useDashboard } from '../../composables/useDashboard'
@@ -81,7 +82,8 @@ const searching = ref(false)
 const starting = ref(false)
 const stopping = ref(false)
 const statusRunning = ref(false)
-const sourcePending = ref(false)
+const backendSourcePending = ref(false)
+const sourcePending = computed(() => backendSourcePending.value || trackedSymbolPending.value > 0)
 const reloadingSources = ref(false)
 const statusKnown = ref(false)
 const downBuffers = ref<Array<{ channel?: number, active?: boolean }>>([])
@@ -239,9 +241,11 @@ let lastSourceChange = 0
 async function reloadSources(): Promise<void> {
   reloadingSources.value = true
   try {
-    const response = await fetch(`${API_BASE}/api/symbols/reload-sources`, { method: 'POST' })
-    const result = await response.json()
-    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : tr('重载失败', 'Reload failed'))
+    if (!await reloadTrackedSymbolSource()) {
+      const response = await fetch(`${API_BASE}/api/symbols/reload-sources`, { method: 'POST' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : tr('重载失败', 'Reload failed'))
+    }
     await refreshStatus()
     toast.success(tr('符号已重新加载', 'Symbols reloaded'), 2500)
   } catch (error) {
@@ -256,7 +260,7 @@ async function refreshStatus(): Promise<Record<string, any> | null> {
     if (response.ok) {
       const status = await response.json()
       const changed = status.file_source_change
-      sourcePending.value = changed?.state === 'awaiting-reload' || changed?.state === 'failed'
+      backendSourcePending.value = changed?.state === 'awaiting-reload' || changed?.state === 'failed'
       if (changed && changed.sequence !== lastSourceChange) {
         lastSourceChange = changed.sequence
         if (changed.error) toast.error(changed.error)

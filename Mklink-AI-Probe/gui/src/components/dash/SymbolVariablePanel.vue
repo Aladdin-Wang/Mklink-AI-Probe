@@ -394,6 +394,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
+import { trackedSymbolPending, reloadTrackedSymbolSource } from '../../lib/trackedSymbolSource'
 import { Activity, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Code2, Eye, EyeOff, LoaderCircle, Pin, PinOff, RefreshCw, X } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
@@ -847,15 +848,17 @@ async function writeValue(symbol: SymbolDescriptor): Promise<void> {
   }
 }
 
-const sourcePending = ref(false)
+const backendSourcePending = ref(false)
+const sourcePending = computed(() => backendSourcePending.value || trackedSymbolPending.value > 0)
 const reloadPromptOpen = ref(false)
+watch(trackedSymbolPending, revision => { if (revision) reloadPromptOpen.value = true }, { immediate: true })
 let promptedSourceSequence: number | undefined
 const reloadingSources = ref(false)
 async function reloadSources(): Promise<void> {
   reloadingSources.value = true
   reloadPromptOpen.value = false
   try {
-    await request('/api/symbols/reload-sources', { method: 'POST' })
+    if (!await reloadTrackedSymbolSource()) await request('/api/symbols/reload-sources', { method: 'POST' })
     await refreshSourceStatus()
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : String(cause))
@@ -895,7 +898,7 @@ async function refreshSourceStatus(): Promise<void> {
     const status = await catalog.refreshStatus()
     if (disposed) return
     const change = status?.file_source_change
-    sourcePending.value = change?.state === 'awaiting-reload' || change?.state === 'failed'
+    backendSourcePending.value = change?.state === 'awaiting-reload' || change?.state === 'failed'
     if (change?.state === 'awaiting-reload' && change.sequence !== promptedSourceSequence) {
       promptedSourceSequence = change.sequence
       reloadPromptOpen.value = true
