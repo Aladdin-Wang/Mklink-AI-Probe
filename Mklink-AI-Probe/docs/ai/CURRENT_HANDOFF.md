@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-17T10:07:56+08:00`
+- 更新时间：`2026-10-17T10:26:24+08:00`
 - 分支：`codex/0.3.5-fixes`
-- HEAD：`运行修复 f517088c、Web/RTT排队回归 d08426c0、阶段记录026b0bf3已推送PR43；f517088c本机NSIS已覆盖安装并完成RTT/UART实测。`
+- HEAD：`运行修复 f517088c、Web/RTT排队回归 d08426c0、阶段记录28da8276已推送PR43；本轮补充导出7字节及原生退出验收记录，最终提交以git实际HEAD为准。`
 - 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
 - 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
-- 当前任务：串口每批即时显示已修复并覆盖安装。重新接线后F103 UART两档1300帧序号CRC通过、反向256字节通过，MSH完整ls未复现丢s、CH1校验/连续周期通过，CLI/MCP一致。等待用户保存7字节日志核对导出，并正常关闭原生窗口检查释放。客户MSH现场及UART首帧前额外单字节仍待定位。
-- 状态：`in_progress`
+- 当前任务：本轮串口即时显示修复、F103 CH0 MSH/CH1周期/UART5测试、覆盖安装及CLI/MCP一致性验证已完成。最终导出原始7字节准确，原生正常关闭、全部后台和端口释放。客户MSH丢s本机未复现，UART重配置首帧前额外单字节来源仍待定位，保留为后续现场调查。
+- 状态：`complete`
 
 ## 里程碑
 
-- **0.3.5 调试、重连与下载流程修复** — `in_progress`。串口即时显示f517088c已覆盖安装，Skill d08426c0已更新。RTT/UART、Chrome与CLI/MCP收发通过；导出文件和最终关闭待核对。PR43未合并发布。
+- **0.3.5 调试、重连与下载流程修复** — `in_progress`。串口即时显示f517088c已覆盖安装，Skill d08426c0已更新；RTT/UART、Chrome、CLI/MCP、7字节原始导出及最终原生退出通过。等待后续客户反馈；PR43未合并发布。
 - **0.3.4正式版** — `complete`。不可变源a8fd3fab0403，PR40正式发布；PR41已保存正式Web/交接，合并提交185678c59623。17附件、5份验签、3渠道及实装/Skill通过。07846c1a记录后续清理完成，本次补入0.3.5；见v034-release-handoff.md及v034-workspace-cleanup.md。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
@@ -23,7 +23,7 @@
 
 ## 验证证据
 
-- **0.3.5 串口即时显示与 MSH 安装实测**：串口Worker/页面89、RTT页面/终端69、相关后端372通过，TS/Vite通过。NSIS提取/实装196Python/40Web、四载荷、Windows-only CLI/SVD/MCP/HTTP通过，Skill2603文件匹配。安装F103 ls三尾端15次与Chrome整条/逐键完整，CH1 256字节校验/120周期连续；UART115200下1000帧、38400下300帧序号CRC一致，两轮反向256字节一致。重新配置UART后首帧前各有一个额外字节单列保留；Chrome无换行7字节即时显示，导出文件待用户保存。Skill/冻结CLI/MCP目标回显与UART累计校验一致。026b0bf3三CI通过。详见v035-serial-immediate.md。
+- **0.3.5 串口即时显示与 MSH 安装实测**：串口Worker/页面89、RTT页面/终端69、相关后端372通过，TS/Vite通过。NSIS提取/实装196Python/40Web、四载荷、Windows-only CLI/SVD/MCP/HTTP通过，Skill2603文件匹配。安装F103 ls三尾端15次与Chrome整条/逐键完整，CH1 256字节校验/120周期连续；UART115200下1000帧、38400下300帧序号CRC一致，两轮反向256字节一致。重新配置UART后首帧前各有一个额外字节单列保留；Chrome无换行7字节即时显示，最终导出文件恰好4f4b000a0dfeff共7字节；原生关闭后全部进程/endpoint及8765/8766释放。Skill/冻结CLI/MCP目标回显与UART累计校验一致。026b0bf3三CI通过。详见v035-serial-immediate.md。
 - **0.3.5 连接、RTT重载及下载流程**：拔插自动连接332 Python/89 GUI及用户实际换探针通过；RTT通道/显式符号重载490 Python/102 GUI及原工程Keil下载后实机通过，详见v035-auto-connect.md、v035-rtt-symbol-reload.md。最新下载免预连接/型号同步301 Python、185 GUI、TS/Vite通过；Chrome未连接时识别USB卷及算法，在线直接读取Flash64字节并保留结果；型号默认/独立修改及真实Pack导入后目录自动更新通过。未执行烧录，历史unknown仍保留。见v035-download-target-sync.md。
 - **0.3.5 本机测试包与覆盖安装**：bdd3c3e3 NSIS、53b4ebb2 Web/Skill；949GUI、26版本/启动/更新器通过。NSIS退出0，登记0.3.5，四载荷哈希一致；195Python/38Web与源一致；Windows-only PATH冻结CLI/SVD/MCP/HTTP、原生WebView/Edge及正常退出通过。全局Skill2600文件一致及CLI/MCP通过，旧Skill备份保留。未签名/合并/发布，详见v035-local-install.md。75cc3106三PR CI成功；后续提交须核对新HEAD。
 - **0.3.5 Pack外设同步与手动SVD**：d5a65482：非空SVD索引随Pack状态/索引/工程配置变化刷新；当时支持聚焦重查/显式刷新（本次改为自动刷新并移除按钮）；浏览器SVD校验持久化、桌面本地路径。138Python、33GUI、生产构建通过；真实Edge+HTTP在线导入后原查询找到型号、手动文件选择显示12项、错误XML保留当前配置、重载恢复均通过。离线夹具不访问硬件；该专项当时未实装；后续已随0.3.5完成桌面覆盖安装和全局Skill更新，详见docs/verification/v035-peripheral-import.md。
@@ -47,13 +47,13 @@
 
 ## 真机环境
 
-- **state**：F103测试固件CH0 MSH、CH1周期/校验、UART5周期/校验已Keil下载。用户重新接线后UART恢复，两档1300帧CRC无错。当前UART恢复115200每100ms周期文本，末次143条发送无短写；目标连续运行约7分钟，RTT采集期间target-drop未增长。RTT与UART上位机采集已停止，等待用户保存桌面端7字节日志及关闭原生窗口。未重放历史unknown烧录。
+- **state**：F103测试固件CH0 MSH、CH1周期/校验、UART5周期/校验已Keil下载。用户重新接线后UART恢复，两档1300帧CRC无错。当前UART恢复115200每100ms周期文本，末次143条发送无短写；目标连续运行约7分钟，RTT采集期间target-drop未增长。用户保存的最终日志恰好7字节；原生窗口已正常关闭，所有MKLink进程/endpoint及8765/8766释放。未重放历史unknown烧录。
 - **installer**：f517088c NSIS已覆盖安装并实装资格检查通过；全局Skill d08426c0/Web f517088c已更新、2603文件匹配。证据及当前原生运行目录MKLINK_BUILD_ROOT/artifacts/v035-local-f517088c，旧固件编辑/编译记录artifacts/v035-rtt-uart。
 - **backups**：0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。
 
 ## 下一动作
 
-1. 核对用户桌面保存serial-short.log的7字节4f4b000a0dfeff；随后请求正常关闭原生窗口，检查全部后台/端口释放并更新最终记录。客户ls丢s本机未复现，保留客户现场调查；UART首帧前额外字节原因未定。
+1. 本轮即时显示/RTT/UART与安装验收已完成，等待新复测反馈。客户ls丢s本机未复现，需客户具体固件/RTThread输入实现和复现时序；UART重配置后首帧前额外字节单列，来源未定。不重复请求保存或关闭，不重放unknown烧录。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。
@@ -73,7 +73,7 @@
 ## 延续协议
 
 - 新会话固定继续 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe 的 codex/0.3.5-fixes；读取该目录AGENTS.md和本交接，运行 python scripts/ai_memory.py validate，核对 git status、log、worktree及远端。不要从原0.3.4目录另起修复分支。
-- 继续既有0.3.5工作树，桌面f517088c/Skill d08426c0已更新。测试目录artifacts/v035-local-f517088c；当前采集已停止，原生窗口仍在。先核对用户保存日志的回复，完成正常关闭检查，不重复烧录/重放unknown。
+- 继续既有0.3.5工作树，桌面f517088c/Skill d08426c0已更新。测试目录artifacts/v035-local-f517088c；serial-seven-bytes.log验证为4f4b000a0dfeff，native-exit.json记录全进程与端口释放。当前没有本轮MKLink后台，不再等待用户保存/关闭；按新反馈继续。
 - 历史来源及专项报告继续保留。用户Keil下载已完成，不等待下载，不重放unknown烧录。拔插、RTT/符号重载、下载同步及记录修复均已进入本机安装包；原图回放最新实页证据见v035-inline-replay.md。
 - 客户启动故障仅确认PyInstaller解压ucrtbase.dll时Permission denied，重启后恢复；未定位权限/杀软/占用的具体来源，按用户意见暂不做推测性修复。若再现，结合新startup/runtime日志复查。
 - 仅继续修复和验证；PR43仍为草稿，未授权合并或正式发布。遵循AGENTS提交推送任务分支、更新memory并render/validate；详细历史保留docs/verification，敏感日志/硬件标识及本机产物不提交。
