@@ -89,7 +89,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 | Modbus、RS485、点表 | [Modbus](references/commands-modbus.md) |
 | UART、串口 profile | [串口](references/commands-serial.md) |
 | VPN/局域网 Site Agent | [直连远程](references/commands-remote.md) |
-| Web/桌面 | [本地 GUI](references/commands-remote-gui.md) |
+| Web/桌面 | [本地 Web GUI/API](references/commands-remote-gui.md) |
 | GUI 与 AI 共存、多下载器、设备别名 | [共享后台](references/shared-runtime.md) |
 | 安装/更新/依赖 | [安装与更新](references/install.md) |
 | U 盘/桌面 HTML 快速入口 | [Web 入口](references/web-entry.md) |
