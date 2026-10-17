@@ -349,7 +349,7 @@ class Device:
     # ------------------------------------------------------------------
     # Connection
     # ------------------------------------------------------------------
-    def _connect(self) -> None:
+    def _connect(self, *, load_symbols: bool = True) -> None:
         from mklink.bridge import MKLinkSerialBridge
         from mklink.discovery import find_mklink_cdc_port
         from mklink.project_config import load_config
@@ -413,7 +413,7 @@ class Device:
                 project_root=self._project_root,
             )
 
-        if self._axf:
+        if self._axf and load_symbols:
             self._load_dwarf_info()
 
         if detected_idcode == 0x1000563D and not (config.get("swd_clock") or config.get("debug_speed")):

@@ -2,7 +2,7 @@
   <aside class="symbol-panel">
     <div v-if="sourcePending" class="source-reload-banner" role="status">
       <span>{{ tr('固件文件已更新', 'Firmware file updated') }}</span>
-      <button type="button" class="btn btn-primary" data-testid="reparse-symbols" :disabled="reloadingSources || catalog.reparsing.value" @click="reloadSources">
+      <button type="button" class="btn btn-secondary" data-testid="reparse-symbols" :disabled="reloadingSources || catalog.reparsing.value" @click="reloadSources">
         <RefreshCw :size="16" />{{ tr('重新加载变量', 'Reload variables') }}
       </button>
     </div>
@@ -1003,8 +1003,8 @@ watch(tree, roots => {
 .panel-toolbar .form-input { min-width: 0; flex: 1; }
 .icon-button { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); background: transparent; color: var(--fg); cursor: pointer; }
 .icon-button:disabled { color: var(--muted); cursor: default; }
-.source-reload-banner { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; margin-bottom: 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); }
-.source-reload-banner .btn { flex-shrink: 0; font-weight: 700; }
+.source-reload-banner { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--bg); font-size: 12px; }
+.source-reload-banner .btn { flex-shrink: 0; padding: 4px 8px; font-size: 12px; color: var(--accent); }
 .panel-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
 .path-alignment { display: flex; gap: 4px; }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }

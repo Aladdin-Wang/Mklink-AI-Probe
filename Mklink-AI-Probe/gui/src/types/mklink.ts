@@ -70,6 +70,7 @@ export interface AxlStatus {
 }
 
 export interface DeviceStatus {
+  connection_recovery?: { state: string; attempts: number; error?: string; errors?: string[]; restored_at?: number }
   device_generation?: number
   clock_hz?: number | null
   clock_warning?: string | null

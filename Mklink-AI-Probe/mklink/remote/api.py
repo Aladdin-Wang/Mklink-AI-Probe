@@ -2135,6 +2135,7 @@ def create_app(
         dev = _state["device"]
         return {
             "connected": dev.connected,
+            "connection_recovery": _state.get('connection_recovery'),
             "device_generation": _state.get('device_generation', 0),
             "state": dev.state.name if dev.state else "disconnected",
             "mcu": dev.mcu_name if dev.connected else None,
