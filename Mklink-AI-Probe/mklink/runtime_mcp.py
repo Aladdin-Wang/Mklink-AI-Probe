@@ -348,6 +348,19 @@ def build_server():
         return control_runtime(probe=runtime_selector(probe))
 
     @server.tool()
+    def probe_firmware(action: Literal['check', 'upgrade'] = 'check',
+                       probe: str | None = None, confirm: StrictBool = False) -> dict:
+        """Check/update the selected probe through the same guarded updater as GUI.
+
+        Upgrade requires explicit user confirmation. Stop acquisitions and detach
+        AI sessions first; the backend rejects occupied devices. V2 uses RBL on
+        its normal MSC volume; V3/V4 use UF2. Unknown results are never replayed.
+        Does not attach to the target or stop another client's acquisition.
+        """
+        from mklink.runtime import probe_firmware as update
+        return update(action, probe=runtime_selector(probe), confirm=confirm)
+
+    @server.tool()
     def runtime_control(action: Literal['detach-client', 'stop-acquisition', 'release-device', 'stop-backend'],
                         probe: str | None = None, confirm: StrictBool = False,
                         client_id: str | None = None, stream: str | None = None) -> dict:

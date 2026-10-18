@@ -286,6 +286,18 @@ def query_probe(capability, *, info=None, probe=None, port=None):
     return request(info, 'POST', PROBE_QUERIES[capability], {})
 
 
+def probe_firmware(action='check', *, probe=None, confirm=False):
+    """Use the GUI's guarded updater without attaching to a target or replaying writes."""
+    if action not in {'check', 'upgrade'}:
+        raise ValueError('Unsupported firmware action')
+    if action == 'upgrade' and confirm is not True:
+        raise ValueError('Probe firmware upgrade requires confirm=true')
+    info = selected_runtime(probe) or ensure_runtime(probe=probe)
+    if action == 'check':
+        return request(info, 'GET', '/api/probe/firmware-check', timeout=120)
+    return request(info, 'POST', '/api/probe/firmware-upgrade', True, timeout=180)
+
+
 def job_status(info, job_id=None):
     """Query a retained result without attaching or reconnecting hardware."""
     if info is None:

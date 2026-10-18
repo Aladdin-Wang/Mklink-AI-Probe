@@ -407,7 +407,7 @@ export interface ProjectHistory {
 export interface FirmwareInfo {
   name: string
   version: string
-  model: 'V3' | 'V4'
+  model: 'V2' | 'V3' | 'V4'
   family: 'microlink' | 'hpmlink'
   path: string
   source: 'github' | 'gitee' | 'local'
@@ -444,7 +444,7 @@ export interface ProbeFirmwareUpgrade {
   latest_version?: string
   verified_version?: string | null
   firmware?: string
-  model?: 'V3' | 'V4'
+  model?: 'V2' | 'V3' | 'V4'
   family?: 'microlink' | 'hpmlink'
   download_available?: boolean
   source?: 'github' | 'gitee' | 'local'

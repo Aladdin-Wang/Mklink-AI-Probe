@@ -163,7 +163,7 @@ export function useMklinkApi() {
   }
 
   async function downloadProbeFirmware(
-    model: 'V3' | 'V4',
+    model: 'V2' | 'V3' | 'V4',
     family: 'microlink' | 'hpmlink' = 'microlink',
   ): Promise<ProbeFirmwareDownload> {
     const query = new URLSearchParams({ model, family })

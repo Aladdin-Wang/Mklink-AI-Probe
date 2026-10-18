@@ -106,7 +106,7 @@ def test_uart_operations_cannot_start_during_probe_upgrade(probe):
 @pytest.mark.parametrize('disk_version', [False, True])
 def test_firmware_recheck_reuses_probe_query_only_when_disk_version_is_unavailable(probe, monkeypatch, tmp_path, existing, disk_version):
     from mklink import firmware_check as fc
-    client, control, state, bridge, calls, _, _ = probe
+    client, control, state, bridge, calls, _, selected = probe
     if existing:
         state['device'] = SimpleNamespace(connected=True, port='COM9', _bridge=bridge)
     bridge.response = 'V4.5.2\n>>> '
@@ -117,6 +117,8 @@ def test_firmware_recheck_reuses_probe_query_only_when_disk_version_is_unavailab
     monkeypatch.setattr(fc, '_resolve_firmware_root', lambda: tmp_path)
     monkeypatch.setattr(fc, '_remote_firmwares', lambda: None)
     monkeypatch.setattr(fc, '_probe_disk', lambda: str(disk) if disk_version else None)
+    monkeypatch.setattr('mklink.probe_volumes.FirmwareVolumes', lambda p:
+        SimpleNamespace(identity=('bound',), find=lambda: str(disk) if disk_version else None))
     def forbidden(port):
         raise AssertionError('Firmware recheck attempted an independent CDC connection')
     monkeypatch.setattr(fc, 'read_device_version', forbidden)

@@ -2171,7 +2171,7 @@ def create_app(
 
     @app.post("/api/probe/firmware-upgrade")
     async def probe_firmware_upgrade(confirm: bool = Body(default=False)):
-        """Upgrade the probe through its UF2 bootloader drive.
+        """Upgrade V2 on its RBL application volume, or V3/V4 through UF2.
 
         The MICROKEEN volume is the source of truth for this operation.  A
         debug-session connection is optional; when no session is connected the
@@ -2228,13 +2228,13 @@ def create_app(
         model: str = Query(...),
         family: str = Query(default="microlink"),
     ):
-        """Download the newest model/family UF2 with provider fallback."""
+        """Download the newest model/family firmware with provider fallback."""
         from fastapi.responses import Response
         from mklink import firmware_check as _fc
 
         normalized_model = model.strip().upper()
-        if normalized_model not in {"V3", "V4"}:
-            raise HTTPException(status_code=400, detail="firmware model must be V3 or V4")
+        if normalized_model not in {"V2", "V3", "V4"}:
+            raise HTTPException(status_code=400, detail="firmware model must be V2, V3 or V4")
         normalized_family = family.strip().lower()
         if normalized_family not in {"microlink", "hpmlink"}:
             raise HTTPException(
