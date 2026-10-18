@@ -64,6 +64,19 @@ describe('RTT API contracts', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('lets Auto search connect a replacement without submitting a stale port or connecting twice', async () => {
+    sharedRuntime.value = true
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({
+      same_runtime: true, switched: true, connection: { port: 'COM10' },
+    }) })
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ connected: true, port: 'COM10' }) })
+    const result = await useMklinkApi().connectDevice({ restore_last: true })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ connect: { restore_last: true } })
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/api/runtime/select', '/api/device/status'])
+    expect(result.port).toBe('COM10')
+    expect(useMklinkApi().deviceStatus.value.connected).toBe(true)
+  })
+
   it('queries an accepted shared reset job without issuing a second reset', async () => {
     sharedRuntime.value = true
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-one', state: 'running' }) })

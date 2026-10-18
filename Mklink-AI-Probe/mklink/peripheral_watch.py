@@ -122,6 +122,20 @@ def list_svd_targets(project_root: str = ".", query: str = "") -> dict:
                         if query.casefold() in target.target.casefold()]}
 
 
+def svd_index_revision(project_root: str):
+    """Invalidate the GUI index after online Pack imports/removals or project changes."""
+    from mklink.cmsis_dap.paths import PackPaths
+    paths = PackPaths()
+    revision = []
+    for path in (paths.state_file, paths.index_file, Path(project_root) / ".mklink/project_info.json"):
+        try:
+            stat = path.stat()
+            revision.append((str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+        except FileNotFoundError:
+            revision.append((str(path.resolve()), None, None))
+    return tuple(revision)
+
+
 def discover_svd_targets(project_root: str) -> list[SvdTarget]:
     """Inspect installed Packs only; never download or guess SVD filenames."""
     from mklink.project_config import load_project_info
@@ -193,6 +207,8 @@ def svd_watch_items(data: bytes) -> tuple[dict[str, WatchItem], int]:
     SVDParser = import_pyocd_module("pyocd.debug.svd.parser").SVDParser
 
     root = _xml(data)
+    if root.tag != "device":
+        raise ValueError("SVD must contain a device root")
     from .svd_normalize import normalize, integer
 
     root = normalize(root)

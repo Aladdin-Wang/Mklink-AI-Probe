@@ -82,7 +82,7 @@ def manager_peer(tmp_path, live=True, write_error=None, hpm=False):
         peer._ctx = SimpleNamespace(idcode=0x1000563D)
         peer.supports_hpm_dump_write = lambda: live
         device._target_writable_ram_ranges = lambda: [(address, address + 4)]
-        device.symbol_catalog = replace(device.symbol_catalog, items=tuple(
+        device.symbol_catalog = replace(device.symbol_catalog, _ram_ranges=((address, address + 4),), items=tuple(
             replace(desc, address=address) for desc in device.symbol_catalog.items
         ))
     device._bridge = peer

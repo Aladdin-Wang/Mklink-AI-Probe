@@ -22,7 +22,7 @@ from urllib.request import Request, urlopen
 # 固件文件名格式：MicroLink_V3.3.1.uf2 / HPMLink_V4.3.7.uf2
 _FIRMWARE_FILE_RE = re.compile(
     r"^(?P<prefix>MicroLink|HPMLink)_"
-    r"(?P<version>V(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+))\.uf2$"
+    r"(?P<version>V(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+))\.(?P<format>uf2|rbl)$"
 )
 FirmwareFamily = Literal["microlink", "hpmlink"]
 HPM_FIRMWARE_MARKER = re.compile(
@@ -99,6 +99,10 @@ class FirmwareInfo:
     def version_str(self) -> str:
         return str(self.version)
 
+    @property
+    def format(self) -> str:
+        return Path(self.name).suffix[1:]
+
 
 def parse_firmware_filename(name) -> FirmwareInfo | None:
     """Parse a supported MicroLink/HPMLink UF2 filename.
@@ -116,6 +120,8 @@ def parse_firmware_filename(name) -> FirmwareInfo | None:
         "hpmlink" if m.group("prefix") == "HPMLink" else "microlink"
     )
     if family == "hpmlink" and major != 4:
+        return None
+    if (m.group('format') == 'rbl') != (family == 'microlink' and major == 2):
         return None
     return FirmwareInfo(
         name=raw,
@@ -216,6 +222,11 @@ FIRMWARE_MANIFEST_URLS = {
     "gitee": "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/firmware/latest.json",
 }
 FIRMWARE_MANIFEST_SCHEMA = "mklink-firmware-v1"
+# Old clients reject unknown filenames in latest.json. Never add V2 to it.
+V2_FIRMWARE_MANIFEST_URLS = {
+    source: url.replace('/latest.json', '/latest-v2.json')
+    for source, url in FIRMWARE_MANIFEST_URLS.items()
+}
 
 
 def _parse_manifest(payload: object) -> list[FirmwareInfo]:
@@ -269,18 +280,21 @@ def _parse_manifest(payload: object) -> list[FirmwareInfo]:
 
 
 def _remote_firmwares_from_source(
-    source: Literal["github", "gitee"], *, timeout: float = 8.0,
+    source: Literal["github", "gitee"], *, timeout: float = 8.0, v2: bool = False,
 ) -> list[FirmwareInfo] | None:
     """Fetch one provider's complete firmware manifest; fail softly."""
     try:
         request = Request(
-            FIRMWARE_MANIFEST_URLS[source],
+            (V2_FIRMWARE_MANIFEST_URLS if v2 else FIRMWARE_MANIFEST_URLS)[source],
             headers={"Accept": "application/json", "User-Agent": "mklink-ai-probe",
                      "Cache-Control": "no-cache", "Pragma": "no-cache"},
         )
         with urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        return _parse_manifest(payload)
+        entries = _parse_manifest(payload)
+        if any((entry.model == 'V2') != v2 for entry in entries):
+            raise ValueError('Firmware model belongs to a different update channel')
+        return entries
     except (OSError, URLError, ValueError, TypeError, json.JSONDecodeError):
         return None
 
@@ -293,7 +307,8 @@ def _remote_firmware_from_source(
     timeout: float = 8.0,
 ) -> FirmwareInfo | None:
     """Find an exact family/model entry from one manifest provider."""
-    entries = _remote_firmwares_from_source(source, timeout=timeout)
+    entries = (_remote_firmwares_from_source(source, timeout=timeout, v2=True)
+               if model == 'V2' else _remote_firmwares_from_source(source, timeout=timeout))
     if entries is None:
         return None
     for info in entries:
@@ -312,18 +327,20 @@ def _remote_firmware(
     timeout: float = 8.0,
 ) -> FirmwareInfo | None:
     """Resolve the newest published entry for this exact probe family/model."""
-    for candidate in _remote_firmwares(timeout=timeout) or []:
+    entries = _remote_firmwares(timeout=timeout, v2=True) if model == 'V2' else _remote_firmwares(timeout=timeout)
+    for candidate in entries or []:
         if candidate.model == model and candidate.family == family:
             return candidate
     return None
 
 
-def _remote_firmwares(*, timeout: float = 8.0) -> list[FirmwareInfo] | None:
+def _remote_firmwares(*, timeout: float = 8.0, v2: bool = False) -> list[FirmwareInfo] | None:
     """Compare both trusted mirrors so a lagging successful mirror cannot pin updates."""
     sources = ("github", "gitee")
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(
-            lambda source: _remote_firmwares_from_source(source, timeout=timeout), sources,
+            lambda source: (_remote_firmwares_from_source(source, timeout=timeout, v2=True)
+                            if v2 else _remote_firmwares_from_source(source, timeout=timeout)), sources,
         ))
     if all(entries is None for entries in results):
         return None
@@ -345,7 +362,7 @@ def _remote_firmwares(*, timeout: float = 8.0) -> list[FirmwareInfo] | None:
 def _materialize_firmware(info: FirmwareInfo) -> tuple[Path, bool, str]:
     """Return a local UF2 path, ownership flag, and actual download source."""
     if info.download_url:
-        handle, raw_path = tempfile.mkstemp(prefix="mklink-firmware-", suffix=".uf2")
+        handle, raw_path = tempfile.mkstemp(prefix="mklink-firmware-", suffix='.' + info.format)
         os.close(handle)
         destination = Path(raw_path)
         preferred = info.download_source or "github"
@@ -386,6 +403,8 @@ def _materialize_firmware(info: FirmwareInfo) -> tuple[Path, bool, str]:
         destination.unlink(missing_ok=True)
         attempted = "、".join(attempted_sources)
         raise OSError(f"固件下载失败（已尝试 {attempted}）") from last_error
+    if info.format == 'rbl':
+        _validate_downloaded_firmware(info.path, info)
     return info.path, False, "local"
 
 
@@ -426,7 +445,10 @@ def _validate_downloaded_firmware(path: Path, info: FirmwareInfo) -> None:
         raise ValueError("downloaded firmware size does not match manifest")
     if info.sha256 is not None and _file_sha256(path) != info.sha256:
         raise ValueError("downloaded firmware SHA-256 does not match manifest")
-    if info.size is not None or info.sha256 is not None:
+    if info.format == 'rbl':
+        from mklink.rbl import validate_rbl
+        validate_rbl(path, version=info.version_str)
+    elif info.size is not None or info.sha256 is not None:
         validate_uf2(path)
 
 
@@ -522,6 +544,9 @@ def upgrade_probe_firmware(
         "family": candidate.family,
         "download_available": True,
     }
+    if candidate.format == 'rbl':
+        manual_details['format'] = 'rbl'
+        return _upgrade_rbl(device, candidate, current, disk, disk_reader, verify_timeout, manual_details)
     enter = getattr(device, "enter_bootloader", None)
     if not callable(enter):
         return {
@@ -599,6 +624,43 @@ def upgrade_probe_firmware(
             "download_available": True,
             "source": download_source,
         }
+    finally:
+        if temporary:
+            source.unlink(missing_ok=True)
+
+
+def _upgrade_rbl(device, candidate, current, disk, disk_reader, timeout, details):
+    """The running V2 MSC receiver commits RBL and reboots on transfer completion."""
+    copy = getattr(device, 'copy_rbl', None)
+    if not callable(copy):
+        return {'status': 'manual_required', **details,
+                'message': 'V2 请将 RBL 复制到该下载器的 MICROKEEN 盘，等待自动升级；无需进入 UF2 模式。'}
+    try:
+        source, temporary, provider = _materialize_firmware(candidate)
+    except (OSError, ValueError) as error:
+        return {'status': 'manual_required', **details, 'message': str(error)}
+    try:
+        # The selected shared backend rechecks identity and holds resource
+        # admission for the entire copy. A failed write is never repeated.
+        try:
+            copy(source, candidate.name, disk)
+        except (OSError, RuntimeError) as error:
+            return {'status': 'copied_unverified', **details,
+                    'message': f'RBL 升级未确认：{error}。请检查下载器状态，不要自动重试。'}
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                active = disk_reader()
+                verified = read_microkeen_version(active) if active else None
+            except (OSError, RuntimeError):
+                verified = None
+            # Exact expected version on the original USB identity, not merely
+            # successful file copying or a newer unrelated build.
+            if verified == candidate.version:
+                return {'status': 'updated', **details, 'verified_version': str(verified), 'source': provider}
+            time.sleep(.25)
+        return {'status': 'copied_unverified', **details, 'source': provider,
+                'message': 'RBL 已复制，但尚未确认原下载器运行新版本；请检查状态，不要自动重试。'}
     finally:
         if temporary:
             source.unlink(missing_ok=True)
@@ -743,6 +805,7 @@ def _firmware_to_dict(f: FirmwareInfo) -> dict:
         "family": f.family,
         "path": str(f.path),
         "source": f.download_source or "local",
+        "format": f.format,
     }
 
 
@@ -758,6 +821,10 @@ def build_instructions(result: CheckResult) -> str:
 
     Used by both CLI (printed as [WARN] block) and GUI (rendered in modal).
     """
+    if result.current_version and result.current_version.major == 2:
+        name = result.recommended_uf2.name if result.recommended_uf2 else '匹配 V2 的 RBL 固件'
+        return (f'[WARN] V2 固件需要升级：将 {name} 复制到当前下载器的 MICROKEEN 盘根目录，'
+                '等待下载器自动升级并重新出现；不要拔掉 USB，无需进入 UF2 模式。')
     lines: list[str] = []
     lines.append("[WARN] 探针固件需要升级，请按以下步骤操作：")
     lines.append("")
@@ -802,6 +869,7 @@ def build_instructions(result: CheckResult) -> str:
 def check_probe_firmware(
     port: str | None, firmware_root: Path, *,
     version_reader: Callable[[str], Version | None] | None = None,
+    disk_reader=None,
 ) -> CheckResult:
     """Top-level check: list firmwares, read device version, decide status.
 
@@ -811,7 +879,9 @@ def check_probe_firmware(
     # Step 1: resolve the independent online channel, with a local development
     # fallback. Installed builds intentionally do not carry MK-Firmware/.
     remote_available = True
-    firmwares = _remote_firmwares()
+    disk = (disk_reader or _probe_disk)()
+    disk_version = read_microkeen_version(disk) if disk else None
+    firmwares = _remote_firmwares(v2=True) if disk_version and disk_version.major == 2 else _remote_firmwares()
     try:
         local_firmwares = list_firmwares(firmware_root)
     except (FileNotFoundError, NotADirectoryError, OSError):
@@ -848,9 +918,8 @@ def check_probe_firmware(
     # Step 2: prefer the version stamped in the mounted probe drive.  This is
     # available even when an older firmware cannot answer cmd.get_version().
     current: Version | None = None
-    disk = _probe_disk()
     if disk:
-        current = read_microkeen_version(disk)
+        current = disk_version
     family = probe_firmware_family(disk, current) if disk else "microlink"
     all_firmwares = firmwares
     firmwares = [item for item in all_firmwares if item.family == family]
@@ -880,6 +949,11 @@ def check_probe_firmware(
             )
         try:
             current = (version_reader or read_device_version)(port)
+            if current and current.major == 2:
+                extra = _remote_firmwares(v2=True)
+                if extra:
+                    all_firmwares.extend(extra)
+                    firmwares.extend(item for item in extra if item.family == family)
             resolved_family = (
                 probe_firmware_family(disk, current) if disk else "microlink"
             )

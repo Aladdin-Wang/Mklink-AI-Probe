@@ -52,6 +52,8 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
+    // Replay shares its parser/Worker with the packaged standalone CLI page.
+    fs: { allow: [projectRoot, fileURLToPath(new URL('../mklink/static', import.meta.url))] },
     port: 5173,
     strictPort: true,
     host: host || false,

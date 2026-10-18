@@ -10,79 +10,85 @@ class FakeWorker {
   constructor() { FakeWorker.instances.push(this) }
   send(data: any) { this.onmessage?.({ data }) }
 }
-let dispose: () => void
+let dispose: () => void, control: (action: string) => void, viewer: any
 function element<T extends HTMLElement>(selector: string) { return document.querySelector(selector) as T }
-function click(action: string) { element<HTMLButtonElement>(`[data-action=${action}]`).click() }
 function upload() {
   const input = element<HTMLInputElement>('[data-testid=replay-file]')
   Object.defineProperty(input, 'files', { value: [new File(['timestamp,a\n0,1'], 'test.csv')], configurable: true })
   input.dispatchEvent(new Event('change'))
   return FakeWorker.instances.at(-1)!
 }
-function loaded(worker: FakeWorker, duration = 10) {
-  worker.send({ type: 'loaded', rows: 100, values: 100, duration, channels: [{ name: 'a', count: 100 }] })
+function respond(worker: FakeWorker) {
   const request = worker.postMessage.mock.calls.at(-1)![0]
-  worker.send({ type: 'view', id: request.id, start: 0, end: 10, position: 0, channels: [{ name: 'a', points: [[0, 1]], latest: 1 }] })
+  worker.send({ type: 'view', id: request.id, position: request.position, width: 800, channels: [{ name: 'a', points: [[0, 1]], latest: 1 }] })
 }
-describe('replay controls and lifetime', () => {
+function loaded(worker: FakeWorker, duration = 60) {
+  worker.send({ type: 'loaded', rows: 100, duration, channels: [{ name: 'a', count: 100 }] }); respond(worker)
+}
+describe('inline replay controls and lifetime', () => {
   beforeEach(() => {
     FakeWorker.instances = []
     vi.stubGlobal('Worker', FakeWorker)
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(new Proxy({}, { get: () => vi.fn() }) as any)
-    document.body.innerHTML = '<div class="host"></div>'
+    viewer = {
+      beginReplay: vi.fn((_meta, callback) => { control = callback; return true }),
+      endReplay: vi.fn(), setReplayPosition: vi.fn(), renderReplayView: vi.fn(),
+      getBinaryVisibleRange: vi.fn(() => ({ start: 0, end: 10000, pixelWidth: 800 })),
+    }
+    ;(window as any).__waveformViewers = { SuperWatch: viewer }
+    document.body.innerHTML = '<div class="waveform-viewer"><div class="watch-toolbar-row"><div class="host"></div></div><canvas id="chart"></canvas></div>'
     dispose = mountReplayButton(element('.host'), { language: 'en' })
-    element<HTMLButtonElement>('[data-testid=open-superwatch-replay]').click()
   })
   afterEach(() => { dispose(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
-  it('imports without any device request and seeks backwards to the requested position', () => {
+  it('uses the original chart without a dialog or another canvas and makes no device requests', () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
     const worker = upload(); loaded(worker)
-    click('overview')
-    const slider = element<HTMLInputElement>('[data-testid=replay-seek]')
-    slider.value = '2.5'; slider.dispatchEvent(new Event('input'))
-    expect(element('[data-testid=replay-time]').textContent).toBe('2.500 / 10.000 s')
-    const inFlight = worker.postMessage.mock.calls.at(-1)![0]
-    worker.send({ type: 'view', id: inFlight.id, start: 0, end: 10, position: 10, channels: [] })
-    expect(worker.postMessage.mock.calls.at(-1)![0].position).toBe(2.5)
+    expect(document.querySelector('dialog')).toBeNull()
+    expect(document.querySelectorAll('canvas')).toHaveLength(1)
+    expect(viewer.renderReplayView).toHaveBeenCalledOnce()
+    expect(element('.sw-replay-inline').previousElementSibling?.className).toBe('watch-toolbar-row')
     expect(fetch).not.toHaveBeenCalled()
   })
-  it('cancels loading, ignores obsolete worker results and accepts the same file again', () => {
-    const first = upload(); click('cancel')
-    first.send({ type: 'loaded', duration: 10, rows: 5, channels: [] })
-    expect(element<HTMLButtonElement>('[data-action=play]').disabled).toBe(true)
+  it('routes original Start/Pause/Stop controls to playback and preserves inspection viewport', () => {
+    const worker = upload(); loaded(worker)
+    control('play'); expect(element('.sw-replay-inline').dataset.playbackState).toBe('playing')
+    control('inspect'); expect(element('.sw-replay-inline').dataset.playbackState).toBe('paused')
+    expect(viewer.setReplayPosition).toHaveBeenLastCalledWith(0, false, false)
+    control('toggle'); expect(element('.sw-replay-inline').dataset.playbackState).toBe('playing')
+    control('stop'); expect(element('.sw-replay-inline').dataset.playbackState).toBe('paused')
+  })
+  it('discards an obsolete seek frame and then renders the requested history range', () => {
+    const worker = upload(); loaded(worker)
+    const slider = element<HTMLInputElement>('[data-testid=replay-seek]')
+    slider.value = '40'; slider.dispatchEvent(new Event('input'))
+    slider.value = '2.5'; slider.dispatchEvent(new Event('input'))
+    respond(worker)
+    expect(viewer.renderReplayView).toHaveBeenCalledOnce()
+    expect(worker.postMessage.mock.calls.at(-1)![0].position).toBe(2.5)
+    respond(worker)
+    expect(viewer.renderReplayView).toHaveBeenCalledTimes(2)
+    expect(element('[data-testid=replay-time]').textContent).toBe('2.500 / 60.000 s')
+  })
+  it('returns to live and ignores obsolete worker results, including reimport of the same file', () => {
+    const first = upload(); loaded(first)
+    element<HTMLButtonElement>('[data-action=live]').click()
     expect(first.terminate).toHaveBeenCalledOnce()
-    const second = upload(); loaded(second)
-    expect(element<HTMLButtonElement>('[data-action=play]').disabled).toBe(false)
+    expect(element('.sw-replay-inline').hidden).toBe(true)
+    const second = upload(); first.send({ type: 'loaded', duration: 5, channels: [] }); loaded(second)
+    expect(viewer.beginReplay).toHaveBeenCalledTimes(2)
     expect(element<HTMLInputElement>('[data-testid=replay-file]').value).toBe('')
   })
-  it('reports parse errors and releases the worker without retaining prior data', () => {
+  it('releases the worker and restores live mode after a parse failure or unmount', () => {
     const worker = upload(); loaded(worker)
     worker.send({ type: 'error', message: 'Line 3: invalid timestamp' })
     expect(element('.sw-replay-message').textContent).toContain('Line 3')
-    expect(element<HTMLButtonElement>('[data-action=play]').disabled).toBe(true)
     expect(worker.terminate).toHaveBeenCalledOnce()
+    const second = upload(); loaded(second); dispose()
+    expect(second.terminate).toHaveBeenCalledOnce()
+    expect(document.querySelector('.sw-replay-inline')).toBeNull()
   })
-  it('handles a single-timestamp log and restart without an animation loop', () => {
-    const worker = upload(); loaded(worker, 0)
-    click('restart')
-    expect(element('.sw-replay').dataset.playbackState).toBe('ended')
-    expect(element('[data-testid=replay-time]').textContent).toBe('0.000 / 0.000 s')
-  })
-  it('isolates keyboard shortcuts and closes with Escape semantics', () => {
-    const liveShortcut = vi.fn(); document.addEventListener('keydown', liveShortcut)
-    const worker = upload(); loaded(worker)
-    element('[data-action=play]').dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
-    expect(liveShortcut).not.toHaveBeenCalled()
-    element('.sw-replay').dispatchEvent(new Event('cancel', { cancelable: true }))
-    expect(document.querySelector('.sw-replay')).toBeNull()
-    expect(worker.terminate).toHaveBeenCalledOnce()
-    document.removeEventListener('keydown', liveShortcut)
-  })
-  it('disposes an open dialog and its worker when the parent viewer unmounts', () => {
-    const worker = upload(); dispose()
-    expect(worker.terminate).toHaveBeenCalledOnce()
-    expect(document.querySelector('dialog')).toBeNull()
-    expect(document.querySelector('[data-testid=open-superwatch-replay]')).toBeNull()
+  it('handles a single-timestamp log without starting a playback loop', () => {
+    const worker = upload(); loaded(worker, 0); control('play')
+    expect(element('.sw-replay-inline').dataset.playbackState).toBe('ended')
   })
 })

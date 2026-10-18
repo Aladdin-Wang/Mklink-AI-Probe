@@ -1854,6 +1854,9 @@ def _cli_runtime(args):
             from mklink.runtime import control_runtime
             result = control_runtime(args.action, probe=args.probe, confirm=args.confirm,
                                      client_id=args.client_id, stream=args.stream)
+        elif args.runtime_command == 'firmware':
+            from mklink.runtime import probe_firmware
+            result = probe_firmware(args.action, probe=args.probe, confirm=args.confirm)
         elif args.runtime_command == 'jobs':
             info = selected_runtime(args.probe)
             if info is None:
@@ -2670,6 +2673,10 @@ def main():
     runtime_control.add_argument('--client-id')
     runtime_control.add_argument('--stream')
     runtime_control.add_argument('--confirm', action='store_true')
+    runtime_firmware = runtime_sub.add_parser('firmware', help='检查或升级下载器固件，复用 GUI 共享升级路径')
+    runtime_firmware.add_argument('action', choices=['check', 'upgrade'])
+    runtime_firmware.add_argument('--probe')
+    runtime_firmware.add_argument('--confirm', action='store_true')
     runtime_jobs = runtime_sub.add_parser('jobs', help='只查询已保留的独占任务，不连接硬件')
     runtime_jobs.add_argument('--probe')
     runtime_jobs.add_argument('--job')

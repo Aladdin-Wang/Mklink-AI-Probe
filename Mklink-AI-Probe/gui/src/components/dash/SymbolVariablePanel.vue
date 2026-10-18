@@ -1,9 +1,24 @@
 <template>
   <aside class="symbol-panel">
+    <div v-if="sourcePending" class="source-reload-banner" role="status">
+      <span>{{ tr('固件文件已更新', 'Firmware file updated') }}</span>
+      <button type="button" class="btn btn-secondary" data-testid="reparse-symbols" :disabled="reloadingSources || catalog.reparsing.value" @click="reloadSources">
+        <RefreshCw :size="16" />{{ tr('重新加载变量', 'Reload variables') }}
+      </button>
+    </div>
+    <div v-if="reloadPromptOpen" class="modal-overlay" @click.self="reloadPromptOpen = false" @keydown.esc="reloadPromptOpen = false">
+      <section class="layout-modal" role="dialog" aria-modal="true" aria-labelledby="reload-symbols-title" data-testid="reload-symbols-dialog">
+        <h3 id="reload-symbols-title">{{ tr('固件文件已更新', 'Firmware file updated') }}</h3>
+        <p>{{ tr('是否重新加载变量列表？请先确认新固件已下载到目标板。', 'Reload the variable list? Make sure the new firmware is on the target first.') }}</p>
+        <div class="layout-modal-actions">
+          <button type="button" class="btn btn-secondary" data-testid="reload-symbols-later" @click="reloadPromptOpen = false">{{ tr('稍后', 'Later') }}</button>
+          <button type="button" class="btn btn-primary" data-testid="reload-symbols-confirm" :disabled="reloadingSources" @click="reloadSources">{{ tr('重新加载变量', 'Reload variables') }}</button>
+        </div>
+      </section>
+    </div>
+
     <div v-if="pinsError" class="stale-banner" role="alert">{{ pinsError }}</div>
 
-    <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
-    <div v-else-if="sourceReloaded" class="stale-banner">{{ tr('符号已重载；请确认目标上的固件与当前符号文件一致。', 'Symbols reloaded. Confirm that the target firmware matches the current symbol file.') }}</div>
     <SetupHint
       v-if="!deviceConnected"
       kind="device"
@@ -63,57 +78,18 @@
         :placeholder="tr('搜索：空格同时匹配，逗号任一匹配', 'Search: spaces AND, commas OR')"
       />
       <button
-        class="icon-button"
-        type="button"
-        :title="tr('手动添加变量', 'Add variable manually')"
-        :aria-label="tr('手动添加变量', 'Add variable manually')"
-        data-testid="show-manual-add"
-        @click="manualAddOpen = !manualAddOpen"
-      >
-        <Plus :size="16" aria-hidden="true" />
-      </button>
-      <button
-        class="icon-button"
-        type="button"
-        :title="tr('粘贴 C 结构定义', 'Paste C structure definition')"
-        :aria-label="tr('粘贴 C 结构定义', 'Paste C structure definition')"
-        data-testid="show-c-layout"
-        @click="openCLayout()"
-      >
-        <Code2 :size="16" aria-hidden="true" />
-      </button>
-      <button
+        v-if="!sourcePending"
         class="icon-button"
         type="button"
         :title="tr('重新解析符号', 'Reparse symbols')"
         :aria-label="tr('重新解析符号', 'Reparse symbols')"
-        :disabled="catalog.reparsing.value"
+        :disabled="catalog.reparsing.value || reloadingSources"
         data-testid="reparse-symbols"
-        @click="reparseSymbols"
+        @click="reparseSymbols()"
       >
         <RefreshCw :size="16" aria-hidden="true" />
       </button>
     </div>
-
-    <form v-if="manualAddOpen" class="manual-add-row" @submit.prevent="addManualVariable">
-      <input
-        v-model="manualPath"
-        class="form-input"
-        data-testid="manual-variable-path"
-        :placeholder="tr('变量或成员路径', 'Variable or member path')"
-        autocomplete="off"
-      />
-      <button
-        class="icon-button"
-        type="submit"
-        :title="tr('添加到 SuperWatch', 'Add to SuperWatch')"
-        :aria-label="tr('添加到 SuperWatch', 'Add to SuperWatch')"
-        data-testid="add-manual-variable"
-        :disabled="manualAdding || !manualPath.trim()"
-      >
-        <Plus :size="16" aria-hidden="true" />
-      </button>
-    </form>
 
     <div class="panel-filters">
       <label>
@@ -252,7 +228,7 @@
               type="button"
               :data-testid="`edit-${row.node.descriptor.path}`"
               :disabled="catalog.stale.value || !row.node.descriptor.writable"
-              :title="tr('设置变量', 'Set variable')"
+              :title="row.node.descriptor.bit_size != null ? tr('位域只读，避免改动相邻字段', 'Read-only bit field; protects adjacent fields') : tr('设置变量', 'Set variable')"
               @click="beginEdit(row.node.descriptor)"
             >
               {{ tr('编辑', 'Edit') }}
@@ -418,7 +394,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
-import { Activity, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Code2, Eye, EyeOff, LoaderCircle, Pin, PinOff, Plus, RefreshCw, X } from '@lucide/vue'
+import { trackedSymbolPending, reloadTrackedSymbolSource } from '../../lib/trackedSymbolSource'
+import { Activity, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Code2, Eye, EyeOff, LoaderCircle, Pin, PinOff, RefreshCw, X } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
 import { useDashboardSetup } from '../../composables/useDashboardSetup'
@@ -483,10 +460,6 @@ const pathAlignment = ref<{ edge: 'left' | 'right'; revision: number }>({ edge: 
 function alignPaths(edge: 'left' | 'right'): void {
   pathAlignment.value = { edge, revision: pathAlignment.value.revision + 1 }
 }
-const sourceReloaded = ref(false)
-const manualAddOpen = ref(false)
-const manualPath = ref('')
-const manualAdding = ref(false)
 const cLayoutOpen = ref(false)
 const cLayoutVariable = ref('')
 const cLayoutDefinition = ref('')
@@ -776,29 +749,6 @@ async function toggleSelection(symbol: SymbolDescriptor, event: Event): Promise<
   }
 }
 
-async function addManualVariable(): Promise<void> {
-  const path = manualPath.value.trim()
-  if (!path) return
-  manualAdding.value = true
-  try {
-    const response = await request('/api/dash/superwatch/add', {
-      method: 'POST',
-      body: JSON.stringify({ name: path }),
-    })
-    const item = response?.item
-    if (response?.error || item?.error) throw new Error(response?.error || item.error)
-    const addedPath = typeof item?.name === 'string' ? item.name : path
-    selected.value = withSet(selected.value, addedPath, true)
-    await resolveSelectedDescriptor(addedPath)
-    manualPath.value = ''
-    manualAddOpen.value = false
-  } catch (cause) {
-    toast.error(cause instanceof Error ? cause.message : String(cause))
-  } finally {
-    manualAdding.value = false
-  }
-}
-
 function applyRebindSummary(summary: { removed: string[] }): void {
   const next = new Set(selected.value)
   summary.removed.forEach(path => {
@@ -809,15 +759,6 @@ function applyRebindSummary(summary: { removed: string[] }): void {
   const descriptors = new Map(selectedDescriptors.value)
   summary.removed.forEach(path => descriptors.delete(path))
   selectedDescriptors.value = descriptors
-}
-
-async function resolveSelectedDescriptor(path: string): Promise<void> {
-  const matches = await catalog.searchSymbols(path)
-  const descriptor = matches.find(item => item.path === path)
-  if (!descriptor) return
-  const next = new Map(selectedDescriptors.value)
-  next.set(path, descriptor)
-  selectedDescriptors.value = next
 }
 
 async function refreshSelectedDescriptors(): Promise<void> {
@@ -907,6 +848,25 @@ async function writeValue(symbol: SymbolDescriptor): Promise<void> {
   }
 }
 
+const backendSourcePending = ref(false)
+const sourcePending = computed(() => backendSourcePending.value || trackedSymbolPending.value > 0)
+const reloadPromptOpen = ref(false)
+watch(trackedSymbolPending, revision => { if (revision) reloadPromptOpen.value = true }, { immediate: true })
+let promptedSourceSequence: number | undefined
+const reloadingSources = ref(false)
+async function reloadSources(): Promise<void> {
+  reloadingSources.value = true
+  reloadPromptOpen.value = false
+  try {
+    if (!await reloadTrackedSymbolSource()) await request('/api/symbols/reload-sources', { method: 'POST' })
+    await refreshSourceStatus()
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+  } finally {
+    reloadingSources.value = false
+  }
+}
+
 async function reparseSymbols(): Promise<void> {
   try {
     const summary = await catalog.reparse()
@@ -929,27 +889,44 @@ function formatValue(value: number | boolean | undefined): string {
 let statusTimer: ReturnType<typeof setInterval> | undefined
 let statusBusy = false
 let disposed = false
+let lastSourceError = 0
 async function refreshSourceStatus(): Promise<void> {
   if (disposed || statusBusy || !props.deviceConnected || !props.symbolLoaded) return
   statusBusy = true
   try {
     const previousGeneration = catalog.generation.value
-    await catalog.refreshStatus()
+    const status = await catalog.refreshStatus()
     if (disposed) return
+    const change = status?.file_source_change
+    backendSourcePending.value = change?.state === 'awaiting-reload' || change?.state === 'failed'
+    if (change?.state === 'awaiting-reload' && change.sequence !== promptedSourceSequence) {
+      promptedSourceSequence = change.sequence
+      reloadPromptOpen.value = true
+    } else if (!sourcePending.value) {
+      reloadPromptOpen.value = false
+    }
+    if (change?.error && change.sequence !== lastSourceError) {
+      lastSourceError = change.sequence
+      toast.error(tr('符号重载失败：', 'Symbol reload failed: ') + change.error)
+    }
     const watchList = await request('/api/dash/superwatch/items')
     if (disposed) return
     if (Array.isArray(watchList.items)) {
       const next = new Set<string>(watchList.items.map((item: { name: string }) => item.name))
       if (next.size !== selected.value.size || [...next].some(path => !selected.value.has(path))) {
+        for (const path of selected.value) {
+          if (!next.has(path)) emit('selection-removed', path)
+        }
         selected.value = next
         await refreshSelectedDescriptors()
       }
     }
     if (catalog.generation.value !== previousGeneration) {
-      sourceReloaded.value = true
+      toast.success(tr('符号已重新加载', 'Symbols reloaded'), 2500)
       editing.value = null
       for (const path of Object.keys(writeSuccess)) delete writeSuccess[path]
       await loadWorkspace()
+      await refreshSelectedDescriptors()
       const search = query.value.trim()
       if (search) {
         const requestId = ++searchRequest
@@ -981,7 +958,7 @@ watch(catalog.generation, () => {
   pinnedDescriptors.value = new Map()
   if (props.deviceConnected && props.symbolLoaded) void loadPins()
 })
-watch(query, (next, previous) => {
+watch([query, catalog.generation], ([next], [previous]) => {
   filteredCollapsed.value = new Set()
   if (next.trim() && !previous.trim()) searchExpansionSnapshot = new Set(expanded.value)
   if (!next.trim() && previous.trim() && searchExpansionSnapshot) {
@@ -1026,8 +1003,8 @@ watch(tree, roots => {
 .panel-toolbar .form-input { min-width: 0; flex: 1; }
 .icon-button { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); background: transparent; color: var(--fg); cursor: pointer; }
 .icon-button:disabled { color: var(--muted); cursor: default; }
-.manual-add-row { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-.manual-add-row .form-input { min-width: 0; flex: 1; }
+.source-reload-banner { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--bg); font-size: 12px; }
+.source-reload-banner .btn { flex-shrink: 0; padding: 4px 8px; font-size: 12px; color: var(--accent); }
 .panel-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
 .path-alignment { display: flex; gap: 4px; }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }

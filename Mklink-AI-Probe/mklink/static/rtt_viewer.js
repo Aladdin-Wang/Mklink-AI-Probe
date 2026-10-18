@@ -136,6 +136,70 @@ var FIELDS = {};
 var CHANNEL_METADATA = {};
 var colorIdx = 0;
 var paused = false;
+var replaySession = null;
+var replayLiveState = null;
+var replayLiveMetadata = null;
+
+// The standalone CLI page shares the inline replay controller with the desktop.
+window.__waveformViewers = window.__waveformViewers || {};
+window.__waveformViewers.SuperWatch = {
+  beginReplay: function(metadata, control) {
+    if (replaySession) this.endReplay();
+    var live = {fields: FIELDS, metadata: CHANNEL_METADATA, timeline: Object.assign({}, timelineView), state: collectionState};
+    FIELDS = {}; CHANNEL_METADATA = {};
+    var channels = {};
+    metadata.channels.forEach(function(channel) { channels[channel.name] = {type: 'float'}; });
+    applyChannelMetadata(channels);
+    Object.keys(FIELDS).forEach(function(name) { FIELDS[name].ringBuf = new RingBuffer(4096); });
+    replaySession = {control: control, live: live, duration: Math.max(.001, metadata.duration), playing: false};
+    replayLiveState = collectionState; replayLiveMetadata = null;
+    paused = true; collectionState = 'paused';
+    timelineView.zoom = Math.max(1, replaySession.duration / 10); timelineView.offset = 0;
+    document.getElementById('btn-apply-interval').disabled = true;
+    document.getElementById('btn-apply-buffer').disabled = true;
+    this.setReplayPosition(0, false, true);
+    return true;
+  },
+  setReplayPosition: function(position, playing, follow) {
+    if (!replaySession) return;
+    replaySession.playing = playing;
+    if (follow) {
+      var span = replaySession.duration / timelineView.zoom;
+      timelineView.offset = replaySession.duration > span ? Math.max(0, Math.min(1, (position - span) / (replaySession.duration - span))) : 0;
+    }
+    document.getElementById('btn-start').disabled = playing;
+    document.getElementById('btn-pause').disabled = false;
+    document.getElementById('btn-stop').disabled = false;
+    document.getElementById('btn-pause').textContent = t(playing ? 'pause' : 'resume');
+    document.getElementById('collection-status-badge').textContent = (CONFIG.lang === 'en' ? 'Replay · ' : '回放 · ') + t(playing ? 'running' : 'paused');
+    var range = getVisibleTimeRange(); replaySession.range = range.tMin + ':' + range.tMax;
+  },
+  getBinaryVisibleRange: function() {
+    if (!replaySession) return null;
+    var range = getVisibleTimeRange();
+    return {start: range.tMin * 1000, end: range.tMax * 1000, pixelWidth: Math.max(1, canvas.clientWidth)};
+  },
+  renderReplayView: function(view) {
+    if (!replaySession) return;
+    view.channels.forEach(function(channel) {
+      var field = FIELDS[channel.name]; if (!field) return;
+      field.ringBuf.clear(); channel.points.forEach(function(point) { field.ringBuf.push(point[0], point[1]); });
+    });
+    replaySession.rendering = true;
+    try { drawChart(); drawMinimap(); updateUI(); updateWatchTable(); }
+    finally { replaySession.rendering = false; }
+  },
+  endReplay: function() {
+    if (!replaySession) return;
+    var live = replaySession.live; replaySession = null;
+    FIELDS = live.fields; CHANNEL_METADATA = live.metadata; timelineView = live.timeline;
+    _watchStructGen++;
+    if (replayLiveMetadata) applyChannelMetadata(replayLiveMetadata);
+    document.getElementById('btn-apply-interval').disabled = false;
+    document.getElementById('btn-apply-buffer').disabled = false;
+    updateCollectionUI(replayLiveState || live.state); drawChart(); drawMinimap(); updateWatchTable();
+  }
+};
 var tStart = 0;
 var rawLogLineCount = 0;
 var WATCH_COLUMNS = [
@@ -421,6 +485,7 @@ function updateSampleRateBadge(interval, rate) {
 }
 
 function updateCollectionUI(state) {
+  if (replaySession) { replayLiveState = state; return; }
   collectionState = state;
   var btnStart = document.getElementById('btn-start');
   var btnPause = document.getElementById('btn-pause');
@@ -459,12 +524,14 @@ function updateCollectionUI(state) {
 }
 
 document.getElementById('btn-start').addEventListener('click', function() {
+  if (replaySession) { replaySession.control('play'); return; }
   fetch('/api/resume', {method:'POST'})
     .then(function(r){return r.json()})
     .then(function(d){updateCollectionUI(d.status)})
     .catch(function(){});
 });
 document.getElementById('btn-pause').addEventListener('click', function() {
+  if (replaySession) { replaySession.control('toggle'); return; }
   var action = (collectionState === 'paused') ? 'resume' : 'pause';
   fetch('/api/' + action, {method:'POST'})
     .then(function(r){return r.json()})
@@ -472,6 +539,7 @@ document.getElementById('btn-pause').addEventListener('click', function() {
     .catch(function(){});
 });
 document.getElementById('btn-stop').addEventListener('click', function() {
+  if (replaySession) { replaySession.control('stop'); return; }
   if (!confirm('Stop data collection? This will end the session.')) return;
   fetch('/api/stop', {method:'POST'})
     .then(function(r){return r.json()})
@@ -487,6 +555,7 @@ document.getElementById('btn-apply-buffer').addEventListener('click', function()
   setBufferCapacity(val);
 });
 document.getElementById('btn-apply-interval').addEventListener('click', function() {
+  if (replaySession) return;
   var val = parseFloat(intervalInput.value);
   if (isNaN(val) || val < 0 || val > 60) {
     alert('Interval must be between 0 and 60 seconds');
@@ -743,6 +812,7 @@ function floatToHexBytes(value, isDouble) {
 }
 
 function _writeWatchValue(name, valueStr, meta, td) {
+  if (replaySession) return;
   var parsed = parseSmartValue(valueStr, meta.type);
   var addr = parseInt(meta.address, 16);
   var width = meta.size;
@@ -1185,7 +1255,7 @@ function _bindWatchDelegates(tbody) {
         superwatchAddName(childPath);
       } else {
         removeWatchChannel(childPath);
-        if (typeof IS_SUPERWATCH_MODE !== 'undefined' && IS_SUPERWATCH_MODE) {
+        if (!replaySession && typeof IS_SUPERWATCH_MODE !== 'undefined' && IS_SUPERWATCH_MODE) {
           fetch('/api/superwatch/remove', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:childPath})});
         }
       }
@@ -1207,6 +1277,7 @@ function _bindWatchDelegates(tbody) {
     // Struct expand/collapse button (works for both top-level and sub-structs)
     var expandBtn = e.target.closest('.watch-expand-btn');
     if (expandBtn) {
+      if (replaySession) return;
       e.stopPropagation();
       var name = expandBtn.dataset.name;
       if (_expandedRows[name]) {
@@ -1241,7 +1312,7 @@ function _bindWatchDelegates(tbody) {
     if (!n) return;
     e.stopPropagation();
     removeWatchChannel(n);
-    if (typeof IS_SUPERWATCH_MODE !== 'undefined' && IS_SUPERWATCH_MODE) {
+    if (!replaySession && typeof IS_SUPERWATCH_MODE !== 'undefined' && IS_SUPERWATCH_MODE) {
       fetch('/api/superwatch/remove', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:n})});
     }
   });
@@ -1266,6 +1337,7 @@ function _bindWatchDelegates(tbody) {
   }
   // Watch value editing: double-click to edit
   tbody.addEventListener('dblclick', function(e) {
+    if (replaySession) return;
     var td = e.target.closest('td[data-col="value"]');
     if (!td) return;
     var tr = td.closest('tr[data-channel]');
@@ -1430,6 +1502,7 @@ function removeWatchChannel(name) {
 }
 
 function applyChannelMetadata(channels, purge) {
+  if (replaySession) { replayLiveMetadata = channels; return; }
   if (!channels) return;
   for (var name in channels) {
     if (!channels.hasOwnProperty(name)) continue;
@@ -1849,6 +1922,7 @@ function resetStreamView() {
   for (var k in FIELDS) { if (FIELDS[k] && FIELDS[k].ringBuf) FIELDS[k].ringBuf.clear(); }
 }
 function processPoint(point) {
+  if (replaySession) return;
   if (paused) return;
   var pointRenderGeneration = renderGeneration;
   var elapsed = point._t || (performance.now() / 1000);
@@ -1955,6 +2029,7 @@ function processPoint(point) {
 // Get visible time range (with timeline zoom/offset)
 // ============================================================
 function getFullTimeRange() {
+  if (replaySession) return {tMin: 0, tMax: replaySession.duration};
   var tMax = 0, tMin = Infinity;
   for (var k in FIELDS) {
     var pts = FIELDS[k].ringBuf;
@@ -2031,6 +2106,14 @@ function formatTimeAxisValue(seconds) {
 // Canvas chart drawing (enhanced with per-channel Y, timeline, cursors)
 // ============================================================
 function drawChart() {
+  if (replaySession && !replaySession.rendering) {
+    var range = getVisibleTimeRange();
+    var signature = range.tMin + ':' + range.tMax;
+    if (replaySession.range !== signature) {
+      replaySession.range = signature;
+      replaySession.control('inspect');
+    }
+  }
   if (!resize()) return;
   resizeMinimap();
   var W = canvas.clientWidth || parseFloat(canvas.style.width);
@@ -2845,6 +2928,7 @@ function showInspectorTree(tree) {
 }
 
 function superwatchAddName(name) {
+  if (replaySession) return;
   name = String(name || '').trim();
   if (!name) return;
   fetch('/api/superwatch/add', {
@@ -3334,6 +3418,7 @@ var helpOpen = false;
 document.addEventListener('keydown', function(e) {
   if (helpOpen) return;
   if (e.key === 'p' || e.key === 'P') {
+    if (replaySession) { replaySession.control('toggle'); return; }
     if (collectionState === 'running') {
       fetch('/api/pause', {method:'POST'}).then(function(r){return r.json()}).then(function(d){updateCollectionUI(d.status)}).catch(function(){});
     } else if (collectionState === 'paused') {
@@ -3344,7 +3429,7 @@ document.addEventListener('keydown', function(e) {
     e.preventDefault();
     toggleRawLog();
   }
-  if (e.key === 'e' && (e.ctrlKey || e.metaKey) && !e.altKey) {
+  if (!IS_SUPERWATCH_MODE && e.key === 'e' && (e.ctrlKey || e.metaKey) && !e.altKey) {
     e.preventDefault();
     exportCSV();
   }

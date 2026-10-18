@@ -52,8 +52,11 @@ def check_firmware(state, firmware_root):
     from mklink.probes import select_probe
 
     selected = select_probe(state['shared_probe_id'])
+    from mklink.probe_volumes import FirmwareVolumes
+    volumes = FirmwareVolumes(selected)
     return check_probe_firmware(selected['port'], firmware_root, version_reader=lambda port:
-                                parse_probe_version(_query(state, 'probe_version')['raw']))
+                                parse_probe_version(_query(state, 'probe_version')['raw']),
+                                disk_reader=volumes.find if volumes.identity else lambda: None)
 
 
 def upgrade_firmware(state, firmware_root):
@@ -70,6 +73,42 @@ def upgrade_firmware(state, firmware_root):
         return {'status': 'manual_required', 'message': '暂时无法识别下载器，请选择正确型号下载固件后手动升级。'}
 
     class CommandPort:
+        def copy_rbl(self, source, name, expected_disk):
+            from pathlib import Path
+            import os
+            import shutil
+            from mklink.remote.resource_manager import ResourceGroup
+            manager = state['resource_manager']
+            owner = 'user:api:firmware-upgrade'
+            manager.acquire_many((ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG,
+                                  ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH), owner)
+            try:
+                current = select_probe(state['shared_probe_id'])
+                if (not current.get('identity_stable') or current['probe_id'] != selected['probe_id']
+                        or volumes.find() != expected_disk):
+                    raise RuntimeError('Bound V2 USB identity or application volume changed; no write started')
+                root = Path(expected_disk)
+                if any(root.glob('MicroLink*.rbl')):
+                    raise RuntimeError('An RBL is already on this volume; inspect the previous update first')
+                # An intentional firmware reboot must not trigger transport
+                # recovery or retain a CDC handle against the new application.
+                device = state.get('device')
+                if device is not None:
+                    mux = getattr(getattr(device, '_bridge', None), '_mux', None)
+                    device.close()
+                    state['device'] = None
+                    state['dispatcher'] = None
+                    if mux is not None and mux._error is not None:
+                        raise RuntimeError('MUX exit was not confirmed; no RBL write started')
+                if volumes.find() != expected_disk:
+                    raise RuntimeError('V2 volume changed before copy; no write started')
+                with source.open('rb') as incoming, (root / name).open('xb') as output:
+                    shutil.copyfileobj(incoming, output)
+                    output.flush()
+                    os.fsync(output.fileno())
+            finally:
+                manager.release(owner)
+
         def enter_bootloader(self):
             from mklink.bridge import MKLinkSerialBridge
             from mklink.remote.resource_manager import ResourceGroup

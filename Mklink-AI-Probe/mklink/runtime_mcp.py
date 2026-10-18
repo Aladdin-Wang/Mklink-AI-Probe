@@ -348,6 +348,19 @@ def build_server():
         return control_runtime(probe=runtime_selector(probe))
 
     @server.tool()
+    def probe_firmware(action: Literal['check', 'upgrade'] = 'check',
+                       probe: str | None = None, confirm: StrictBool = False) -> dict:
+        """Check/update the selected probe through the same guarded updater as GUI.
+
+        Upgrade requires explicit user confirmation. Stop acquisitions and detach
+        AI sessions first; the backend rejects occupied devices. V2 uses RBL on
+        its normal MSC volume; V3/V4 use UF2. Unknown results are never replayed.
+        Does not attach to the target or stop another client's acquisition.
+        """
+        from mklink.runtime import probe_firmware as update
+        return update(action, probe=runtime_selector(probe), confirm=confirm)
+
+    @server.tool()
     def runtime_control(action: Literal['detach-client', 'stop-acquisition', 'release-device', 'stop-backend'],
                         probe: str | None = None, confirm: StrictBool = False,
                         client_id: str | None = None, stream: str | None = None) -> dict:
@@ -402,11 +415,13 @@ def build_server():
 
         snapshot_select uses name, start_index, count for the same array view as GUI;
         snapshot_clear removes that shared array view. Neither starts acquisition.
+        recording_start accepts directory (existing absolute path on the backend computer).
+        recording_status/recording_stop inspect or drain the same continuous JSONL recorder as GUI.
 
         write requires path, generation from gui_call('symbol_status'), and value. It uses the existing typed
         live-write transaction. Start with empty arguments subscribes to an existing capture.
         """
-        if action not in {'status', 'items', 'values', 'snapshot', 'snapshot_select', 'snapshot_clear', 'add', 'remove', 'start', 'stop', 'pause', 'resume', 'interval', 'write'}:
+        if action not in {'status', 'items', 'values', 'snapshot', 'snapshot_select', 'snapshot_clear', 'add', 'remove', 'start', 'stop', 'pause', 'resume', 'interval', 'write', 'recording_start', 'recording_stop', 'recording_status'}:
             raise ValueError('Unsupported SuperWatch action')
         return client().call('superwatch_'+action, arguments)
 

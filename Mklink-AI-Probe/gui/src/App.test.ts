@@ -29,7 +29,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('./composables/useMklinkApi', () => ({
-  useMklinkApi: () => ({ startStatusPolling, stopStatusPolling: vi.fn() }),
+  useMklinkApi: () => ({ startStatusPolling, stopStatusPolling: vi.fn(), deviceStatus: ref({ device_generation: 0 }) }),
 }))
 
 vi.mock('./composables/useBackendHealth', () => ({

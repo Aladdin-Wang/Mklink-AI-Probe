@@ -353,7 +353,7 @@ class BuiltinElfBackend:
             if not elf.has_dwarf_info():
                 raise ElfParseError(f"No DWARF info found in {source}")
             dwarf = elf.get_dwarf_info()
-            info = DwarfInfo()
+            info = DwarfInfo(little_endian=getattr(elf, "little_endian", True))
             object_addresses = _unique_object_addresses(_symbols_from_elf(elf))
 
             entries = []
@@ -449,13 +449,15 @@ class BuiltinElfBackend:
                             bit_offset=(
                                 _attribute_int(child_attrs, "DW_AT_bit_offset")
                                 if "DW_AT_bit_offset" in child_attrs
-                                else (
-                                    _attribute_int(
-                                        child_attrs, "DW_AT_data_bit_offset"
-                                    )
-                                    if "DW_AT_data_bit_offset" in child_attrs
-                                    else None
-                                )
+                                else None
+                            ),
+                            data_bit_offset=(
+                                _attribute_int(child_attrs, "DW_AT_data_bit_offset")
+                                if "DW_AT_data_bit_offset" in child_attrs else None
+                            ),
+                            storage_size=(
+                                _attribute_int(child_attrs, "DW_AT_byte_size")
+                                if "DW_AT_byte_size" in child_attrs else None
                             ),
                             bit_size=(
                                 _attribute_int(child_attrs, "DW_AT_bit_size")

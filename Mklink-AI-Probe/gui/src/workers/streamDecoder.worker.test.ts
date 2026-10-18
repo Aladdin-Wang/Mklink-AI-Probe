@@ -162,8 +162,9 @@ describe('StreamDecoder worker controller', () => {
     send(2, 'old fragment', '11'.repeat(16))
     send(3, 'NEW\n', '22'.repeat(16))
     const lines = messages.filter(m => m.type === 'serial-lines')
-    expect(lines).toHaveLength(1)
-    expect(lines[0]).toMatchObject({ port: 'A', session: '22'.repeat(16), lines: [{ ascii: 'NEW\n' }] })
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toMatchObject({ port: 'A', session: '11'.repeat(16), lines: [{ ascii: 'old fragment' }] })
+    expect(lines[1]).toMatchObject({ port: 'A', session: '22'.repeat(16), lines: [{ ascii: 'NEW\n' }] })
   })
 
   it('incrementally decodes serial RX in terminal mode without TX echo or log output', () => {
@@ -197,7 +198,7 @@ describe('StreamDecoder worker controller', () => {
     })
   })
 
-  it('assembles bounded directional serial rows in log mode', () => {
+  it('immediately emits bounded directional serial batches without waiting for a newline', () => {
     const { decoder, messages } = setup()
     const encoder = new TextEncoder()
     decoder.handle({
@@ -209,6 +210,7 @@ describe('StreamDecoder worker controller', () => {
         1n, 2, encoder.encode('OK'), StreamType.SERIAL, 10n, SERIAL_RX_BYTES,
       ), connectionGeneration: 1, frameTicket: 1,
     })
+    expect(messages.filter(message => message.type === 'serial-lines')).toHaveLength(1)
     decoder.handle({
       type: 'frame', buffer: frame(
         2n, 2, encoder.encode('\nX'), StreamType.SERIAL, 20n, SERIAL_RX_BYTES,
@@ -223,18 +225,58 @@ describe('StreamDecoder worker controller', () => {
     const batches = messages.filter(message => message.type === 'serial-lines')
     expect(batches).toEqual([
       {
+        type: 'serial-lines', sequence: 1n, port: 'COM7', session: '11'.repeat(16),
+        lines: [{ timestampNs: 10n, direction: 'RX', rawHex: '4F4B', ascii: 'OK', continuesPrevious: false }],
+      },
+      {
         type: 'serial-lines', sequence: 2n, port: 'COM7', session: '11'.repeat(16),
-        lines: [{ timestampNs: 10n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
+        lines: [
+          { timestampNs: 20n, direction: 'RX', rawHex: '0A', ascii: '\n', continuesPrevious: true },
+          { timestampNs: 20n, direction: 'RX', rawHex: '58', ascii: 'X', continuesPrevious: false },
+        ],
       },
       {
         type: 'serial-lines', sequence: 3n, port: 'COM7', session: '11'.repeat(16),
-        lines: [{ timestampNs: 30n, direction: 'TX', rawHex: 'ABCD', ascii: '��' }],
+        lines: [{ timestampNs: 30n, direction: 'TX', rawHex: 'ABCD', ascii: '��', continuesPrevious: false }],
       },
     ])
     expect(messages.some(message => message.type === 'serial-terminal')).toBe(false)
     expect(messages.at(-1)).toMatchObject({
       type: 'telemetry', bufferedSamples: 1, acceptedFrames: 3,
     })
+  })
+
+  it('preserves every binary byte and publishes the final tail before a reset', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 100, channelCount: 1, decoderMode: 'serial-log' })
+    decoder.handle({ type: 'serial-port', port: 'COM7' })
+    const chunks = [Uint8Array.of(0xfe, 0, 0x0a, 0x0d, 0xff), Uint8Array.of(0x42)]
+    chunks.forEach((data, index) => {
+      decoder.handle({ type: 'frame', buffer: frame(BigInt(index + 1), data.length, data,
+        StreamType.SERIAL, BigInt(index + 10), SERIAL_RX_BYTES), connectionGeneration: 1, frameTicket: index + 1 })
+      const batches = messages.filter(m => m.type === 'serial-lines')
+      expect(batches).toHaveLength(index + 1)
+      expect(batches.at(-1)!.lines.map(line => line.rawHex).join('')).toBe(
+        Array.from(data, byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase(),
+      )
+    })
+    decoder.handle({ type: 'reset' })
+    const rows = messages.filter(m => m.type === 'serial-lines').flatMap(m => m.lines)
+    expect(rows.map(row => row.rawHex).join('')).toEqual('FE000A0DFF42')
+  })
+
+  it('decodes split RX UTF-8 independently of TX while publishing all raw bytes immediately', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 100, channelCount: 1, decoderMode: 'serial-log' })
+    decoder.handle({ type: 'serial-port', port: 'COM7' })
+    const inputs = [Uint8Array.of(0xe6), new TextEncoder().encode('TX'), Uint8Array.of(0xb8, 0xa9)]
+    inputs.forEach((data, index) => decoder.handle({ type: 'frame', buffer: frame(
+      BigInt(index + 1), data.length, data, StreamType.SERIAL, 10n,
+      index === 1 ? SERIAL_TX_BYTES : SERIAL_RX_BYTES), connectionGeneration: 1, frameTicket: index + 1 }))
+    const rows = messages.filter(m => m.type === 'serial-lines').flatMap(m => m.lines)
+    expect(rows.map(row => [row.direction, row.rawHex, row.ascii])).toEqual([
+      ['RX', 'E6', ''], ['TX', '5458', 'TX'], ['RX', 'B8A9', '温'],
+    ])
   })
 
   it('decodes RTT raw records with UTF-8 line metadata and preserves batch order', () => {

@@ -841,6 +841,21 @@ describe('ConfigView', () => {
     expect(wrapper.get('[data-testid="firmware-download-status"]').text()).toContain('Gitee')
   })
 
+  it('offers V2 RBL download and model-specific manual instructions', async () => {
+    mocks.api.upgradeProbeFirmware.mockResolvedValueOnce({ status: 'manual_required', message: '请选择型号' })
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-firmware"]').trigger('click')
+    await wrapper.get('[data-testid="upgrade-firmware"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="firmware-model-choice"]').setValue('v2')
+    expect(wrapper.get('[data-testid="firmware-manual-steps"]').text()).toContain('RBL')
+    expect(wrapper.get('[data-testid="firmware-manual-steps"]').text()).not.toContain('按住升级按键')
+    mocks.api.downloadProbeFirmware.mockResolvedValueOnce({ blob: new Blob(), filename: 'MicroLink_V2.9.0.rbl', source: 'github' })
+    await wrapper.get('[data-testid="download-firmware"]').trigger('click')
+    await flushPromises()
+    expect(mocks.api.downloadProbeFirmware).toHaveBeenCalledWith('V2', 'microlink')
+  })
+
   it('offers explicit firmware model selection when an old probe cannot be identified', async () => {
     mocks.api.upgradeProbeFirmware.mockResolvedValueOnce({ status: 'manual_required', message: '暂时无法识别下载器' })
     const wrapper = await mountView()

@@ -9,6 +9,31 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.3.5', date: '2026-10-18',
+    summary: '优化调试、日志与下载体验',
+    summaryEn: 'Improve debugging, logging and programming',
+    changes: [
+      'SuperWatch 编译后提醒手动重载变量，精简搜索栏，曲线名称列表点击显示或隐藏。',
+      '日志按需持续记录，在原波形界面回放、暂停和缩放；修复 PNG 保存。',
+      'RTT 搜索后显示通道选择，双击空白区域自适应窗口。',
+      '串口短数据立即显示，分段文本正确续行，保留完整原始日志。',
+      '修复换下载器连接，同一下载器短暂掉线支持 5 秒内自动恢复 GUI/AI 共享连接与采集。',
+      '下载免预连接，芯片型号同步，Pack 自动刷新并支持手动 SVD。',
+      '补全位域变量和搜索结果，改善 Windows 采集显示性能。',
+      '支持 V2 下载器在线升级 RBL 固件，Web、CLI 和 MCP 使用同一流程。',
+    ],
+    changesEn: [
+      'Prompt for manual variable reload after a build, simplify SuperWatch search, and toggle channel names by clicking.',
+      'Record logs on demand and replay, pause and zoom in the original waveform view; fix PNG saving.',
+      'Show RTT channels after search and fit panels by double-clicking empty space.',
+      'Display short serial replies immediately, join text fragments correctly and preserve raw logs.',
+      'Fix connection after probe replacement; recover shared GUI/AI connections and capture within a five-second window after a brief disconnect of the same probe.',
+      'Program without preconnecting, share chip defaults, refresh Packs automatically and load custom SVD files.',
+      'Restore missing bit-fields and search results, and improve capture display performance on Windows.',
+      'Update V2 probe RBL firmware through the same Web, CLI and MCP workflow.',
+    ],
+  },
+  {
     version: '0.3.4', date: '2026-10-11',
     summary: '改善采集启动、变量写入与下载器切换',
     summaryEn: 'Improve capture startup, variable writes and probe switching',

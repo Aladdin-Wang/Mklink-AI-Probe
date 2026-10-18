@@ -206,6 +206,7 @@ class RuntimeControl:
                 'jobs': list(reversed(list(self.jobs.jobs.values())))[:8] if self.jobs else [], 'online_job': self.online_job(),
                 'operation': self.current_operation, 'last_operation': self.last_operation,
                 'acquisition_transition': self.app.state.mklink_state.get('acquisition_transition'),
+                'connection_recovery': self.app.state.mklink_state.get('connection_recovery'),
                 'uart_operations': list(self.uart_operations.values()),
                 'connected': bool(device and device.connected),
                 'streams': [{'name': name, 'running': manager.running, 'owner': self.acquisition_owner(name),
@@ -717,7 +718,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
         # Exclusive target jobs can temporarily release CDC themselves. Preserve
         # their clients until the admitted operation has finished restoring it.
         def transitioning():
-            return control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy()
+            return (control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy()
+                    or control.recovery.retains_session())
         if session.scope != 'target' or transitioning():
             return {"ok": True}
         presence = await asyncio.to_thread(control.presence) if info.get('probe_id') else None
@@ -787,4 +789,6 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     install_jobs(app, control)
     from mklink.runtime_idle import install_idle_shutdown
     install_idle_shutdown(app, control)
+    from mklink.runtime_recovery import install_transport_recovery
+    install_transport_recovery(app, control)
     return control

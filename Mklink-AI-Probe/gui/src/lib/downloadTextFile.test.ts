@@ -79,4 +79,14 @@ describe('downloadTextFile', () => {
       contents: Array.from(new TextEncoder().encode('time,value\n0,1')),
     })
   })
+  it('saves PNG bytes with the native PNG filter', async () => {
+    const save = vi.fn().mockResolvedValue('D:/captures/chart.png')
+    const invoke = vi.fn().mockResolvedValue(undefined)
+    vi.doMock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke }))
+    vi.doMock('@tauri-apps/plugin-dialog', () => ({ save }))
+    const { saveImageFile } = await import('./downloadTextFile')
+    await expect(saveImageFile('chart.png', new Blob([new Uint8Array([137,80,78,71])], { type: 'image/png' }))).resolves.toBe(true)
+    expect(save).toHaveBeenCalledWith({ defaultPath: 'chart.png', filters: [{ name: 'MKLink Data', extensions: ['png'] }] })
+    expect(invoke).toHaveBeenCalledWith('write_file', { path: 'D:/captures/chart.png', contents: [137,80,78,71] })
+  })
 })

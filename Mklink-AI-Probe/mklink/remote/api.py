@@ -192,6 +192,7 @@ def _store_uploaded_file_source(
     upload: Any,
     project_root: Path | str,
     allowed_suffixes: tuple[str, ...],
+    *, max_bytes: int | None = None, validate=None,
 ) -> dict[str, object]:
     original_name = str(upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     suffix = Path(original_name).suffix.casefold()
@@ -216,12 +217,15 @@ def _store_uploaded_file_source(
                 if not chunk:
                     break
                 total += len(chunk)
-                if total > _FILE_SOURCE_UPLOAD_LIMIT:
-                    raise ValueError("file exceeds 256 MiB upload limit")
+                limit = _FILE_SOURCE_UPLOAD_LIMIT if max_bytes is None else max_bytes
+                if total > limit:
+                    raise ValueError(f"file exceeds {limit // (1024 * 1024)} MiB upload limit")
                 digest.update(chunk)
                 output.write(chunk)
         if total == 0:
             raise ValueError("file is empty")
+        if validate is not None:
+            validate(temporary)
         checksum = digest.hexdigest()
         destination = (uploads / (checksum + suffix)).resolve()
         if destination.parent != uploads:
@@ -710,6 +714,7 @@ async def stop_dashboard_manager_transaction(
         shared = active_operation.get()
         if shared:
             shared[0].require_acquisition_control(dashboard, shared[1])
+        manager._explicit_stop_version = getattr(manager, '_explicit_stop_version', 0) + 1
         await asyncio.to_thread(
             stop_dashboard_manager, state, dashboard, manager,
         )
@@ -985,9 +990,10 @@ def create_app(
         elf_backend: str | None = None,
         *,
         error_status: int = 500,
+        automatic: bool = False,
     ) -> dict:
         runtime = getattr(app.state, 'shared_runtime', None)
-        if runtime is not None:
+        if runtime is not None and not automatic:
             runtime.require_symbol_change()
         device = _state.get("device")
         if not device or not device.connected:
@@ -1084,75 +1090,184 @@ def create_app(
     from mklink.source_monitor import SourceMonitor
     source_monitor = SourceMonitor()
     source_monitor_task = None
+    reload_captures = {}
+    attempted_sources = {}
     _state["file_source_change"] = None
 
-    async def check_file_sources():
+    async def check_file_sources(*, apply: bool = False, admitted: bool = False, background: bool = False,
+                                 source_path: str | None = None, expected_axf: str | None = None):
         device = _state.get("device")
         if device is None or not device.connected:
+            if source_path:
+                raise HTTPException(409, 'Connect the target before reloading symbols')
             return
+        if source_path:
+            def expected_source_active():
+                active = getattr(device, '_axf', None)
+                previous = _state.get('file_source_change') or {}
+                # Parsing can succeed before a capture restart fails. A later
+                # explicit retry of that same transaction may finish recovery.
+                return _same_file_source_path(expected_axf, active) or (
+                    previous.get('state') == 'failed'
+                    and _same_file_source_path(source_path, active)
+                    and previous.get('requested_axf') == source_path
+                    and previous.get('expected_axf') == expected_axf)
+            if not apply or not expected_axf or not expected_source_active():
+                raise HTTPException(409, 'The active symbol source changed; select it again before reloading')
+            if Path(source_path).suffix.lower() not in {'.axf', '.elf', '.out'} or not Path(source_path).is_file():
+                raise HTTPException(400, 'A valid AXF, ELF or OUT file is required')
         if source_monitor.device is not device:
             _state["file_source_change"] = None
+            reload_captures.clear()
+            attempted_sources.clear()
         project = load_project_info(_state["project_root"]) or {}
-        changed = await run_in_threadpool(source_monitor.changed, device, project)
+        await run_in_threadpool(source_monitor.changed, device, project)
         pending = dict(source_monitor.pending)
+        if source_path:
+            from mklink.file_content import source_fingerprint
+            pending[source_path] = await run_in_threadpool(source_fingerprint, source_path)
         if not pending or device is not _state.get("device"):
             return
+        if background and not apply and not source_monitor.settled(pending):
+            return
+        new_content = pending != attempted_sources
         previous = _state['file_source_change'] or {}
         # A failed parse is not retried every second against identical content.
         # New content or a newly selected device permits another attempt.
-        if not changed and previous.get('state') == 'failed':
+        if not apply and not new_content and previous.get('state') in {'failed', 'awaiting-reload'}:
             return
         event = {'sequence': previous.get('sequence', time.time_ns()),
                  'files': [Path(path).name for path in pending], 'pending': True}
+        if source_path:
+            event.update(requested_axf=source_path, expected_axf=expected_axf)
+
+        if not apply:
+            # Compilation does not mean the target runs the new firmware. Only
+            # announce the change; even identical layouts require user action.
+            for name in ('rtt', 'superwatch'):
+                capture = get_managers()[name]
+                if capture.running and name not in reload_captures:
+                    paused = capture.paused if name == 'rtt' else not capture._collecting.is_set()
+                    reload_captures[name] = (getattr(capture, '_explicit_stop_version', 0), paused)
+            event['state'] = 'awaiting-reload'
+            if new_content or previous.get('state') != event['state']:
+                event['sequence'] = time.time_ns()
+            attempted_sources.clear()
+            attempted_sources.update(pending)
+            _state['file_source_change'] = event
+            return
 
         async def reload_sources():
-            event['state'] = 'reloading'
-            async with _exclusive_probe_control("reload-file-sources") as (active, stopped):
-                if active is not device:
-                    return
-                event["stopped"] = stopped
-                if getattr(device, "_axf", None):
+            from contextlib import AsyncExitStack
+            from mklink.remote.dashboards import active_bridge_dashboards
+            from mklink.project_config import ensure_rtt_config_updated
+            async with AsyncExitStack() as stack:
+                # Admission serializes target operations; attachment must also
+                # finish before publishing a new symbol identity. Existing SDK
+                # sessions remain stale and cannot write through the new layout.
+                if runtime is not None:
+                    if runtime.attach_lock.locked():
+                        raise HTTPException(409, 'A client is attaching')
+                    await stack.enter_async_context(runtime.attach_lock)
+                    runtime.require_identity()
+                await stack.enter_async_context(_dashboard_start_lock(_state))
+                await stack.enter_async_context(_async_target_lock())
+                if device is not _state.get('device') or not device.connected:
+                    raise HTTPException(409, 'The target connection changed')
+                if source_path and not expected_source_active():
+                    raise HTTPException(409, 'The active symbol source changed')
+                if set(active_bridge_dashboards()) - {'rtt', 'superwatch'}:
+                    raise HTTPException(409, 'Another target capture is active')
+                event['state'] = 'reloading'
+                manager = get_managers()['rtt']
+                watch_manager = get_managers()['superwatch']
+                for name, capture in (('rtt', manager), ('superwatch', watch_manager)):
+                    if capture.running and name not in reload_captures:
+                        paused = capture.paused if name == 'rtt' else not capture._collecting.is_set()
+                        reload_captures[name] = (getattr(capture, '_explicit_stop_version', 0), paused)
+                def resume_requested(name, capture):
+                    saved = reload_captures.get(name)
+                    return bool(saved and saved[0] == getattr(capture, '_explicit_stop_version', 0))
+                previous_rtt = manager.get_status()
+                config = await run_in_threadpool(
+                    ensure_rtt_config_updated, _state['project_root'],
+                    source_path=source_path or getattr(device, '_axf', None), persist=False)
+                address = (config or {}).get('rtt_addr')
+                from mklink.project_config import load_rtt_config
+                old_address = (previous_rtt.get('control_block_addr')
+                               or manager.restart_options().get('addr')
+                               or (load_rtt_config(_state['project_root']) or {}).get('rtt_addr'))
+                address_changed = bool(old_address) and (
+                    not address or int(address, 0) != int(old_address, 0))
+                catalog = getattr(device, 'symbol_catalog', None)
+                restart = None
+                if ((address_changed and previous_rtt['running']) or
+                        (apply and not previous_rtt['running'] and resume_requested('rtt', manager))):
+                    options = {**manager.restart_options(), 'addr': address, 'mode': 0, 'search_size': 0}
+                    restart = lambda: manager.start(device, **options)
+                    # Retain ownership/subscriptions during this automatic
+                    # transition, and wait for the old worker before rebinding.
+                    await run_in_threadpool(stop_dashboard_manager, _state, 'rtt', manager)
+                if source_path or getattr(device, '_axf', None):
                     catalog = getattr(device, 'symbol_catalog', None)
-                    # An explicit GUI parse may already have loaded the new content.
-                    if catalog is None or await run_in_threadpool(catalog.is_stale):
-                        await _reparse_active_symbols()
-                from mklink.project_config import ensure_rtt_config_updated
-                rtt = await run_in_threadpool(
-                    ensure_rtt_config_updated, _state["project_root"],
-                    source_path=getattr(device, "_axf", None),
-                )
-                event["rtt_addr"] = (rtt or {}).get("rtt_addr")
-                event["message"] = "AXF/MAP 内容已变化并重载；采集已停止，请确认目标固件后重新启动"
+                    if source_path or catalog is None or await run_in_threadpool(catalog.is_stale):
+                        result = await _reparse_active_symbols(axf=source_path, automatic=True)
+                        event['rebind'] = result.get('rebind', {})
+                        event['symbols_reloaded'] = True
+                await run_in_threadpool(ensure_rtt_config_updated, _state['project_root'],
+                                        source_path=source_path or getattr(device, '_axf', None))
+                if restart is not None:
+                    if not address:
+                        raise ValueError('RTT symbol is absent from the rebuilt firmware')
+                    await _start_dashboard_manager_transaction(_state, 'rtt', manager, restart)
+                if apply and not watch_manager.running and resume_requested('superwatch', watch_manager):
+                    await _start_dashboard_manager_transaction(_state, 'superwatch', watch_manager,
+                                                              lambda: watch_manager.start(device))
+                    if reload_captures['superwatch'][1]:
+                        watch_manager.pause()
+                event.update(axf_path=getattr(device, '_axf', None), rtt_addr=address, rtt_changed=address_changed,
+                             rtt_restarted=restart is not None, pending=False, state='applied')
                 source_monitor.acknowledge(device, pending)
-                event.update(pending=False, state='applied')
+                reload_captures.clear()
 
         try:
             runtime = getattr(app.state, 'shared_runtime', None)
-            if runtime is not None:
-                await runtime.run_operation('reload-file-sources', reload_sources, configuration=True)
+            if runtime is not None and not admitted:
+                await runtime.run_operation('reload-file-sources', reload_sources)
             else:
                 await reload_sources()
         except HTTPException as error:
             if error.status_code != 409 or event.get('state') == 'reloading':
                 event.update(state='failed', error=str(error.detail))
             else:
-                event.update(state='deferred', message='符号文件已变化，等待停止采集、结束客户端会话及当前任务后重载')
+                event.update(state='deferred')
         except Exception as error:
             event.update(state='failed', error=str(error))
             logger.warning("File source reload failed: %s", error)
         if device is not _state.get('device'):
             return
-        if changed or previous.get('state') != event.get('state'):
+        if new_content or previous.get('state') != event.get('state'):
             event['sequence'] = time.time_ns()
+        attempted_sources.clear()
+        attempted_sources.update(pending)
         _state['file_source_change'] = event
 
     app.state.check_file_sources = check_file_sources
+
+    @app.post('/api/symbols/reload-sources')
+    async def reload_file_sources(source_path: str | None = None, expected_axf: str | None = None):
+        # Runtime middleware already holds operation admission for this route.
+        await check_file_sources(apply=True, admitted=True, source_path=source_path, expected_axf=expected_axf)
+        event = _state.get('file_source_change') or {}
+        if event.get('state') in {'failed', 'deferred'}:
+            raise HTTPException(409, event.get('error') or 'Another operation is active; retry after it finishes')
+        return event
 
     async def monitor_file_sources():
         while True:
             await asyncio.sleep(1)
             try:
-                await check_file_sources()
+                await check_file_sources(background=True)
             except Exception:
                 logger.exception("File source monitor failed")
 
@@ -1644,21 +1759,40 @@ def create_app(
         from mklink.probes import select_probe
         from mklink.runtime import RuntimeErrorResponse
         selector = body.get("probe") or body.get("port")
+        dap_id = body.get('cmsis_dap_id')
+        if dap_id is not None and (not isinstance(dap_id, str) or not dap_id.strip() or selector):
+            raise HTTPException(422, 'cmsis_dap_id must identify one probe without another selector')
         if "connect" in body and not isinstance(body["connect"], dict):
             raise HTTPException(422, "connect must be an object")
         if selector is not None and not isinstance(selector, str):
             raise HTTPException(422, "probe must be a string")
-        if not selector and _state.get("shared_probe_id") != "lobby":
-            return {"same_runtime": True}
-        if not selector and (body.get('connect') or {}).get('restore_last'):
-            selector = (_state.get('last_device_connection') or {}).get('port')
         try:
-            selected = select_probe(selector)
             runtime = app.state.shared_runtime
             async def switch():
                 runtime.prune()
+                current_selector = selector
+                if dap_id is not None:
+                    from mklink.probes import inventory
+                    matches = [probe for probe in inventory()
+                               if str(probe.get('serial_number', '')).casefold() == dap_id.casefold()]
+                    if len(matches) != 1:
+                        raise HTTPException(409, 'CMSIS-DAP identity is unavailable or ambiguous')
+                    current_selector = matches[0]['probe_id']
+                if not current_selector and _state.get('shared_probe_id') != 'lobby':
+                    # Only an explicit Connect may replace an unplugged probe.
+                    # Keep a present binding (including a changed COM number),
+                    # but do not let its stale identity or saved port defeat
+                    # Auto search after the user replaces the physical device.
+                    if 'connect' not in body or runtime.presence()['status'] != 'missing':
+                        return {'same_runtime': True}
+                elif not current_selector and (body.get('connect') or {}).get('restore_last'):
+                    current_selector = (_state.get('last_device_connection') or {}).get('port')
+                # Resolve after lifecycle admission: queued requests must use
+                # the current inventory, and auto search requires one candidate.
+                selected = select_probe(current_selector)
                 if selected['probe_id'] == _state.get('shared_probe_id'):
-                    return {'same_runtime': True}
+                    return {'same_runtime': True, 'probe_id': selected['probe_id'],
+                            'device_generation': _state.get('device_generation', 0)}
                 binding = getattr(runtime, 'binding', None)
                 if binding is None:
                     raise HTTPException(503, 'Backend does not support in-place probe switching; restart it')
@@ -1729,6 +1863,7 @@ def create_app(
     async def _upload_file_source(
         file: UploadFile,
         allowed_suffixes: tuple[str, ...],
+        *, max_bytes: int | None = None, validate=None,
     ) -> dict[str, object]:
         try:
             return await run_in_threadpool(
@@ -1736,6 +1871,7 @@ def create_app(
                 file,
                 _state["project_root"],
                 allowed_suffixes,
+                max_bytes=max_bytes, validate=validate,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1755,6 +1891,12 @@ def create_app(
     @app.post("/api/files/map")
     async def upload_map_file(file: UploadFile = File(...)):
         return await _upload_file_source(file, (".map",))
+
+    @app.post("/api/files/svd")
+    async def upload_svd_file(file: UploadFile = File(...)):
+        from mklink.peripheral_watch import MAX_XML_BYTES, load_catalog
+        return await _upload_file_source(file, (".svd",), max_bytes=MAX_XML_BYTES,
+                                         validate=lambda path: load_catalog(svd=path))
 
     # ===================================================================
     # REST API — Device Lifecycle
@@ -1993,6 +2135,7 @@ def create_app(
         dev = _state["device"]
         return {
             "connected": dev.connected,
+            "connection_recovery": _state.get('connection_recovery'),
             "device_generation": _state.get('device_generation', 0),
             "state": dev.state.name if dev.state else "disconnected",
             "mcu": dev.mcu_name if dev.connected else None,
@@ -2028,7 +2171,7 @@ def create_app(
 
     @app.post("/api/probe/firmware-upgrade")
     async def probe_firmware_upgrade(confirm: bool = Body(default=False)):
-        """Upgrade the probe through its UF2 bootloader drive.
+        """Upgrade V2 on its RBL application volume, or V3/V4 through UF2.
 
         The MICROKEEN volume is the source of truth for this operation.  A
         debug-session connection is optional; when no session is connected the
@@ -2085,13 +2228,13 @@ def create_app(
         model: str = Query(...),
         family: str = Query(default="microlink"),
     ):
-        """Download the newest model/family UF2 with provider fallback."""
+        """Download the newest model/family firmware with provider fallback."""
         from fastapi.responses import Response
         from mklink import firmware_check as _fc
 
         normalized_model = model.strip().upper()
-        if normalized_model not in {"V3", "V4"}:
-            raise HTTPException(status_code=400, detail="firmware model must be V3 or V4")
+        if normalized_model not in {"V2", "V3", "V4"}:
+            raise HTTPException(status_code=400, detail="firmware model must be V2, V3 or V4")
         normalized_family = family.strip().lower()
         if normalized_family not in {"microlink", "hpmlink"}:
             raise HTTPException(
@@ -2473,6 +2616,7 @@ def create_app(
         addr: str | None = Body(default=None),
         channel: Annotated[StrictInt, Body()] = 0,
         channels: list[StrictInt] | None = Body(default=None),
+        all_channels: StrictBool = Body(default=False),
         mode: Annotated[StrictInt, Body()] = 0,
         search_size: Annotated[StrictInt, Body()] = 0,
         encoding: str = Body(default="utf-8"),
@@ -2531,6 +2675,7 @@ def create_app(
                 search_size=search_size,
                 encoding=encoding,
                 channels=channels,
+                all_channels=all_channels,
             ),
         )
         return {"status": status, "stopped": stopped}
@@ -2817,6 +2962,26 @@ def create_app(
         )
         return {"status": "stopped"}
 
+    @app.get("/api/dash/superwatch/recording/status")
+    async def superwatch_recording_status():
+        return get_managers()["superwatch"].recording_status()
+
+    @app.post("/api/dash/superwatch/recording/start")
+    async def superwatch_recording_start(directory: str = Body(..., embed=True, min_length=1, max_length=4096)):
+        try:
+            return await run_in_threadpool(get_managers()["superwatch"].start_recording, directory)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, detail=str(exc)) from exc
+
+    @app.post("/api/dash/superwatch/recording/stop")
+    async def superwatch_recording_stop():
+        try:
+            return await run_in_threadpool(get_managers()["superwatch"].stop_recording)
+        except TimeoutError as exc:
+            raise HTTPException(409, detail=str(exc)) from exc
+
     @app.post("/api/dash/superwatch/add")
     async def superwatch_add(name: str = Body(..., embed=True)):
         managers = get_managers()
@@ -2869,15 +3034,20 @@ def create_app(
         return await run_in_threadpool(get_managers()["superwatch"].peripheral_catalog, q)
 
     _svd_targets = {}
+    _svd_revision = None
     _svd_target_lock = asyncio.Lock()
 
     @app.get("/api/dash/superwatch/peripherals/targets")
-    async def peripheral_targets(q: str = ""):
-        from mklink.peripheral_watch import discover_svd_targets
+    async def peripheral_targets(q: str = "", refresh: bool = False):
+        nonlocal _svd_revision
+        from mklink.peripheral_watch import discover_svd_targets, svd_index_revision
         async with _svd_target_lock:
-            if not _svd_targets:
+            revision = await run_in_threadpool(svd_index_revision, _state["project_root"])
+            if refresh or _svd_revision != revision:
                 targets = await run_in_threadpool(discover_svd_targets, _state["project_root"])
+                _svd_targets.clear()
                 _svd_targets.update({target.key: target for target in targets})
+                _svd_revision = revision
         matches = [target.public() for target in _svd_targets.values()
                    if q.casefold() in target.target.casefold()]
         return {"targets": matches[:200], "total": len(matches)}
@@ -2911,7 +3081,7 @@ def create_app(
         usable = catalog is not None and not catalog.is_stale()
         entries = []
         for name in preferences["pins"]:
-            descriptor = catalog.by_path(name) if usable else None
+            descriptor = catalog.by_path(name, writable_only=False) if usable else None
             entries.append({
                 "path": name,
                 "descriptor": descriptor.to_dict() if descriptor else None,
@@ -3564,6 +3734,19 @@ def create_app(
     # Device Memory / Symbols / Registers REST API
     # ===================================================================
 
+    @app.post("/api/device/rtt-control-block")
+    async def inspect_rtt_control_block(body: dict = Body(...)):
+        from mklink.runtime_capabilities import validate_arguments
+        arguments = validate_arguments('rtt_inspect', body)
+        device = _state.get('device')
+        if device is None or not device.connected or not device.idcode:
+            raise HTTPException(400, 'Connect a target with a valid chip ID before inspecting RTT')
+        async with async_target_debug_lease(_state, 'rtt-inspect'):
+            try:
+                return await run_in_threadpool(device.rtt_inspect, int(arguments['address'], 0))
+            except Exception as error:
+                raise HTTPException(400, str(error)) from error
+
     @app.post("/api/device/read-memory")
     async def read_memory(
         address: str = Body(...),
@@ -3805,6 +3988,7 @@ def create_app(
             "total": len(catalog.items),
             "container_count": len(catalog.containers),
             "truncated_roots": list(catalog.truncated_roots),
+            "file_source_change": _state.get('file_source_change'),
         }
 
     @app.get("/api/symbols/catalog")
@@ -3903,7 +4087,7 @@ def create_app(
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         try:
-            descriptor = _require_symbol_catalog().by_path(name)
+            descriptor = _require_symbol_catalog().by_path(name, writable_only=False)
             if descriptor is None:
                 return {"name": name, "found": False}
             return {

@@ -140,6 +140,10 @@ def test_rtt_reload_uses_active_axf_and_drops_obsolete_address(tmp_path, monkeyp
     seen = []
     monkeypatch.setattr('mklink.rtt_addr.diagnose_rtt_addr',
                         lambda path: seen.append(path) or SimpleNamespace(addr='0x20000040'))
+    preview = config.ensure_rtt_config_updated(str(tmp_path), source_path=str(active), persist=False)
+    assert preview['rtt_addr'] == '0x20000040'
+    assert config.load_rtt_config(str(tmp_path))['rtt_addr'] == '0x20000010'
+    seen.clear()
     result = config.ensure_rtt_config_updated(str(tmp_path), source_path=str(active))
     assert result['rtt_addr'] == '0x20000040'
     assert seen == [str(active)]

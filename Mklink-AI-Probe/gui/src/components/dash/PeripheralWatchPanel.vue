@@ -2,7 +2,7 @@
   <aside class="peripheral-panel" data-testid="peripheral-panel">
     <div ref="searchBox" class="chip-search" @focusout="closeSuggestions">
       <label for="peripheral-chip-input">{{ tr('芯片型号', 'Chip model') }}</label>
-      <input id="peripheral-chip-input" v-model="chipQuery" class="form-input" data-testid="peripheral-chip-search" role="combobox" aria-autocomplete="list" aria-controls="peripheral-chip-suggestions" :aria-expanded="suggestionsOpen" :aria-activedescendant="suggestionsOpen && activeSuggestion >= 0 ? `peripheral-chip-option-${activeSuggestion}` : undefined" :placeholder="tr('输入型号，如 STM32F103RE', 'Type a model, e.g. STM32F103RE')" @input="searchInput" @focus="suggestionsOpen = true" @keydown="searchKeydown" />
+      <input id="peripheral-chip-input" v-model="chipQuery" class="form-input" data-testid="peripheral-chip-search" role="combobox" aria-autocomplete="list" aria-controls="peripheral-chip-suggestions" :aria-expanded="suggestionsOpen" :aria-activedescendant="suggestionsOpen && activeSuggestion >= 0 ? `peripheral-chip-option-${activeSuggestion}` : undefined" :placeholder="tr('输入型号，如 STM32F103RE', 'Type a model, e.g. STM32F103RE')" @input="searchInput" @focus="suggestionsOpen = true; loadTargets()" @keydown="searchKeydown" />
       <div v-if="suggestionsOpen && targets.length" id="peripheral-chip-suggestions" role="listbox" class="chip-suggestions">
         <button v-for="(target, index) in targets" :id="`peripheral-chip-option-${index}`" :key="target.id" type="button" role="option" :aria-selected="index === activeSuggestion" class="chip-suggestion" @mousedown.prevent @click="chooseTarget(target)"><strong>{{ target.target }}</strong><small>{{ target.pack }}</small></button>
       </div>
@@ -11,8 +11,9 @@
       <option value="">{{ searching ? tr('正在匹配 SVD…', 'Finding SVD…') : tr('匹配的 SVD 文件', 'Matching SVD file') }}</option>
       <option v-for="target in matchingSvds" :key="target.id" :value="target.id" :title="target.pack">{{ target.target }} · {{ target.svd.split(/[\\/]/).pop() }} · {{ target.pack }}</option>
     </select>
-    <p v-if="chipQuery.trim() && !searching && !matchingSvds.length" data-testid="peripheral-no-match">{{ tr('已安装的芯片包中没有匹配的 SVD，请检查型号或安装对应 Pack。', 'No matching SVD in installed packs. Check the model or install its Pack.') }}</p>
+    <p v-if="chipQuery.trim() && !searching && !matchingSvds.length" data-testid="peripheral-no-match">{{ tr('没有匹配的 SVD。可导入包含该芯片 SVD 的 Pack，或手动加载 SVD 文件。', 'No matching SVD. Import a Pack containing its SVD, or load an SVD file manually.') }}</p>
     <button class="btn btn-primary" data-testid="peripheral-load" :disabled="!deviceConnected || !targetId || busy" @click="loadChip">{{ tr('加载外设', 'Load peripherals') }}</button>
+    <button class="btn" data-testid="peripheral-load-svd" :disabled="!deviceConnected || busy" @click="loadSvd">{{ tr('加载 SVD 文件', 'Load SVD file') }}</button>
     <p v-if="selection" data-testid="peripheral-source">{{ tr('当前已加载：', 'Currently loaded: ') }}{{ selection.target }} · {{ selection.pack }} · {{ selection.svd }} · {{ items.length }} {{ tr('项（只读）', 'items (read only)') }}</p>
     <p v-if="restoreError" role="status" data-testid="peripheral-restore-warning">{{ tr('上次的外设选择已失效，请重新选择实际芯片和 Pack。下载器连接及其他功能可继续使用。', 'The previous peripheral selection is unavailable. Select the actual chip and Pack again. The probe connection and other features remain available.') }} <span>{{ restoreError }}</span></p>
     <p>{{ tr('GPIO 引脚读取 IDR 电平；ODR 为输出锁存值。采样可能漏掉短脉冲，GPIO 时钟须由程序开启。', 'GPIO pins sample IDR levels; ODR is the output latch. Short pulses may be missed. Firmware must enable the GPIO clock.') }}</p>
@@ -32,9 +33,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { consumerTarget, saveConsumerTarget, TARGET_SELECTION_CHANGED, PACKS_CHANGED } from '../../lib/targetSelection'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 import { tr } from '../../composables/useLanguage'
+import { pickSvdFile } from '../../lib/filePicker'
+import { useMklinkApi } from '../../composables/useMklinkApi'
 
 const props = defineProps<{ deviceConnected: boolean; latestValues: Record<string, number | boolean> }>()
 type Peripheral = { name: string; register: string; address: string }
@@ -47,7 +51,7 @@ const busy = ref(false)
 type Target = { id: string; target: string; pack: string; svd: string }
 const targets = ref<Target[]>([])
 const targetId = ref('')
-const chipQuery = ref('')
+const chipQuery = ref(consumerTarget('peripheral'))
 const chosenModel = ref('')
 const searching = ref(false)
 const matchingSvds = computed(() => chosenModel.value
@@ -66,13 +70,20 @@ let generation = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 const filtered = computed(() => items.value.filter(item => (!group.value || item.name.startsWith(group.value + '.')) && item.name.toLowerCase().includes(query.value.trim().toLowerCase())).slice(0, 200))
 
-async function loadTargets() {
+async function loadTargets(force = false) {
   const epoch = ++targetRequest
+  if (force) error.value = ''
   searching.value = true
   try {
-    const payload = await request('peripherals/targets?q=' + encodeURIComponent(chipQuery.value.trim()))
+    const payload = await request('peripherals/targets?q=' + encodeURIComponent(chipQuery.value.trim()) + (force ? '&refresh=true' : ''))
     if (epoch === targetRequest) {
       targets.value = payload.targets ?? []
+      if (targetId.value && !targets.value.some(target => target.id === targetId.value)) targetId.value = ''
+      const exact = targets.value.filter(target => target.target.toLowerCase() === chipQuery.value.trim().toLowerCase())
+      if (!targetId.value && exact.length === 1) {
+        targetId.value = exact[0]!.id
+        chosenModel.value = exact[0]!.target
+      }
       activeSuggestion.value = targets.value.length ? 0 : -1
     }
   } catch (cause) { if (epoch === targetRequest) error.value = String(cause) }
@@ -82,6 +93,24 @@ function applyCatalog(payload: any) {
   restoreError.value = payload.restore_error ?? ''
   items.value = payload.items ?? []
   selection.value = payload.selection ?? null
+}
+async function loadSvd() {
+  const epoch = generation
+  busy.value = true
+  error.value = ''
+  try {
+    const file = await pickSvdFile()
+    if (!file || epoch !== generation) return
+    const path = typeof file === 'string' ? file : (await useMklinkApi().uploadFileSource('svd', file)).path
+    if (epoch !== generation) return
+    const payload = await request('peripherals/select', { svd: path })
+    if (epoch !== generation) return
+    applyCatalog(payload)
+    targetId.value = ''
+    selected.value = new Set()
+    group.value = groups.value.includes('GPIOB') ? 'GPIOB' : groups.value[0] ?? ''
+  } catch (cause) { if (epoch === generation) error.value = String(cause) }
+  finally { busy.value = false }
 }
 async function loadChip() {
   busy.value = true
@@ -101,6 +130,7 @@ function chooseTarget(target: Target) {
   targetRequest++
   searching.value = false
   chipQuery.value = target.target
+  saveConsumerTarget('peripheral', target.target)
   chosenModel.value = target.target
   targetId.value = target.id
   suggestionsOpen.value = false
@@ -110,6 +140,7 @@ function chooseSvd() {
   if (target) chooseTarget(target)
 }
 function searchInput() {
+  saveConsumerTarget('peripheral', chipQuery.value)
   chosenModel.value = ''
   targetId.value = ''
   targetRequest++
@@ -139,7 +170,22 @@ function searchKeydown(event: KeyboardEvent) {
     chooseTarget(targets.value[activeSuggestion.value]!)
   }
 }
-onMounted(loadTargets)
+function syncTarget() {
+  const part = consumerTarget('peripheral')
+  if (part !== chipQuery.value) {
+    chipQuery.value = part
+    chosenModel.value = ''
+    targetId.value = ''
+  }
+  void loadTargets()
+}
+function refreshPacks() { void loadTargets() }
+onMounted(() => {
+  window.addEventListener(TARGET_SELECTION_CHANGED, syncTarget)
+  window.addEventListener(PACKS_CHANGED, refreshPacks)
+  void loadTargets()
+})
+onActivated(syncTarget)
 
 async function request(path: string, body?: object) {
   const response = await fetch(`${API_BASE}/api/dash/superwatch/${path}`, body ? {
@@ -205,7 +251,11 @@ watch(() => props.deviceConnected, async connected => {
   }
 }, { immediate: true })
 
-onUnmounted(() => { generation++; targetRequest++; clearTimeout(timer); clearTimeout(searchTimer); clearTimeout(blurTimer) })
+onUnmounted(() => {
+  window.removeEventListener(TARGET_SELECTION_CHANGED, syncTarget)
+  window.removeEventListener(PACKS_CHANGED, refreshPacks)
+  generation++; targetRequest++; clearTimeout(timer); clearTimeout(searchTimer); clearTimeout(blurTimer)
+})
 </script>
 
 <style scoped>
@@ -218,6 +268,7 @@ onUnmounted(() => { generation++; targetRequest++; clearTimeout(timer); clearTim
 summary { cursor: pointer; font-weight: 600; font-size: 12px; }
 summary span { color: var(--accent); }
 p { font-size: 11px; color: var(--muted); margin: 7px 0; line-height: 1.5; }
+[data-testid="peripheral-source"] { overflow-wrap: anywhere; }
 .form-input { width: 100%; box-sizing: border-box; margin-top: 8px; }
 .peripheral-list { padding-top: 8px; }
 label { display: flex; align-items: center; gap: 6px; padding: 5px 0; font-size: 12px; }

@@ -4,6 +4,7 @@
     class="waveform-viewer"
     :class="{ 'superwatch-desktop': props.mode === 'SuperWatch' }"
   ></div>
+  <Teleport v-if="recordHost" :to="recordHost"><SuperWatchRecording @state="updateRecordingLabel" /></Teleport>
 </template>
 
 <script setup lang="ts">
@@ -17,9 +18,10 @@ import viewerUrl from '../../assets/rtt_viewer.js?url'
 import { DESKTOP_SETTINGS_STORAGE_KEY } from '../../lib/desktopSettings'
 import { language } from '../../composables/useLanguage'
 import { API_BASE } from '../../lib/runtimeEndpoint'
-import { saveTextFile } from '../../lib/downloadTextFile'
+import { saveTextFile, saveImageFile } from '../../lib/downloadTextFile'
 import { mountReplayButton } from '../../../../mklink/static/superwatch_replay.js'
 import '../../../../mklink/static/superwatch_replay.css'
+import SuperWatchRecording from './SuperWatchRecording.vue'
 
 const props = defineProps<{
   mode: 'SuperWatch' | 'VOFA'
@@ -30,9 +32,18 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'latest-values': [values: Record<string, number>]
+  'replay-channels': [channels: string[] | null]
 }>()
 
 const container = ref<HTMLDivElement>()
+const recordHost = ref<HTMLElement>()
+function updateRecordingLabel(state: string) {
+  const summary = container.value?.querySelector('.watch-log-controls summary')
+  if (!summary) return
+  summary.removeAttribute('data-i18n')
+  const en = language.value === 'en'
+  summary.textContent = (en ? 'Logs' : '日志') + (state === 'recording' ? (en ? ' · Recording' : ' · 记录中') : state === 'failed' ? (en ? ' · Error' : ' · 记录失败') : '')
+}
 const binary = useBinaryStream(
   props.mode === 'VOFA' ? 'vofa' : 'superwatch',
   { capacity: props.mode === 'VOFA' ? 10000 : 50000, channelCount: 1 },
@@ -61,6 +72,7 @@ function requestLatestVisibleRange(interactive = false): void {
     return
   }
   const viewer = (window as any).__waveformViewers?.[props.mode]
+  if (viewer?.isReplaying?.()) return
   const range = viewer?.getBinaryVisibleRange?.()
   if (!range) return
   const { start, end, pixelWidth } = range
@@ -122,7 +134,15 @@ function applyVofaChannels(channels: readonly Record<string, unknown>[]): void {
 
 function applyHiddenChannels(): void {
   const names = [...(props.hiddenChannels ?? [])].sort()
-  ;(window as any).__waveformViewers?.[props.mode]?.setHiddenChannels?.(names)
+  const viewer = (window as any).__waveformViewers?.[props.mode]
+  if (viewer?.isReplaying?.()) viewer.setReplayHiddenChannels?.(names)
+  else viewer?.setHiddenChannels?.(names)
+}
+
+function onReplay(event: Event) {
+  const detail = (event as CustomEvent).detail
+  emit('replay-channels', detail.channels)
+  emit('latest-values', detail.values)
 }
 
 function stopArraySnapshotPolling(): void {
@@ -237,6 +257,7 @@ function onVofaStreamState(event: Event): void {
 
 watch(() => binary.waveformBatch.value, batch => {
   if (!batch) return
+  if ((window as any).__waveformViewers?.[props.mode]?.isReplaying?.()) return
   pendingBatch = batch
   if (
     props.mode === 'SuperWatch'
@@ -267,6 +288,7 @@ watch(() => binary.waveformBatch.value, batch => {
 
 watch(() => binary.waveformSummary?.value, summary => {
   if (!summary || props.mode !== 'SuperWatch') return
+  if ((window as any).__waveformViewers?.SuperWatch?.isReplaying?.()) return
   const values = new Float32Array(summary.latestValues)
   if (summary.channelCount === vofaChannels.length && values.length === summary.channelCount) {
     const latest: Record<string, number> = {}
@@ -328,14 +350,17 @@ watch([
 onMounted(() => {
   if (!container.value) return
   const el = container.value
+  el.addEventListener('mklink:replay', onReplay)
 
   const saveViewerFile = (filename: string, text: string) => saveTextFile(filename, text)
   ;(window as any).__MKLINK_SAVE_FILE__ = saveViewerFile
+  ;(window as any).__MKLINK_SAVE_BLOB__ = saveImageFile
 
   // 1. Inject HTML template
   el.innerHTML = buildTemplate(props.mode)
   if (props.mode === 'SuperWatch') {
     compactSuperwatchControls(el)
+    recordHost.value = el.querySelector('.watch-log-menu') as HTMLElement
     disposeReplay = mountReplayButton(el.querySelector('.watch-log-menu') as HTMLElement, { language: language.value })
   }
 
@@ -367,6 +392,7 @@ watch(language, value => {
 })
 
 onUnmounted(() => {
+  container.value?.removeEventListener('mklink:replay', onReplay)
   disposeReplay?.()
   disposed = true
   stopVofaStatusPolling()
@@ -402,10 +428,7 @@ function compactSuperwatchControls(el: HTMLElement): void {
   const logs = document.createElement('details')
   logs.className = 'watch-log-controls'
   logs.innerHTML = '<summary data-i18n="logs">日志</summary><div class="watch-log-menu"></div>'
-  const exportButton = el.querySelector('#btn-export-csv')!
-  exportButton.setAttribute('data-i18n', 'export_sample_log')
-  exportButton.textContent = '导出采样日志'
-  logs.querySelector('.watch-log-menu')!.append(exportButton)
+  el.querySelector('#btn-export-csv')?.remove()
   actions.append(logs)
   const trigger = el.querySelector('#trigger-toolbar')!
   const dialog = document.createElement('dialog')
@@ -513,12 +536,12 @@ function buildTemplate(mode: string): string {
       <button
         id="chart-legend-toggle"
         type="button"
-        aria-expanded="true"
+        aria-expanded="false"
         aria-controls="chart-legend"
-        data-i18n-title="hide_channel_legend_tip"
-        title="隐藏通道列表"
+        data-i18n-title="show_channel_legend_tip"
+        title="显示通道列表"
       ><span aria-hidden="true">&#9776;</span></button>
-      <div id="chart-legend" class="is-visible" aria-label="Channel layout" aria-hidden="false"></div>
+      <div id="chart-legend" aria-label="Channel layout" aria-hidden="true"></div>
       <div id="split-panel-control" class="split-panel-control" hidden>
         <span class="split-panel-label" data-i18n="split_panel">独立通道</span>
         <span id="split-panel-name" class="split-panel-name"></span>

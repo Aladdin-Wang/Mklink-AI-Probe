@@ -1,6 +1,6 @@
 # 0.3.4 正式发布交接
 
-维护者明确授权覆盖本地安装、更新本地 Skill 和正式发布。PR [40](https://github.com/MicroKeen/Mklink-AI-Probe/pull/40) 的精确头 `68f5f7be2362` 三项检查通过后合并，正式源及不可变 `v0.3.4` 标签为 `a8fd3fab04034f06b95e1cdf2e03a518af297358`。合并树与已检查的 PR 头完全一致。正式 Web 资源和交接另走后续 PR，不移动发布标签。
+维护者明确授权覆盖本地安装、更新本地 Skill 和正式发布。PR [40](https://github.com/MicroKeen/Mklink-AI-Probe/pull/40) 的精确头 `68f5f7be2362` 三项检查通过后合并，正式源及不可变 `v0.3.4` 标签为 `a8fd3fab04034f06b95e1cdf2e03a518af297358`。合并树与已检查的 PR 头完全一致。正式 Web 资源和交接已通过 PR [41](https://github.com/MicroKeen/Mklink-AI-Probe/pull/41) 合入，合并提交 `185678c59623`；发布标签未移动。后续工作区整理见 [清理记录](v034-workspace-cleanup.md)。
 
 ## 发布与本地更新
 

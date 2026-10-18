@@ -198,6 +198,23 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.get('[data-testid="leaf-controller.target"]').exists()).toBe(true)
   })
 
+  it('refreshes an existing query after reparse and exposes read-only bit fields', async () => {
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
+    await flushPromises()
+    await wrapper.get('input[placeholder]').setValue('controller')
+    await flushPromises()
+    const field = { ...catalogItems[0], path: 'controller.bits', writable: false,
+      scalar_kind: 'unsigned', type_name: 'uint8_t', bit_offset: 1, bit_size: 2 }
+    mocks.searchSymbols.mockResolvedValue([field])
+    mocks.generation.value += 1
+    await flushPromises()
+    expect(mocks.searchSymbols).toHaveBeenLastCalledWith('controller')
+    expect(wrapper.find('[data-testid="leaf-controller.bits"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="edit-controller.bits"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="edit-controller.bits"]').attributes('title')).toContain('位域只读')
+    expect(wrapper.find('[data-testid="leaf-controller.target"]').exists()).toBe(false)
+  })
+
   it('pins selected variables separately from sampling and keeps pins while searching', async () => {
     const server = mockPinnedWorkspace()
     const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: { gain: 1.25 } } })
@@ -331,6 +348,31 @@ describe('SymbolVariablePanel', () => {
     wrapper.unmount()
   })
 
+  it('shows newly parsed ordinary roots without changing the active search', async () => {
+    const previous = ['gSystemState.ModeSub', 'gSystemState.MotorDriverMode'].map(path => (
+      { ...catalogItems[2], path, parent_path: 'gSystemState' }
+    ))
+    mocks.searchSymbols.mockResolvedValue(previous)
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
+    await flushPromises()
+    await wrapper.get('[data-testid="variable-search"]').setValue('System')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="branch-System"]').exists()).toBe(false)
+    mocks.reparse.mockImplementationOnce(async () => {
+      mocks.searchSymbols.mockResolvedValue([
+        ...previous, { ...catalogItems[2], path: 'System.WorkMode', parent_path: 'System' },
+      ])
+      mocks.generation.value++
+      return { preserved: [], updated: [], removed: [] }
+    })
+    await wrapper.get('[data-testid="reparse-symbols"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.get('[data-testid="variable-search"]').element as HTMLInputElement).value).toBe('System')
+    expect(wrapper.get('[data-testid="leaf-System.WorkMode"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="leaf-gSystemState.ModeSub"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('refreshes an automatically replaced symbol generation and stops polling on unmount', async () => {
     vi.useFakeTimers()
     const wrapper = mount(SymbolVariablePanel, {
@@ -343,12 +385,47 @@ describe('SymbolVariablePanel', () => {
       await flushPromises()
       expect(mocks.refreshStatus).toHaveBeenCalledOnce()
       expect(mocks.ensureLoaded).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('符号已重载；请确认目标上的固件与当前符号文件一致')
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('符号已重新加载', 2500)
+      expect(wrapper.find('.stale-banner').exists()).toBe(false)
       wrapper.unmount()
       await vi.advanceTimersByTimeAsync(4000)
       expect(mocks.refreshStatus).toHaveBeenCalledOnce()
     } finally {
       wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits for a reload click before applying a changed target layout', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
+    try {
+      await flushPromises()
+      mocks.refreshStatus.mockResolvedValue({ file_source_change: { sequence: 1, state: 'awaiting-reload' } })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(wrapper.get('[data-testid="reparse-symbols"]').text()).toBe('重新加载变量')
+      expect(wrapper.find('[data-testid="reload-symbols-dialog"]').exists()).toBe(true)
+      await wrapper.get('[data-testid="reload-symbols-later"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(wrapper.find('[data-testid="reload-symbols-dialog"]').exists()).toBe(false)
+      expect(wrapper.find('.source-reload-banner').exists()).toBe(true)
+      mocks.refreshStatus.mockResolvedValue({ file_source_change: { sequence: 2, state: 'awaiting-reload' } })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(wrapper.find('[data-testid="reload-symbols-dialog"]').exists()).toBe(true)
+      expect(mocks.reparse).not.toHaveBeenCalled()
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/reload-sources'))).toBe(false)
+      mocks.refreshStatus.mockImplementationOnce(async () => {
+        mocks.generation.value = 2
+        return { file_source_change: { sequence: 2, state: 'applied' } }
+      })
+      await wrapper.get('[data-testid="reload-symbols-confirm"]').trigger('click')
+      await flushPromises()
+      expect(fetch).toHaveBeenCalledWith('/api/symbols/reload-sources', expect.objectContaining({ method: 'POST' }))
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('符号已重新加载', 2500)
+      expect(wrapper.get('[data-testid="reparse-symbols"]').text()).not.toContain('重新加载')
+    } finally {
+      wrapper.unmount()
+      mocks.refreshStatus.mockReset()
       vi.useRealTimers()
     }
   })
@@ -380,26 +457,13 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.emitted('selection-removed')).toEqual([['gain']])
   })
 
-  it('adds a manually entered member path through the shared SuperWatch API', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(okJson({ items: [] }))
-      .mockResolvedValueOnce(okJson({ pins: [], revision: '1', entries: [] }))
-      .mockResolvedValueOnce(okJson({ item: { name: 'data_save.odo', type: 'uint64_t' } }))
-    vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mount(SymbolVariablePanel, {
-      props: { deviceConnected: true, latestValues: {} },
-    })
+  it('omits manual add and paste buttons from the search toolbar', async () => {
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
     await flushPromises()
-
-    await wrapper.get('[data-testid="show-manual-add"]').trigger('click')
-    await wrapper.get('[data-testid="manual-variable-path"]').setValue('data_save.odo')
-    await wrapper.get('[data-testid="add-manual-variable"]').trigger('submit')
-    await flushPromises()
-
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/dash/superwatch/add', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ name: 'data_save.odo' }),
-    }))
-    expect(wrapper.text()).toContain('已选 1')
+    expect(wrapper.find('[data-testid="show-manual-add"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="show-c-layout"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="variable-search"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('opens an unresolved container and applies its pasted C definition', async () => {
@@ -481,7 +545,7 @@ describe('SymbolVariablePanel', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="edit-gain"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('AXF 已变化')
+    expect(wrapper.text()).not.toContain('AXF 已变化')
   })
 
   it('shows a write acknowledgement without claiming verification or retrying', async () => {

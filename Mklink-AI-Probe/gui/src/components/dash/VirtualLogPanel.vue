@@ -30,6 +30,8 @@ export interface VirtualLogInput {
   readonly label?: string
   /** Original application data, retained separately from display formatting. */
   readonly raw?: Uint8Array
+  /** Extend the immediately preceding row without delaying visible partial data. */
+  readonly continuesPrevious?: boolean
 }
 
 interface VirtualLogEntry extends VirtualLogInput { readonly number: number }
@@ -74,9 +76,21 @@ function append(batch: readonly VirtualLogInput[]): void {
 function flush(): void {
   flushTimer = null
   if (!pending.length) return
-  const next = pending.map(entry => ({ ...entry, number: nextNumber++ }))
+  const next = entries.value.slice()
+  for (const entry of pending) {
+    const previous = next.at(-1)
+    if (entry.continuesPrevious && previous && previous.label === entry.label
+        && previous.level === entry.level && previous.raw && entry.raw) {
+      const raw = new Uint8Array(previous.raw.length + entry.raw.length)
+      raw.set(previous.raw)
+      raw.set(entry.raw, previous.raw.length)
+      next[next.length - 1] = { ...previous, text: previous.text + entry.text, raw }
+    } else {
+      next.push({ ...entry, number: nextNumber++ })
+    }
+  }
   pending = []
-  entries.value = entries.value.concat(next).slice(-MAX_LINES)
+  entries.value = next.slice(-MAX_LINES)
   if (following.value) void nextTick(scrollToBottom)
 }
 

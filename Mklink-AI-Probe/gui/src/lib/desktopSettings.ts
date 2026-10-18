@@ -21,6 +21,7 @@ export interface DesktopSettings {
   symbolDisplayPath?: string
   rttAddress: string
   rttEncoding: RttEncoding
+  rttHiddenChannels?: number[]
   transmitMode: RttTransmitMode
   lineEnding: RttLineEnding
   sendHistory: RttSendHistoryEntry[]
@@ -114,6 +115,10 @@ function normalize(value: unknown): DesktopSettings {
     symbolDisplayPath: typeof value.symbolDisplayPath === 'string' ? value.symbolDisplayPath : '',
     rttAddress: isRttAddress(value.rttAddress) ? value.rttAddress : '',
     rttEncoding: isRttEncoding(value.rttEncoding) ? value.rttEncoding : 'utf-8',
+    ...(Array.isArray(value.rttHiddenChannels) ? {
+      rttHiddenChannels: [...new Set(value.rttHiddenChannels.filter((ch): ch is number =>
+        Number.isInteger(ch) && ch >= 0 && ch < 8))],
+    } : {}),
     transmitMode: isTransmitMode(value.transmitMode) ? value.transmitMode : 'text',
     lineEnding: isLineEnding(value.lineEnding) ? value.lineEnding : '',
     sendHistory: history,

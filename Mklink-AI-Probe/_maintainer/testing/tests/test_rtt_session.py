@@ -600,6 +600,29 @@ def _device_with_rtt_memory(header, descriptors, bridge=None):
     return device, bridge
 
 
+def test_inspect_rtt_reads_active_descriptors_without_starting_or_consuming():
+    header, descriptors = _rtt_control_block_memory()
+    descriptors = descriptors[:24] + bytes(24) + descriptors[48:]
+    device, bridge = _device_with_rtt_memory(header, descriptors)
+    bridge.idcode = 0x1ba01477
+    result = device.rtt_inspect(0x20000000)
+    assert result['channels'] == [0, 2]
+    assert result['max_up_buffers'] == 3
+    assert result['up_buffers'][1]['active'] is False
+    assert result['down_buffers'][0]['active'] is True
+    assert not bridge.commands and not bridge.raw_writes
+    assert device._rtt_session is None
+
+
+def test_inspect_rtt_requires_chip_identity_before_reading():
+    header, descriptors = _rtt_control_block_memory()
+    device, bridge = _device_with_rtt_memory(header, descriptors)
+    bridge.idcode = 0
+    device.read_memory = lambda *args: pytest.fail('must not read an unidentified target')
+    with pytest.raises(DeviceError, match='valid chip ID'):
+        device.rtt_inspect(0x20000000)
+
+
 def test_device_allows_output_only_rtt_but_rejects_write_without_downbuffer():
     header, descriptors = _rtt_control_block_memory(max_down=0)
     device, bridge = _device_with_rtt_memory(header, descriptors)
@@ -610,6 +633,29 @@ def test_device_allows_output_only_rtt_but_rejects_write_without_downbuffer():
     with pytest.raises(DeviceError, match="DownBuffer channel 0 does not exist"):
         device.rtt_write(b"input")
     assert bridge.raw_writes == []
+
+
+@pytest.mark.parametrize('multiplex', [False, True])
+def test_auto_channels_use_only_active_control_block_descriptors(monkeypatch, multiplex):
+    import struct
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    header, descriptors = _rtt_control_block_memory(max_down=0)
+    # Channel zero is reserved but inactive; channels 1 and 2 are usable.
+    descriptors = bytes(24) + descriptors[24:]
+    device, bridge = _device_with_rtt_memory(header, descriptors)
+    bridge.supports_multiplex = lambda: multiplex
+    bridge.enable_multiplex = lambda: None
+    bridge._mux = SimpleNamespace(_commands=threading.RLock(), request=Mock(), drain=Mock(return_value=[]))
+    if not multiplex:
+        monkeypatch.setattr(RTTSession, 'start', lambda *a, **kw: {'control_block_addr': '0x20000000'})
+    result = device.rtt_start('0x20000000', mode=1, all_channels=True)
+    assert result['channels'] == ([1, 2] if multiplex else [1])
+    assert [b['channel'] for b in result['up_buffers'] if b['active']] == [1, 2]
+    if multiplex:
+        assert bridge._mux.request.call_args.args == (0x20, struct.pack('<IBB', 0x20000000, 6, 0))
+    else:
+        assert device._rtt_session._channel == 1
 
 
 def test_device_rejects_missing_target_up_channel_before_probe_start():

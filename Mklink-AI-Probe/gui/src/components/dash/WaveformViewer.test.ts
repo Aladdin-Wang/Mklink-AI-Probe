@@ -286,6 +286,44 @@ beforeEach(() => {
 })
 
 describe('WaveformViewer VOFA binary transport', () => {
+  it('replays in the original canvas, isolates live updates, and restores the current live channels', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      const { viewer, probe } = runtime
+      viewer.configureBinaryChannels([{ name: 'live', type: 'float' }])
+      viewer.updateAcquisitionStatus({ state: 'running' })
+      const control = vi.fn()
+      const canvas = document.querySelector('#chart')
+      expect(viewer.beginReplay({ duration: 60, rows: 100, channels: [{ name: 'log' }] }, control)).toBe(true)
+      viewer.setReplayPosition(20, true, true)
+      viewer.renderReplayView({ id: 1, position: 20, width: 800, channels: [{ name: 'log', latest: 5, points: [[10, 2], [20, 5]] }] })
+      expect(document.querySelector('#chart')).toBe(canvas)
+      expect(probe.binaryEnvelope().values).toEqual(Float64Array.of(2, 5))
+      viewer.updateAcquisitionStatus({ state: 'stopped', channel_metadata: { wrong: { type: 'float' } } })
+      viewer.configureBinaryChannels([{ name: 'new_live', type: 'float' }])
+      viewer.resetBinaryStream()
+      viewer.acceptBinarySummary({ channelCount: 1, sequence: 99n }, [{ name: 'new_live' }])
+      viewer.setArraySnapshot({ name: 'array', values: [1, 2] })
+      expect(probe.binary().names).toEqual(['log'])
+      expect(probe.binaryEnvelope().values).toEqual(Float64Array.of(2, 5))
+      viewer.setDeviceConnected(false)
+      expect((document.querySelector('#btn-pause') as HTMLButtonElement).disabled).toBe(false)
+      ;(document.querySelector('#btn-pause') as HTMLButtonElement).click()
+      expect(control).toHaveBeenLastCalledWith('toggle')
+      ;(document.querySelector('#btn-stop') as HTMLButtonElement).click()
+      expect(control).toHaveBeenLastCalledWith('stop')
+      const before = probe.visibleTimeRange()
+      document.querySelector('#x-axis-hit')!.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 400, bubbles: true }))
+      expect(control).toHaveBeenLastCalledWith('inspect')
+      const after = probe.visibleTimeRange()
+      expect(after.tMax - after.tMin).toBeLessThan(before.tMax - before.tMin)
+      expect(document.querySelector('#btn-export-csv')).toBeNull()
+      viewer.endReplay()
+      expect(viewer.isReplaying()).toBe(false)
+      expect(probe.binary().names).toEqual(['new_live'])
+      expect(probe.collectionState().state).toBe('stopped')
+    } finally { runtime.cleanup() }
+  })
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -1549,7 +1587,7 @@ describe('VOFA viewer hot path source guard', () => {
     expect(i18nSource).toContain("show_channel_legend_tip: '显示通道列表'")
   })
 
-  it('auto-hides the channel legend and reveals it while the pointer is nearby', async () => {
+  it('toggles the channel legend only on clicks and preserves it after mouse leave', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)
     mocks.binary.telemetry = shallowRef(null)
@@ -1566,22 +1604,18 @@ describe('VOFA viewer hot path source guard', () => {
       const legend = document.getElementById('chart-legend')!
 
       expect(toggle.hidden).toBe(false)
-      expect(toggle.getAttribute('aria-expanded')).toBe('true')
-      expect(legend.classList.contains('is-visible')).toBe(true)
-      vi.advanceTimersByTime(2000)
       expect(toggle.getAttribute('aria-expanded')).toBe('false')
-      expect(legend.getAttribute('aria-hidden')).toBe('true')
-
       toggle.dispatchEvent(new MouseEvent('mouseenter'))
-      expect(legend.classList.contains('is-visible')).toBe(true)
+      expect(legend.classList.contains('is-visible')).toBe(false)
+      toggle.click()
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
       toggle.dispatchEvent(new MouseEvent('mouseleave'))
-      vi.advanceTimersByTime(699)
-      expect(legend.classList.contains('is-visible')).toBe(true)
-      legend.dispatchEvent(new MouseEvent('mouseenter'))
-      vi.advanceTimersByTime(1)
-      expect(legend.classList.contains('is-visible')).toBe(true)
       legend.dispatchEvent(new MouseEvent('mouseleave'))
-      vi.advanceTimersByTime(700)
+      vi.advanceTimersByTime(10000)
+      expect(legend.classList.contains('is-visible')).toBe(true)
+      toggle.click()
+      expect(legend.getAttribute('aria-hidden')).toBe('true')
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }, { name: 'C' }])
       expect(legend.classList.contains('is-visible')).toBe(false)
     } finally {
       runtime.cleanup()
@@ -2544,6 +2578,21 @@ describe('VOFA viewer hot path source guard', () => {
       'checkTrigger', 'cursor-a', 'cursor-b',
     ]) expect(source).toContain(token)
   })
+  it('sends PNG bytes through the native-compatible file saver', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    const saver = vi.fn().mockResolvedValue(true)
+    ;(window as any).__MKLINK_SAVE_BLOB__ = saver
+    const data = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,iVBORw0KGgo=')
+    try {
+      runtime.wrapper.element.querySelector<HTMLButtonElement>('#btn-export-png')!.click()
+      await flushPromises()
+      expect(saver).toHaveBeenCalledOnce()
+      const [name, blob] = saver.mock.calls[0]!
+      expect(name).toMatch(/\.png$/)
+      expect(blob.type).toBe('image/png')
+      expect([...new Uint8Array(await blob.arrayBuffer())]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+    } finally { data.mockRestore(); delete (window as any).__MKLINK_SAVE_BLOB__; runtime.cleanup() }
+  })
 
   it('limits collection-boundary resets to VOFA and SuperWatch binary modes', () => {
     expect(source).toContain('var IS_BINARY_WAVEFORM_MODE = IS_VOFA_MODE || IS_SUPERWATCH_MODE;')
@@ -2844,7 +2893,7 @@ describe('VOFA viewer hot path source guard', () => {
       for (const id of ['raw-log-panel', 'btn-save-project', 'btn-load-project', 'project-load-input']) {
         expect(document.getElementById(id)).toBeNull()
       }
-      expect(document.querySelector('.watch-log-menu #btn-export-csv')).not.toBeNull()
+      expect(document.querySelector('.watch-log-menu #btn-export-csv')).toBeNull()
       expect(document.querySelector('.watch-trigger-dialog #trigger-toolbar')).not.toBeNull()
     } finally { runtime.cleanup() }
   })

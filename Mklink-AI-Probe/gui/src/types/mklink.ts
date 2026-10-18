@@ -70,6 +70,7 @@ export interface AxlStatus {
 }
 
 export interface DeviceStatus {
+  connection_recovery?: { state: string; attempts: number; error?: string; errors?: string[]; restored_at?: number }
   device_generation?: number
   clock_hz?: number | null
   clock_warning?: string | null
@@ -234,6 +235,8 @@ export interface SymbolDescriptor {
   scalar_kind: SymbolScalarKind
   size: number
   writable: boolean
+  bit_offset?: number | null
+  bit_size?: number | null
   enum_values: Record<string, number>
   enum_signed?: boolean
   parent_path: string | null
@@ -304,6 +307,7 @@ export interface SymbolCatalogPage {
 }
 
 export interface SymbolCatalogStatus {
+  file_source_change?: { sequence: number, state?: string, error?: string } | null
   loaded: boolean
   generation: number
   axf_path: string
@@ -403,7 +407,7 @@ export interface ProjectHistory {
 export interface FirmwareInfo {
   name: string
   version: string
-  model: 'V3' | 'V4'
+  model: 'V2' | 'V3' | 'V4'
   family: 'microlink' | 'hpmlink'
   path: string
   source: 'github' | 'gitee' | 'local'
@@ -440,7 +444,7 @@ export interface ProbeFirmwareUpgrade {
   latest_version?: string
   verified_version?: string | null
   firmware?: string
-  model?: 'V3' | 'V4'
+  model?: 'V2' | 'V3' | 'V4'
   family?: 'microlink' | 'hpmlink'
   download_available?: boolean
   source?: 'github' | 'gitee' | 'local'
@@ -456,7 +460,7 @@ export interface ProbeFirmwareDownload {
   family: 'microlink' | 'hpmlink'
 }
 
-export type FileSourceKind = 'symbol' | 'map'
+export type FileSourceKind = 'symbol' | 'map' | 'svd'
 
 export interface UploadedFileSource {
   path: string

@@ -259,19 +259,33 @@ describe('SerialMonitorTab', () => {
 
     mocks.logBinary.serialLines.value = {
       type: 'serial-lines', port: 'TEST_UART', session: '11'.repeat(16), sequence: 2n,
-      lines: [{ timestampNs: 1_000_000n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
+      lines: [{ timestampNs: 1_000_000n, direction: 'RX', rawHex: '4F4B', ascii: 'OK' }],
     }
     await vi.waitFor(() => expect(wrapper.find('[data-testid="serial-save-log"]').attributes('disabled')).toBeUndefined())
     expect(wrapper.get('[data-testid="serial-log-text"]').attributes('aria-pressed')).toBe('true')
     expect((wrapper.get('[data-testid="serial-log-timestamp"]').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.get('.virtual-log-time').text()).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3}$/)
-    expect(wrapper.get('.virtual-log-text').text()).toBe('OK\\n')
+    expect(wrapper.get('.virtual-log-text').text()).toBe('OK')
     await wrapper.get('[data-testid="serial-log-hex"]').trigger('click')
-    expect(wrapper.get('.virtual-log-text').text()).toBe('4F 4B 0A')
+    expect(wrapper.get('.virtual-log-text').text()).toBe('4F 4B')
     await wrapper.get('[data-testid="serial-save-log"]').trigger('click')
     expect(mocks.saveBlobFile).toHaveBeenCalledWith('serial-test.log', expect.any(Blob))
     const saved = mocks.saveBlobFile.mock.calls[0][1] as Blob
-    expect(Array.from(new Uint8Array(await saved.arrayBuffer()))).toEqual([0x4f, 0x4b, 0x0a])
+    expect(Array.from(new Uint8Array(await saved.arrayBuffer()))).toEqual([0x4f, 0x4b])
+
+    mocks.logBinary.serialLines.value = {
+      type: 'serial-lines', port: 'TEST_UART', session: '11'.repeat(16), sequence: 3n,
+      lines: [
+        { timestampNs: 2_000_000n, direction: 'RX', rawHex: '210D', ascii: '!\r', continuesPrevious: true },
+        { timestampNs: 2_000_000n, direction: 'RX', rawHex: '0A', ascii: '\n', continuesPrevious: true },
+        { timestampNs: 2_000_000n, direction: 'RX', rawHex: '7461696C', ascii: 'tail', continuesPrevious: false },
+      ],
+    }
+    await wrapper.get('[data-testid="serial-log-text"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('.virtual-log-text').map(row => row.text())).toEqual(['OK!', 'tail']))
+    await wrapper.get('[data-testid="serial-save-log"]').trigger('click')
+    const continued = mocks.saveBlobFile.mock.calls.at(-1)![1] as Blob
+    expect(new TextDecoder().decode(await continued.arrayBuffer())).toBe('OK!\r\ntail')
 
     wrapper.unmount()
     expect(fetchMock.mock.calls.some(call => String(call[0]).endsWith('/api/dash/serial/stop'))).toBe(false)

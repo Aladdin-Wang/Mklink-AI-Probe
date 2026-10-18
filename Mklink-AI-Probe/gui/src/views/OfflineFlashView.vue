@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { consumerTarget, saveConsumerTarget, TARGET_SELECTION_CHANGED, PACKS_CHANGED } from '../lib/targetSelection'
+import { selectDownloadProbe } from '../lib/downloadProbe'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import DeviceConfigurationPanel from '../components/DeviceConfigurationPanel.vue'
 import HpmOfflineOtpPanel from '../components/HpmOfflineOtpPanel.vue'
@@ -71,6 +73,7 @@ const online = useOnlineFlashApi()
 const { message: confirmationMessage, confirm: confirmRisk, answer: answerConfirmation } = provideConfirmation()
 
 const disk = ref<OfflineDiskStatus | null>(null)
+const diskProbe = ref('')
 const model = ref<ProbeModel | ''>(saved.model ?? '')
 const scriptName = ref(saved.scriptName ?? 'factory-download.py')
 const automaticCount = ref(saved.automaticCount ?? 1)
@@ -79,7 +82,7 @@ const swdClock = ref(saved.swdClock ?? 10000000)
 
 const algorithms = ref<AlgorithmRow[]>([])
 const firmwares = ref<FirmwareRow[]>([])
-const targetQuery = ref('STM32F103RC')
+const targetQuery = ref(consumerTarget('offline') || 'STM32F103RC')
 const targetPart = ref('')
 const hpmBoard = ref('')
 const securityCapability = ref<OfflineSecurityCapability | null>(null)
@@ -261,8 +264,15 @@ function targetAction(target: TargetRecord): string {
 }
 
 async function refreshDisk(): Promise<void> {
-  try { disk.value = await offline.getStatus() }
+  try {
+    disk.value = await offline.getStatus(diskProbe.value)
+    diskProbe.value = disk.value.probe_id || ''
+  }
   catch (value) { setError(value) }
+}
+function changeDiskProbe(): void {
+  deployedScriptName.value = ''; deployedModel.value = ''; preview.value = null
+  void refreshDisk()
 }
 
 function modelChanged(): void {
@@ -458,6 +468,7 @@ async function addTargetAlgorithms(target: TargetRecord): Promise<void> {
   notice.value = ''
   try {
     targetPart.value = target.part_number
+    saveConsumerTarget('offline', target.part_number)
     targetQuery.value = target.part_number
     targetSuggestionsOpen.value = false
     activeTargetSuggestion.value = -1
@@ -729,6 +740,7 @@ async function deploy(): Promise<void> {
   clearError()
   notice.value = ''
   try {
+    const identityHeaders = disk.value?.probe_id ? await selectDownloadProbe(disk.value.probe_id) : {}
     const request = buildRequest()
     if (!preview.value) {
       preview.value = await offline.preview(request.payload)
@@ -737,7 +749,7 @@ async function deploy(): Promise<void> {
     deploymentUncertain.value = true
     deployedScriptName.value = ''
     deployedModel.value = ''
-    const result = await offline.deploy(request.payload, request.firmwareFiles, request.flmFiles, deploymentRequestId.value)
+    const result = await offline.deploy(request.payload, request.firmwareFiles, request.flmFiles, deploymentRequestId.value, identityHeaders)
     deploymentUncertain.value = false
     deployedScriptName.value = result.script_name
     deployedModel.value = result.model
@@ -779,6 +791,7 @@ async function triggerOffline(): Promise<void> {
   clearError()
   triggerLines.value = []
   try {
+    const identityHeaders = disk.value?.probe_id ? await selectDownloadProbe(disk.value.probe_id) : {}
     const result = await offline.trigger(
       deployedModel.value as 'V2' | 'V3' | 'V4',
       deployedScriptName.value,
@@ -786,6 +799,7 @@ async function triggerOffline(): Promise<void> {
         triggerLines.value.push(line)
         if (triggerLines.value.length > 200) triggerLines.value.shift()
       },
+      undefined, identityHeaders,
     )
     triggerLines.value = result.lines
     notice.value = result.status === 'completed' ? tr('脱机下载执行完成', 'Offline flashing completed') : tr('脱机下载执行失败', 'Offline flashing failed')
@@ -794,10 +808,27 @@ async function triggerOffline(): Promise<void> {
   finally { operationBusy.value = false }
 }
 
+async function syncTarget(): Promise<void> {
+  if (operationBusy.value || targetBusy.value) return
+  const part = consumerTarget('offline')
+  if (!part) return
+  targetQuery.value = part
+  await searchTargets(false)
+  const exact = targets.value.find(target => target.part_number === part && target.installed)
+  if (exact && (targetPart.value !== part || (!hpmMode.value && !algorithms.value.length))) await addTargetAlgorithms(exact)
+}
+function refreshPacks(): void {
+  if (operationBusy.value || targetBusy.value) return
+  void searchTargets(false)
+}
 onMounted(async () => {
-  await Promise.all([refreshDisk(), searchTargets(false)])
+  window.addEventListener(TARGET_SELECTION_CHANGED, syncTarget)
+  window.addEventListener(PACKS_CHANGED, refreshPacks)
+  await Promise.all([refreshDisk(), consumerTarget('offline') ? syncTarget() : searchTargets(false)])
 })
 onActivated(() => {
+  void syncTarget()
+  refreshPacks()
   startSourcePolling()
   void startNativeDrops()
 })
@@ -806,6 +837,8 @@ onDeactivated(() => {
   stopNativeDrops()
 })
 onBeforeUnmount(() => {
+  window.removeEventListener(TARGET_SELECTION_CHANGED, syncTarget)
+  window.removeEventListener(PACKS_CHANGED, refreshPacks)
   targetSearchRevision++
   if (targetSearchTimer !== null) clearTimeout(targetSearchTimer)
   stopSourcePolling()
@@ -820,6 +853,10 @@ onBeforeUnmount(() => {
       <div><span class="status-label">{{ tr('U 盘', 'USB Drive') }}</span><b :class="disk?.available ? 'ok' : 'bad'">{{ disk?.available ? disk.disk_path : tr('未发现', 'Not found') }}</b></div>
       <div><span class="status-label">{{ tr('脚本', 'Script') }}</span><b>{{ effectiveScriptName }}</b></div>
       <div class="status-actions">
+        <select v-if="disk?.probes?.length" v-model="diskProbe" data-testid="offline-probe" :aria-label="tr('下载器端口', 'Probe port')" :disabled="operationBusy || deploymentUncertain" @change="changeDiskProbe">
+          <option value="">{{ tr('选择下载器', 'Select probe') }}</option>
+          <option v-for="probe in disk.probes" :key="probe.probe_id" :value="probe.probe_id">{{ probe.port }}</option>
+        </select>
         <button class="btn" :disabled="operationBusy" @click="refreshDisk">{{ tr('刷新 U 盘', 'Refresh USB Drive') }}</button>
       </div>
     </header>

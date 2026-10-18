@@ -303,6 +303,8 @@ def resolve_variable_path(info: DwarfInfo, path: str) -> tuple[int, str, int, di
         member = next((m for m in st.members if m.name == field_name), None)
         if not member:
             raise KeyError(f"field '{field_name}' not found in {type_name}")
+        if member.bit_size is not None:
+            raise ValueError("bit fields require a typed symbol catalog")
         address += member.offset
         type_name = member.type_name
         size = member.size

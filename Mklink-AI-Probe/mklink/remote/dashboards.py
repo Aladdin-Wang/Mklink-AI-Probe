@@ -423,6 +423,10 @@ class RttStreamManager(RttChannelDecoder):
         self._write_lock = threading.RLock()
         self._lifecycle_lock = threading.RLock()
 
+    def restart_options(self) -> dict:
+        """Capture settings for a source-address refresh, without old target data."""
+        return {**getattr(self, '_start_options', {}), 'encoding': self._line_assembler.encoding}
+
     @property
     def running(self) -> bool:
         return self._running and not self._stop_event.is_set()
@@ -459,7 +463,7 @@ class RttStreamManager(RttChannelDecoder):
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 0,
               duration: float = 86400, encoding: str = "utf-8",
-              channels: list[int] | None = None) -> None:
+              channels: list[int] | None = None, all_channels: bool = False) -> None:
         with self._lifecycle_lock:
             self._start_locked(
                 device,
@@ -470,12 +474,13 @@ class RttStreamManager(RttChannelDecoder):
                 duration=duration,
                 encoding=encoding,
                 channels=channels,
+                all_channels=all_channels,
             )
 
     def _start_locked(self, device, *, addr: str | None = None, channel: int = 0,
                       mode: int = 0, search_size: int = 0,
                       duration: float = 86400, encoding: str = "utf-8",
-              channels: list[int] | None = None) -> None:
+                      channels: list[int] | None = None, all_channels: bool = False) -> None:
         """Start RTT polling in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             if self.running:
@@ -495,6 +500,9 @@ class RttStreamManager(RttChannelDecoder):
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
         self._error = None
         self._startup_started = time.monotonic()
+        self._start_options = dict(addr=addr, channel=channel, channels=channels,
+                                   mode=mode, search_size=search_size, duration=duration,
+                                   encoding=encoding, all_channels=all_channels)
         with self._decode_lock:
             self._line_assembler.reset(encoding)
             self._terminal_decoder = codecs.getincrementaldecoder(
@@ -525,14 +533,32 @@ class RttStreamManager(RttChannelDecoder):
 
         def _poll():
             initialized = False
+            poll_channel = channel
             start_failure = None
             terminal_failure = None
             try:
                 start_info = device.rtt_start(
                     addr, channel=channel, mode=mode, search_size=search_size,
                     **({"channels": channels} if channels is not None else {}),
+                    **({'all_channels': True} if all_channels else {}),
                 )
                 initialized = True
+                if all_channels and isinstance(start_info, dict):
+                    discovered = start_info.get('channels') or channels or [channel]
+                    poll_channel = discovered[0]
+                    self._channel_cache.reset(self._capture_session, discovered)
+                    decoders = {ch: decoder for ch, decoder in self._channel_decoders.items()
+                                if ch in discovered}
+                    for source in discovered:
+                        if source in decoders:
+                            continue
+                        decoder = RttChannelDecoder(raw_batch_lines=self._raw_batch_lines,
+                                                    waveform_batch_samples=self._waveform_batch_samples)
+                        decoder.set_encoding(encoding)
+                        if source in self._channel_hubs:
+                            decoder._stream_hub, decoder._terminal_stream_hub = self._channel_hubs[source]
+                        decoders[source] = decoder
+                    self._channel_decoders = decoders
                 with self._write_lock:
                     if (
                         getattr(self, "_generation", None) is generation
@@ -543,7 +569,7 @@ class RttStreamManager(RttChannelDecoder):
                         # reads; hardware writes/stops retain _write_lock.
                         self._start_info = {
                             **(start_info if isinstance(start_info, dict) else {}),
-                            "channel": channel,
+                            "channel": poll_channel,
                         }
                         self._active_generation = generation
                 start_time = time.time()
@@ -560,7 +586,7 @@ class RttStreamManager(RttChannelDecoder):
                             for source, data in chunks.items():
                                 self._channel_cache.append(source, data)
                                 self.feed_channel_bytes(source, data)
-                            text = chunks.get(channel, b"")
+                            text = chunks.get(poll_channel, b"")
                         else:
                             read_bytes = getattr(device, "rtt_read_bytes", None)
                             if callable(read_bytes):
@@ -568,8 +594,8 @@ class RttStreamManager(RttChannelDecoder):
                             else:
                                 text = device.rtt_read(duration=_RTT_DELIVERY_INTERVAL)
                             chunk = text.encode("utf-8") if isinstance(text, str) else text or b""
-                            self._channel_cache.append(channel, chunk)
-                            self.feed_channel_bytes(channel, chunk)
+                            self._channel_cache.append(poll_channel, chunk)
+                            self.feed_channel_bytes(poll_channel, chunk)
                     except Exception as exc:
                         if _device_in_error_state(device) or self._start_info.get("transport") == "cdc-mux":
                             terminal_failure = exc
@@ -745,6 +771,7 @@ class RttStreamManager(RttChannelDecoder):
             "encoding": self._line_assembler.encoding,
             "line_parser": self._line_assembler.status(),
             "down_buffers": down_buffers,
+            "up_buffers": [dict(item) for item in start_info.get('up_buffers', []) if isinstance(item, dict)],
             "session": self._capture_session,
             "control_block_addr": control_block_addr,
             "startup_timings_ms": dict(start_info.get("startup_timings_ms", {})),
@@ -1736,6 +1763,8 @@ class SuperWatchStreamManager:
         # rows, and metadata transitions. Hardware reads happen outside it.
         self._read_lock = threading.RLock()
         self._operation_lock = threading.RLock()
+        self._recording_lock = threading.Lock()
+        self._recorder = None
         self._origin_us: int | None = None
         self._stream_hub = stream_hub
         self._batch_samples = max(1, int(batch_samples))
@@ -1762,7 +1791,9 @@ class SuperWatchStreamManager:
         self._latest_sample: dict | None = None
         self._latest_sample_sequence = 0
         self._metadata_publish_lock = threading.Lock()
-        self._last_metadata_publish_monotonic = 0.0
+        # Metadata throttling shares the batch clock, including injected clocks.
+        # On Windows before Python 3.13, perf_counter and monotonic can differ.
+        self._last_metadata_publish_at = 0.0
         self._config_generation = 0
         self._completed_read_cycles = 0
         self._dropped_read_cycles = 0
@@ -2227,6 +2258,8 @@ class SuperWatchStreamManager:
                             future.set_exception(RuntimeError("SuperWatch stream stopped before write"))
                 self._flush_binary_batch()
                 if getattr(self, "_generation", None) is generation:
+                    if self._recorder:
+                        self._recorder.request_stop()
                     self._running = False
                     self._collecting.clear()
                     self._bridge.put({"event": "stopped"})
@@ -2245,9 +2278,38 @@ class SuperWatchStreamManager:
                 raise TimeoutError("SuperWatch worker thread is still active")
         self._running = False
         self._flush_binary_batch()
+        self.stop_recording()
         if self._thread is thread:
             self._thread = None
         return True
+
+    def recording_status(self) -> dict:
+        recorder = self._recorder
+        return recorder.status() if recorder else {"state": "idle", "active": False}
+
+    def start_recording(self, directory: str) -> dict:
+        from mklink.superwatch_recording import SuperWatchRecorder
+
+        with self._recording_lock, self._read_lock:
+            if self._recorder and self._recorder.status()['active']:
+                raise RuntimeError('SuperWatch recording is already active')
+            if not self.running or not json.loads(self._metadata_cache[1]):
+                raise RuntimeError('Start SuperWatch acquisition before recording')
+            # Exclude samples received before the user pressed Start recording.
+            self._flush_binary_batch_locked()
+            self._recorder = SuperWatchRecorder(directory)
+            return self._recorder.status()
+
+    def stop_recording(self) -> dict:
+        with self._recording_lock:
+            with self._read_lock:
+                self._flush_binary_batch_locked()
+                recorder = self._recorder
+                # Stop accepting batches at this boundary, then drain outside
+                # the acquisition lock so disk I/O cannot stall the device.
+                if recorder:
+                    recorder.request_stop()
+            return recorder.stop() if recorder else self.recording_status()
 
     def write_symbol(self, path: str, *, generation: int, value: object) -> dict:
         from mklink.symbol_catalog import decode_descriptor, encode_descriptor
@@ -2633,7 +2695,7 @@ class SuperWatchStreamManager:
                     flags=SUPERWATCH_METADATA_JSON,
                     stream_type=StreamType.SUPERWATCH,
                 )
-        self._last_metadata_publish_monotonic = time.monotonic()
+            self._last_metadata_publish_at = self._clock()
         return self._metadata_version
 
     def _publish_cached_metadata(self) -> int:
@@ -2647,7 +2709,7 @@ class SuperWatchStreamManager:
                     flags=SUPERWATCH_METADATA_JSON,
                     stream_type=StreamType.SUPERWATCH,
                 )
-            self._last_metadata_publish_monotonic = time.monotonic()
+            self._last_metadata_publish_at = self._clock()
             return version
 
     def publish_sample_points(self, points) -> bool:
@@ -2716,7 +2778,7 @@ class SuperWatchStreamManager:
         except (OverflowError, TypeError, ValueError):
             return False
         self._pending_sample_count += 1
-        if (time.monotonic() if batch_time is None else batch_time) - self._last_metadata_publish_monotonic >= 1.0:
+        if (self._clock() if batch_time is None else batch_time) - self._last_metadata_publish_at >= 1.0:
             self._publish_cached_metadata()
         if batch_time is None:
             self._record_sample_rate_locked()
@@ -2788,6 +2850,8 @@ class SuperWatchStreamManager:
         self._pending_channel_count = 0
         self._pending_started_at = None
         try:
+            if self._recorder:
+                self._recorder.append(values, times, self._latest_sample['channels'])
             if self._stream_hub is None:
                 raise RuntimeError("SuperWatch binary stream hub is unavailable")
             if sys.byteorder != "little":
@@ -2867,6 +2931,7 @@ class SuperWatchStreamManager:
             "metadata_version": metadata_version,
             "live_write_supported": self._live_write_supported,
             "write_events": write_events,
+            "recording": self.recording_status(),
             "read_cycles": self._completed_read_cycles,
             "read_drops": self._dropped_read_cycles,
             "read_errors": self._read_errors + self._stream_integrity.get('firmware_read_errors', 0),

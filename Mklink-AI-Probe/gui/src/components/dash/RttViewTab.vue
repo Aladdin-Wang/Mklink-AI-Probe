@@ -1,5 +1,5 @@
 <template>
-  <div class="rtt-view-tab">
+  <div class="rtt-view-tab" @dblclick="fitPanels">
     <SetupHint
       v-if="!deviceConnected"
       kind="device"
@@ -10,43 +10,36 @@
       @primary="quickConnect"
       @secondary="loadSymbolFile"
     />
-      <div class="rtt-address-row">
+      <div class="rtt-config-row">
         <label for="rtt-address">{{ tr('RTT 地址', 'RTT Address') }}</label>
         <input
           id="rtt-address" v-model="rttAddress" data-testid="rtt-address"
           type="text" spellcheck="false" placeholder="0x20000000" @input="onAddressInput"
         >
-        <button data-testid="rtt-search" type="button" class="btn-search" @click="searchRttAddress">
+        <button data-testid="rtt-search" type="button" class="btn-search" :title="addressSource" @click="searchRttAddress">
           <Search :size="15" />
           <span>{{ searching ? tr('搜索中', 'Searching') : tr('自动搜索', 'Auto Search') }}</span>
         </button>
+        <button v-if="sourcePending" data-testid="reload-sources" type="button" class="btn-search"
+          :disabled="reloadingSources" :title="tr('板上固件就绪后重新加载', 'Reload when the target firmware is ready')"
+          @click="reloadSources">{{ tr('重新加载', 'Reload') }}</button>
         <span v-if="addressError" class="address-error" role="alert">{{ addressError }}</span>
-        <span v-else-if="addressSource" class="address-source" :title="addressSource">
-          {{ tr('来源:', 'Source:') }} {{ addressSource }}
-        </span>
+        <div class="rtt-channel-options" :aria-label="tr('显示通道', 'Visible channels')">
+          <label v-for="ch in availableChannels" :key="ch.channel" :title="ch.name || `RTT ${ch.channel}`">
+            <input type="checkbox" :data-testid="`rtt-channel-${ch.channel}`"
+              :checked="!hiddenChannels.has(ch.channel)" @change="toggleChannel(ch.channel)">
+            CH {{ ch.channel }}
+          </label>
+        </div>
+        <ControlToolbar
+          :state="toolbarState" :error="runtimeError || actionError || dash.error.value"
+          :device-connected="deviceConnected && !searching"
+          @start="onStart" @stop="onStop" :hide-pause="true"
+        />
       </div>
-      <SetupHint
-        v-if="deviceConnected && !hasAddressFileSource"
-        kind="symbols"
-        :message="tr('自动搜索 RTT 地址时，加载 AXF / ELF 可直接定位 _SEGGER_RTT。', 'Load AXF / ELF so Auto Search can locate _SEGGER_RTT directly.')"
-        :primary-label="tr('加载 AXF / ELF', 'Load AXF / ELF')"
-        :busy="loadingSymbols"
-        @primary="loadSymbolFile"
-      />
-      <p v-if="sourceChangeNotice" data-testid="rtt-source-notice" role="status">{{ sourceChangeNotice }}</p>
-      <div class="rtt-address-row">
-        <label for="rtt-channels">{{ tr('采集通道', 'Capture channels') }}</label>
-        <input id="rtt-channels" v-model="captureChannels" :disabled="effectiveRunning || starting" placeholder="0,1" size="12">
-        <span>{{ tr('逗号分隔 0–7；每个通道均支持收发、终端和曲线，多通道需要新版固件。', 'Comma-separated 0–7; every channel supports traffic, terminal and charts. Multiple channels require new firmware.') }}</span>
-        <span v-if="multiplex">{{ tr('多路复用 · 可与 SuperWatch 并行', 'Multiplex · concurrent with SuperWatch') }}</span>
-      </div>
-      <ControlToolbar
-        :state="toolbarState" :error="runtimeError || actionError || dash.error.value"
-        :device-connected="deviceConnected && !searching"
-        @start="onStart" @stop="onStop" :hide-pause="true"
-      />
-      <div class="rtt-channel-grid" :class="{ multiple: activeChannels.length > 1 }">
+      <div ref="channelGrid" class="rtt-channel-grid" :class="{ 'auto-fit': autoFit, multiple: activeChannels.filter(ch => !hiddenChannels.has(ch)).length > 1 }">
         <RttChannelPanel v-for="ch in activeChannels" :key="ch" :channel="ch"
+          v-show="!hiddenChannels.has(ch)"
           :running="statusRunning && !runtimeError" :session="captureSession" :channel-status="channelStatus[String(ch)]"
           :send-enabled="!stopping && !runtimeError && downBuffers.some(b => b.channel === ch && b.active)" />
       </div>
@@ -54,7 +47,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { trackedSymbolPending, reloadTrackedSymbolSource } from '../../lib/trackedSymbolSource'
 import { Search } from '@lucide/vue'
 import { CAPTURE_START_TIMEOUT_MS } from '../../lib/captureStartup'
 import { useDashboard } from '../../composables/useDashboard'
@@ -67,8 +61,10 @@ import SetupHint from './SetupHint.vue'
 import RttChannelPanel from './RttChannelPanel.vue'
 import { tr } from '../../composables/useLanguage'
 import { API_BASE } from '../../lib/runtimeEndpoint'
+import { useToast } from '../../composables/useToast'
 const props = defineProps<{ deviceConnected: boolean }>()
 const dash = useDashboard('rtt')
+const toast = useToast()
 const { findRtt } = useMklinkApi()
 const {
   connecting,
@@ -86,16 +82,47 @@ const searching = ref(false)
 const starting = ref(false)
 const stopping = ref(false)
 const statusRunning = ref(false)
+const backendSourcePending = ref(false)
+const sourcePending = computed(() => backendSourcePending.value || trackedSymbolPending.value > 0)
+const reloadingSources = ref(false)
 const statusKnown = ref(false)
 const downBuffers = ref<Array<{ channel?: number, active?: boolean }>>([])
 const runtimeError = ref<string | null>(null)
-const sourceChangeNotice = ref<string | null>(null)
 const actionError = ref<string | null>(null)
-const captureChannels = ref('0')
 const activeChannels = ref<number[]>([0])
+const hiddenChannels = ref(new Set<number>(settings.value.rttHiddenChannels || []))
+const upBuffers = ref<Array<{ channel: number, name?: string, active?: boolean }>>([])
+const channelGrid = ref<HTMLElement | null>(null)
+const autoFit = ref(false)
+const inspectedChannels = ref<{ address: string, channels: number[], up_buffers: typeof upBuffers.value } | null>(null)
+function fitPanels(event: MouseEvent): void {
+  const target = event.target
+  if (!(target instanceof HTMLElement) || !target.matches(
+    '.rtt-view-tab, .rtt-channel-grid, .rtt-channel-panel, .rtt-channel-panel header, .channel-content, .rtt-view-toolbar, .rtt-primary-tools, .resize-hint',
+  )) return
+  channelGrid.value?.querySelectorAll<HTMLElement>('.rtt-channel-panel').forEach(panel => {
+    panel.style.removeProperty('width')
+    panel.style.removeProperty('height')
+  })
+  autoFit.value = true
+}
+watch(() => props.deviceConnected, () => {
+  searchGeneration++
+  searching.value = false
+  inspectedChannels.value = null
+})
+const availableChannels = computed(() => activeChannels.value.map(channel => ({
+  channel, name: upBuffers.value.find(item => item.channel === channel)?.name,
+})))
+function toggleChannel(channel: number): void {
+  const next = new Set(hiddenChannels.value)
+  if (next.has(channel)) next.delete(channel)
+  else next.add(channel)
+  hiddenChannels.value = next
+  persistSettings({ ...loadDesktopSettings(desktopStorage), rttHiddenChannels: [...next] })
+}
 const captureSession = ref<string>()
 const channelStatus = ref<Record<string, { numeric_channels?: string[], encoding?: string }>>({})
-const multiplex = ref(false)
 // Zero lets the host bound the default scan to the actual RAM map.
 const RTT_SEARCH_SIZE = 0
 const effectiveRunning = computed(() => (
@@ -119,10 +146,12 @@ function syncRttAddressFromSettings(): void {
   const sourceChanged = !sameRttSearchSource(settings.value.symbolPath, latest.symbolPath)
   const addressChanged = latest.rttAddress !== rttAddress.value
   if (sourceChanged || addressChanged) {
+    inspectedChannels.value = null
     searchGeneration++
     searching.value = false
   }
   settings.value = latest
+  hiddenChannels.value = new Set(latest.rttHiddenChannels || [])
   if (addressChanged) {
     rttAddress.value = latest.rttAddress
     addressError.value = ''
@@ -142,6 +171,7 @@ function isRttAddress(value: string): boolean {
 }
 
 function onAddressInput(): void {
+  inspectedChannels.value = null
   cancelRttAddressRefresh(desktopStorage)
   searchGeneration++
   searching.value = false
@@ -177,6 +207,27 @@ async function searchRttAddress(): Promise<void> {
     rttAddress.value = result.addr
     addressSource.value = result.source || (source ? tr('所选文件', 'Selected file') : tr('工程自动检测', 'Project auto-detection'))
     persistSettings({ ...latest, rttAddress: result.addr })
+    inspectedChannels.value = null
+    if (props.deviceConnected) {
+      const deviceResponse = await fetch(`${API_BASE}/api/device/status`)
+      if (!deviceResponse.ok) throw new Error(tr('读取设备状态失败', 'Could not read device status'))
+      const device = await deviceResponse.json()
+      if (disposed || generation !== searchGeneration) return
+      if (device.connected && Number(device.idcode) > 0) {
+        const response = await fetch(`${API_BASE}/api/device/rtt-control-block`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: result.addr }),
+        })
+        const info = await response.json()
+        if (disposed || generation !== searchGeneration) return
+        if (!response.ok) throw new Error(typeof info.detail === 'string' ? info.detail : tr('RTT 控制块读取失败', 'Could not read RTT control block'))
+        inspectedChannels.value = { address: result.addr, channels: info.channels, up_buffers: info.up_buffers }
+        if (!statusRunning.value) {
+          activeChannels.value = info.channels
+          upBuffers.value = info.up_buffers
+        }
+      }
+    }
   } catch (caught) {
     if (!disposed && generation === searchGeneration) {
       addressError.value = caught instanceof Error ? caught.message : String(caught)
@@ -187,30 +238,48 @@ async function searchRttAddress(): Promise<void> {
 }
 
 let lastSourceChange = 0
+async function reloadSources(): Promise<void> {
+  reloadingSources.value = true
+  try {
+    if (!await reloadTrackedSymbolSource()) {
+      const response = await fetch(`${API_BASE}/api/symbols/reload-sources`, { method: 'POST' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : tr('重载失败', 'Reload failed'))
+    }
+    await refreshStatus()
+    toast.success(tr('符号已重新加载', 'Symbols reloaded'), 2500)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error))
+  } finally {
+    reloadingSources.value = false
+  }
+}
 async function refreshStatus(): Promise<Record<string, any> | null> {
   try {
     const response = await fetch(`${API_BASE}/api/dash/rtt/status`)
     if (response.ok) {
       const status = await response.json()
       const changed = status.file_source_change
+      backendSourcePending.value = changed?.state === 'awaiting-reload' || changed?.state === 'failed'
       if (changed && changed.sequence !== lastSourceChange) {
         lastSourceChange = changed.sequence
-        const message = changed.error || changed.message || tr('符号文件已变化，请重新检测地址', 'Symbol file changed. Detect the address again.')
-        sourceChangeNotice.value = message
-        if (!changed.pending) {
+        if (changed.error) toast.error(changed.error)
+        if (!changed.pending && changed.state === 'applied') {
           rttAddress.value = changed.rtt_addr && isRttAddress(changed.rtt_addr) ? changed.rtt_addr : ''
           persistSettings({ ...settings.value, rttAddress: rttAddress.value })
         }
       }
       statusKnown.value = true
       statusRunning.value = status.running === true
+      const newSession = status.session && status.session !== captureSession.value
       captureSession.value = status.session
       channelStatus.value = status.channel_status || {}
-      multiplex.value = status.transport === 'cdc-mux'
-      activeChannels.value = Array.isArray(status.channels) && status.channels.length ? status.channels : [0]
-      if (statusRunning.value && status.control_block_addr) captureChannels.value = activeChannels.value.join(',')
+      const preview = !status.running && inspectedChannels.value?.address === rttAddress.value ? inspectedChannels.value : null
+      activeChannels.value = preview ? preview.channels : Array.isArray(status.channels) && status.channels.length ? status.channels : [0]
+      upBuffers.value = preview ? preview.up_buffers : Array.isArray(status.up_buffers) ? status.up_buffers : []
       downBuffers.value = Array.isArray(status.down_buffers) ? status.down_buffers : []
       if (typeof status.error === 'string' && status.error) runtimeError.value = status.error
+      else if (newSession) runtimeError.value = null
       return status
     }
   } catch { /* low-rate status retries below */ }
@@ -271,16 +340,8 @@ async function onStart(): Promise<void> {
     stopping.value = false
     runtimeError.value = null
     actionError.value = null
-    sourceChangeNotice.value = null
-    const channels = captureChannels.value.split(',').map(value => /^[0-7]$/.test(value.trim()) ? Number(value.trim()) : NaN)
-    if (channels.length > 8 || new Set(channels).size !== channels.length
-        || channels.some(ch => !Number.isInteger(ch) || ch < 0 || ch > 7)) {
-      actionError.value = tr('通道必须为不重复的 0–7', 'Channels must be unique 0–7')
-      return
-    }
     const started = await dash.start({
-      ...(channels.length > 1 ? { channels } : {}),
-      ...(channels[0] !== 0 ? { channel: channels[0] } : {}),
+      all_channels: true,
       addr: address,
       mode: 0,
       search_size: RTT_SEARCH_SIZE,
@@ -300,9 +361,9 @@ async function onStop(): Promise<void> {
   try {
     const stopped = await dash.stop()
     if (stopped) {
-        statusRunning.value = false
+      statusRunning.value = false
       downBuffers.value = []
-        runtimeError.value = null
+      runtimeError.value = null
     } else {
       // A shared subscriber can refuse stop while the producer remains healthy.
       // Preserve this window's stream and render state until stop is accepted.
@@ -328,15 +389,20 @@ onUnmounted(() => {
 <style scoped>
 .rtt-channel-grid { display: flex; flex-wrap: wrap; align-content: start; align-items: flex-start; gap: 12px; flex: 1; min-height: 0; overflow: auto; padding-top: 8px; }
 .rtt-channel-grid.multiple > :deep(.rtt-channel-panel) { width: calc(50% - 6px); }
+.rtt-channel-grid.auto-fit { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(320px, 1fr); align-content: stretch; align-items: stretch; }
+.rtt-channel-grid.auto-fit.multiple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rtt-channel-grid.auto-fit > :deep(.rtt-channel-panel) { width: 100%; height: 100%; }
+@media (max-width: 1000px) { .rtt-channel-grid.auto-fit.multiple { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1000px) { .rtt-channel-grid.multiple > :deep(.rtt-channel-panel) { width: 100%; } }
 .rtt-view-tab { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
-.alert-warn { color: var(--warn); padding: 8px; border: 1px solid var(--warn); border-radius: 4px; }
-.rtt-address-row { display: grid; grid-template-columns: auto minmax(180px, 320px) auto minmax(0, 1fr); align-items: center; gap: 10px; min-height: 38px; padding: 2px 0 7px; border-bottom: 1px solid var(--border-subtle); }
-.rtt-address-row label { font-size: 12px; color: var(--muted); }
-.rtt-address-row input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.rtt-config-row { display: flex; align-items: center; gap: 10px; min-height: 38px; flex-shrink: 0; padding: 2px 0 7px; border-bottom: 1px solid var(--border-subtle); overflow-x: auto; }
+.rtt-config-row label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+#rtt-address { width: 136px; min-width: 110px; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.rtt-channel-options { display: flex; align-items: center; gap: 10px; }
+.rtt-channel-options label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.rtt-channel-options input { accent-color: var(--accent); }
+.rtt-config-row :deep(.control-toolbar) { padding: 0; flex-shrink: 0; margin-left: auto; }
 .btn-search { height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; cursor: pointer; }
 .address-error { min-width: 0; color: var(--danger, #dc2626); font-size: 12px; overflow-wrap: anywhere; }
-.address-source { min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-
-@media (max-width: 720px) { .rtt-address-row { grid-template-columns: auto minmax(0, 1fr) auto; } .address-error, .address-source { grid-column: 1 / -1; } }
+.btn-search { flex-shrink: 0; }
 </style>

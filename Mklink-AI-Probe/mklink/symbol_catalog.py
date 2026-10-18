@@ -17,6 +17,7 @@ from mklink.dwarf_parser import (
     get_enum_type,
     get_record_type,
     resolve_type_name,
+    bitfield_layout,
 )
 
 
@@ -63,6 +64,8 @@ class SymbolDescriptor:
     parent_path: str | None = None
     overlapping: bool = False
     source: str = "dwarf"
+    bit_offset: int | None = None
+    bit_size: int | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -77,6 +80,8 @@ class SymbolDescriptor:
             "parent_path": self.parent_path,
             "overlapping": self.overlapping,
             "source": self.source,
+            "bit_offset": self.bit_offset,
+            "bit_size": self.bit_size,
         }
 
 
@@ -166,6 +171,8 @@ class _ResolvedNode:
     array_dimensions: tuple[int, ...] = ()
     array_element_type_offset: int | None = None
     overlapping: bool = False
+    bit_offset: int | None = None
+    bit_size: int | None = None
 
 
 @dataclass(frozen=True)
@@ -312,7 +319,9 @@ class SymbolCatalog:
         seen: set[str] = set()
 
         for term in terms[:50]:
-            exact = self.by_path(term)
+            exact = self.by_path(term, writable_only=False)
+            if exact is not None and not self._in_ram(exact.address, exact.size):
+                exact = None
             if exact is not None and exact.path not in seen:
                 found.append(exact)
                 seen.add(exact.path)
@@ -385,14 +394,9 @@ class SymbolCatalog:
             if record is None or record.offset in ancestors:
                 return
             for member in record.members:
-                if member.bit_size is not None:
-                    continue
-                child = _ResolvedNode(
-                    path=f'{node.path}.{member.name}' if member.name else node.path,
-                    address=node.address + member.offset, type_name=member.type_name,
-                    type_offset=member.type_offset, size=member.size,
-                    overlapping=node.overlapping or record.kind == 'union')
-                yield from walk(child, ancestors | {record.offset}, depth + 1)
+                child = _member_node(node, member, record, info)
+                if child is not None:
+                    yield from walk(child, ancestors | {record.offset}, depth + 1)
         for name in sorted(info.variables, key=_natural_path_key):
             if self.is_overridden(name):
                 continue  # All override leaves were searched in items; never revive DWARF fields.
@@ -451,16 +455,11 @@ class SymbolCatalog:
             return ()
         children: list[SymbolBrowseNode] = []
         for member in record.members:
-            if member.bit_size is not None or not member.name:
+            if not member.name:
                 continue
-            child = _ResolvedNode(
-                path=f"{node.path}.{member.name}",
-                address=node.address + member.offset,
-                type_name=member.type_name,
-                type_offset=member.type_offset,
-                size=member.size,
-                overlapping=node.overlapping or record.kind == "union",
-            )
+            child = _member_node(node, member, record, self._info)
+            if child is None:
+                continue
             entry = self._browse_entry(child)
             if entry is not None:
                 children.append(entry)
@@ -592,7 +591,8 @@ class SymbolCatalog:
             )
         record = self._record_for(node)
         if record is not None:
-            readable_members = sum(1 for member in record.members if member.name and member.bit_size is None)
+            readable_members = sum(1 for member in record.members if member.name
+                                   and _member_node(node, member, record, self._info) is not None)
             if readable_members:
                 return SymbolBrowseNode(
                     key=node.path,
@@ -623,15 +623,18 @@ class SymbolCatalog:
         node = self._resolve_node(path, writable_only=writable_only)
         return self._descriptor_from_node(node, writable_only=writable_only) if node is not None else None
 
-    def _descriptor_from_node(self, node: _ResolvedNode, *, writable_only: bool = True) -> SymbolDescriptor | None:
+    def _descriptor_from_node(self, node: _ResolvedNode, *, writable_only: bool = False) -> SymbolDescriptor | None:
         if self._info is None:
             return None
         spec = _resolve_scalar_spec(
             self._info, node.type_offset, type_name=node.type_name, size=node.size,
         )
-        if spec is None or not 0 <= node.address <= (1 << 32) - spec.size:
+        if spec is None or (node.bit_size is not None and spec.kind == "float"):
             return None
-        writable = self._in_ram(node.address, spec.size)
+        size = node.size if node.bit_size is not None else spec.size
+        if not 0 <= node.address <= (1 << 32) - size:
+            return None
+        writable = self._in_ram(node.address, size) and node.bit_size is None
         if writable_only and not writable:
             return None
         return SymbolDescriptor(
@@ -639,12 +642,14 @@ class SymbolCatalog:
             address=node.address,
             type_name=node.type_name,
             scalar_kind=spec.kind,
-            size=spec.size,
+            size=size,
             writable=writable,
             enum_values=spec.enum_values,
             enum_signed=spec.enum_signed,
             parent_path=_parent_path(node.path),
             overlapping=node.overlapping,
+            bit_offset=node.bit_offset,
+            bit_size=node.bit_size,
         )
 
     def _resolve_node(self, path: str, *, writable_only: bool = True) -> _ResolvedNode | None:
@@ -679,16 +684,11 @@ class SymbolCatalog:
             if record is None:
                 return None
             member = next((item for item in record.members if item.name == value), None)
-            if member is None or member.bit_size is not None:
+            if member is None:
                 return None
-            node = _ResolvedNode(
-                path=f"{node.path}.{member.name}",
-                address=node.address + member.offset,
-                type_name=member.type_name,
-                type_offset=member.type_offset,
-                size=member.size,
-                overlapping=node.overlapping or record.kind == "union",
-            )
+            node = _member_node(node, member, record, self._info)
+            if node is None:
+                return None
         return node
 
     def _array_shape(self, node: _ResolvedNode) -> tuple[tuple[int, ...], int | None] | None:
@@ -818,9 +818,14 @@ class SymbolCatalog:
             parent_path: str | None,
             leaf_count: list[int],
             overlapping: bool,
+            bit_offset: int | None = None,
+            bit_size: int | None = None,
         ) -> bool:
             spec = _resolve_scalar_spec(info, type_offset, type_name=type_name, size=size)
-            if spec is None or not in_ram(address, spec.size):
+            if spec is None or (bit_size is not None and spec.kind == "float"):
+                return False
+            read_size = size if bit_size is not None else spec.size
+            if not in_ram(address, read_size):
                 return False
             if leaf_count[0] >= leaf_limit:
                 truncated_roots.add(root_path)
@@ -831,7 +836,10 @@ class SymbolCatalog:
                     address=address,
                     type_name=type_name,
                     scalar_kind=spec.kind,
-                    size=spec.size,
+                    size=read_size,
+                    writable=bit_size is None,
+                    bit_offset=bit_offset,
+                    bit_size=bit_size,
                     enum_values=spec.enum_values,
                     enum_signed=spec.enum_signed,
                     parent_path=parent_path,
@@ -853,6 +861,8 @@ class SymbolCatalog:
             visited: frozenset[int],
             leaf_count: list[int],
             overlapping: bool = False,
+            bit_offset: int | None = None,
+            bit_size: int | None = None,
         ) -> None:
             if root_path in truncated_roots:
                 return
@@ -868,6 +878,8 @@ class SymbolCatalog:
                 parent_path=None if path == root_path else root_path,
                 leaf_count=leaf_count,
                 overlapping=overlapping,
+                bit_offset=bit_offset,
+                bit_size=bit_size,
             ):
                 return
 
@@ -915,16 +927,21 @@ class SymbolCatalog:
                 return
             next_visited = visited | {record.offset}
             for member in record.members:
-                if member.bit_size is not None:
+                child = _member_node(
+                    _ResolvedNode(path, address, type_name, type_offset, size, overlapping=overlapping),
+                    member, record, info,
+                )
+                if child is None:
                     continue
-                member_path = f"{path}.{member.name}" if member.name else path
                 expand_type(
                     root_path=root_path,
-                    path=member_path,
-                    address=address + member.offset,
+                    path=child.path,
+                    address=child.address,
                     type_name=member.type_name,
                     type_offset=member.type_offset,
-                    size=member.size,
+                    size=child.size,
+                    bit_offset=child.bit_offset,
+                    bit_size=child.bit_size,
                     depth=depth + 1,
                     visited=next_visited,
                     leaf_count=leaf_count,
@@ -1025,6 +1042,24 @@ _PATH_NUMBER_RE = re.compile(r"(\d+)")
 _SYMBOL_ROOT_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 _SYMBOL_MEMBER_RE = re.compile(r"\.([A-Za-z_$][A-Za-z0-9_$]*)")
 _SYMBOL_INDEX_RE = re.compile(r"\[(\d+)\]")
+
+
+def _member_node(parent, member, record, info):
+    offset, size, shift = member.offset, member.size, None
+    if member.bit_size is not None:
+        if not member.name:
+            return None  # Unnamed padding/zero-width fields are not variables.
+        layout = bitfield_layout(member, record.size, little_endian=info.little_endian)
+        if layout is None:
+            return None
+        offset, size, shift = layout
+    return _ResolvedNode(
+        path=f"{parent.path}.{member.name}" if member.name else parent.path,
+        address=parent.address + offset, type_name=member.type_name,
+        type_offset=member.type_offset, size=size,
+        overlapping=parent.overlapping or record.kind == "union",
+        bit_offset=shift, bit_size=member.bit_size,
+    )
 
 
 def _natural_path_key(path: str) -> tuple[str | int, ...]:
@@ -1162,6 +1197,8 @@ def _integer_size_from_name(type_name: str) -> int:
 
 
 def encode_descriptor(descriptor: SymbolDescriptor, value: object) -> bytes:
+    if descriptor.bit_size is not None:
+        raise SymbolValueError("bit fields are read-only; whole-byte writes would affect adjacent fields")
     kind = descriptor.scalar_kind
     size = descriptor.size
     if kind == "float":
@@ -1210,6 +1247,16 @@ def decode_descriptor(descriptor: SymbolDescriptor, data: bytes):
             f"not enough bytes for {descriptor.path}: need {descriptor.size}, got {len(data)}"
         )
     payload = data[: descriptor.size]
+    if descriptor.bit_size is not None:
+        width = descriptor.bit_size
+        shift = descriptor.bit_offset
+        if shift is None or not 0 < width <= 64 or not 0 <= shift <= descriptor.size * 8 - width:
+            raise SymbolValueError("invalid bit field layout")
+        value = (int.from_bytes(payload, "little") >> shift) & ((1 << width) - 1)
+        signed = descriptor.scalar_kind == "signed" or (descriptor.scalar_kind == "enum" and descriptor.enum_signed)
+        if signed and value & (1 << (width - 1)):
+            value -= 1 << width
+        return bool(value) if descriptor.scalar_kind == "bool" else value
     if descriptor.scalar_kind == "float":
         return struct.unpack("<f" if descriptor.size == 4 else "<d", payload)[0]
     if descriptor.scalar_kind == "bool":
@@ -1245,9 +1292,9 @@ def rebind_paths(
     updated: list[str] = []
     removed: list[str] = []
     for path in paths:
-        before = old.by_path(path)
-        after = new.by_path(path)
-        if after is None:
+        before = old.by_path(path, writable_only=False)
+        after = new.by_path(path, writable_only=False)
+        if after is None or not new._in_ram(after.address, after.size):
             removed.append(path)
         elif before is not None and (
             before.address,
@@ -1258,6 +1305,8 @@ def rebind_paths(
             before.enum_signed,
             before.overlapping,
             before.source,
+            before.bit_offset,
+            before.bit_size,
         ) != (
             after.address,
             after.type_name,
@@ -1267,6 +1316,8 @@ def rebind_paths(
             after.enum_signed,
             after.overlapping,
             after.source,
+            after.bit_offset,
+            after.bit_size,
         ):
             updated.append(path)
         else:

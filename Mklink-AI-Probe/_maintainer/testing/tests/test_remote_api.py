@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from mklink.dwarf_parser import DwarfArray, DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
 from mklink.remote.api import BrowserSessionLease, _project_root_drives, create_app
@@ -195,7 +196,7 @@ def test_flash_failure_is_request_scoped_and_releases_lease(tmp_path):
         assert app.state.mklink_state["resource_manager"].get_status() == {}
 
 
-def test_source_reload_stops_dependents_before_parsing(tmp_path):
+def test_source_reload_does_not_stop_unrelated_idle_managers(tmp_path):
     import os
     from mklink.remote.dashboards import get_managers
     device, axf = _connected_symbol_device(tmp_path)
@@ -211,9 +212,9 @@ def test_source_reload_stops_dependents_before_parsing(tmp_path):
     axf.write_bytes(b"new")
     os.utime(axf, ns=(stat.st_atime_ns, stat.st_mtime_ns))
     with patch("mklink.remote.dashboards.stop_bridge_dashboards", side_effect=lambda **kw: order.append("stop") or ["rtt"]), patch.object(get_managers()["superwatch"], "_runtime", None), patch("mklink.project_config.ensure_rtt_config_updated", return_value={"rtt_addr": "0x20000020"}):
-        asyncio.run(app.state.check_file_sources())
-        asyncio.run(app.state.check_file_sources())
-    assert order == ["stop", "parse"]
+        asyncio.run(app.state.check_file_sources(apply=True))
+        asyncio.run(app.state.check_file_sources(apply=True))
+    assert order == ["parse"]
     assert app.state.mklink_state["file_source_change"]["rtt_addr"] == "0x20000020"
 
 
@@ -225,7 +226,7 @@ def test_shared_source_reload_defers_without_losing_changes(tmp_path, monkeypatc
     app = create_app(auth_token=None, project_root=str(tmp_path))
     app.state.mklink_state['device'] = device
     control = install_runtime(app, {'port': 8765, 'token': 'fixture', 'instance_id': 'fixture'})
-    active = ['rtt']
+    active = ['systemview']
     monkeypatch.setattr('mklink.remote.dashboards.active_bridge_dashboards', lambda: list(active))
     order = []
     def parse(*args, **kwargs):
@@ -236,34 +237,36 @@ def test_shared_source_reload_defers_without_losing_changes(tmp_path, monkeypatc
     async def scenario():
         control.sessions['ai'] = Session(str(tmp_path), str(axf))
         axf.write_bytes(b'new')
-        await app.state.check_file_sources()
+        await app.state.check_file_sources(apply=True)
         event = dict(app.state.mklink_state['file_source_change'])
         assert event['state'] == 'deferred' and event['pending']
-        control.sessions.clear()
-        await app.state.check_file_sources()
+        await app.state.check_file_sources(apply=True)
         assert app.state.mklink_state['file_source_change']['sequence'] == event['sequence']
         active.clear()
         # A job, an attaching client and a one-shot operation must also defer it.
         control.jobs.jobs['busy'] = {'state': 'running', 'job_id': 'busy'}
-        await app.state.check_file_sources()
+        await app.state.check_file_sources(apply=True)
         control.jobs.jobs.clear()
         async with control.attach_lock:
-            await app.state.check_file_sources()
+            await app.state.check_file_sources(apply=True)
         async with control.operation_lock:
-            await app.state.check_file_sources()
+            await app.state.check_file_sources(apply=True)
         assert order == []
-        await app.state.check_file_sources()
+        await app.state.check_file_sources(apply=True)
         applied = app.state.mklink_state['file_source_change']
         assert applied['state'] == 'applied' and not applied['pending']
         assert applied['sequence'] != event['sequence']
-        await app.state.check_file_sources()
-        assert order == ['parse']  # Shared reload never implicitly stops another acquisition.
+        await app.state.check_file_sources(apply=True)
+        assert order == ['parse']
+        assert 'ai' in control.sessions  # Existing clients do not block automatic refresh.
+        with pytest.raises(HTTPException, match='Symbols changed'):
+            control.validate_session('ai')
         assert control.last_operation['path'] == 'reload-file-sources'
     with patch('mklink.remote.dashboards.stop_bridge_dashboards', side_effect=lambda **kw: order.append('stop') or []), patch.object(get_managers()['superwatch'], '_runtime', None), patch('mklink.project_config.ensure_rtt_config_updated', return_value={'rtt_addr': '0x20000020'}):
         asyncio.run(scenario())
 
 
-def test_failed_source_reload_requires_new_content_before_automatic_retry(tmp_path):
+def test_failed_source_reload_requires_explicit_retry(tmp_path):
     from unittest.mock import Mock
     device, axf = _connected_symbol_device(tmp_path)
     device._axf = str(axf)
@@ -272,12 +275,14 @@ def test_failed_source_reload_requires_new_content_before_automatic_retry(tmp_pa
     app.state.mklink_state['device'] = device
     axf.write_bytes(b'broken')
     with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]):
-        asyncio.run(app.state.check_file_sources())
+        asyncio.run(app.state.check_file_sources(apply=True))
         asyncio.run(app.state.check_file_sources())
         assert device.parse_axf.call_count == 1, str(app.state.mklink_state['file_source_change'])
         assert app.state.mklink_state['file_source_change']['state'] == 'failed'
         axf.write_bytes(b'new content')
         asyncio.run(app.state.check_file_sources())
+        assert device.parse_axf.call_count == 1
+        asyncio.run(app.state.check_file_sources(apply=True))
         assert device.parse_axf.call_count == 2
 
 
@@ -561,7 +566,7 @@ def test_browser_symbol_upload_rejects_an_unsupported_suffix(tmp_path):
 @pytest.mark.parametrize('failure', [PermissionError('workspace denied'), OSError('disk full')])
 def test_browser_symbol_upload_reports_storage_error(tmp_path, monkeypatch, failure):
     from mklink.remote import api
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise failure
     monkeypatch.setattr(api, '_store_uploaded_file_source', fail)
     app = create_app(auth_token=None, project_root=str(tmp_path))

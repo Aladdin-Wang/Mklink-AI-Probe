@@ -16,6 +16,11 @@ async function loadPickerWithDialog(result: unknown) {
 }
 
 describe('file picker', () => {
+  it('opens a single SVD file in the desktop dialog', async () => {
+    const { open, picker } = await loadPickerWithDialog('F:/chip.svd')
+    expect(await picker.pickSvdFile()).toBe('F:/chip.svd')
+    expect(open).toHaveBeenCalledWith({ multiple: false, filters: [{ name: 'CMSIS SVD', extensions: ['svd'] }] })
+  })
   it('retains a symbol handle and calls the browser picker with its Window receiver', async () => {
     vi.doMock('@tauri-apps/api/core', () => ({ isTauri: () => false }))
     const selected = new File(['ELF'], 'app.axf')

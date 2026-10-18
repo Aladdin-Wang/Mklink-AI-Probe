@@ -645,6 +645,21 @@ def test_device_reparse_uses_writable_elf_sections_for_hpm_dlm(tmp_path, monkeyp
     assert catalog.by_path("flash_constant") is None
 
 
+def test_preview_new_symbols_keeps_active_catalog_and_generation(tmp_path, monkeypatch):
+    axf = tmp_path / 'preview.axf'
+    axf.write_bytes(b'old firmware')
+    info = _dwarf_fixture()
+    monkeypatch.setattr('mklink.dwarf_parser.load_dwarf_info', lambda *a, **kw: info)
+    device = Device(axf=str(axf))
+    original = device.reparse_axf_atomically()
+    axf.write_bytes(b'new firmware')
+    preview = device.preview_axf_catalog()
+    assert preview.generation == original.generation + 1
+    assert not preview.is_stale() and original.is_stale()
+    assert device.symbol_catalog is original
+    assert device._dwarf_info is info
+
+
 def _opaque_layout_fixture() -> DwarfInfo:
     opaque = DwarfStruct(
         name="Opaque",

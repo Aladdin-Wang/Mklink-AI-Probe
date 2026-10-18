@@ -252,6 +252,10 @@ function sortedFieldNames() {
 var CHANNEL_METADATA = {};
 var colorIdx = 0;
 var paused = false;
+// Replay owns this existing chart, while the shared acquisition may continue.
+var replaySession = null;
+var replayLiveChannels = [];
+var replayLiveStatus = null;
 var renderPaused = false;
 var tStart = 0;
 var rawLogLineCount = 0;
@@ -495,8 +499,7 @@ var chartLegendToggle = document.getElementById('chart-legend-toggle');
 var splitPanelControl = document.getElementById('split-panel-control');
 var splitPanelName = document.getElementById('split-panel-name');
 var splitPanelMerge = document.getElementById('split-panel-merge');
-var chartLegendVisible = true;
-var chartLegendHideTimer = null;
+var chartLegendVisible = false;
 
 function updateTimelineInteractionUI() {
   if (!IS_SUPERWATCH_MODE) return;
@@ -508,12 +511,6 @@ function updateTimelineInteractionUI() {
   }
   var minimapWrap = document.getElementById('minimap-wrap');
   if (minimapWrap) minimapWrap.classList.remove('is-live-locked');
-}
-
-function clearChartLegendHideTimer() {
-  if (chartLegendHideTimer === null) return;
-  clearTimeout(chartLegendHideTimer);
-  chartLegendHideTimer = null;
 }
 
 function setChartLegendVisible(visible) {
@@ -532,29 +529,9 @@ function setChartLegendVisible(visible) {
   }
 }
 
-function hideChartLegend() {
-  clearChartLegendHideTimer();
-  setChartLegendVisible(false);
-}
-
-function scheduleChartLegendHide(delay) {
-  clearChartLegendHideTimer();
-  if (!chartLegendVisible) return;
-  chartLegendHideTimer = setTimeout(hideChartLegend, delay === undefined ? 700 : delay);
-}
-
-function showChartLegend(autoHideDelay) {
-  clearChartLegendHideTimer();
-  setChartLegendVisible(true);
-  if (autoHideDelay !== undefined) scheduleChartLegendHide(autoHideDelay);
-}
-
-function revealChartLegendAfterAction() {
-  showChartLegend();
-  var pointerInside = (chartLegend && chartLegend.matches(':hover')) ||
-    (chartLegendToggle && chartLegendToggle.matches(':hover'));
-  if (!pointerInside) scheduleChartLegendHide(2000);
-}
+function hideChartLegend() { setChartLegendVisible(false); }
+function showChartLegend() { setChartLegendVisible(true); }
+function revealChartLegendAfterAction() { showChartLegend(); }
 
 function visibleChartChannelNames() {
   var names = [];
@@ -578,7 +555,6 @@ function updateChartLegend() {
   var hasLegend = IS_BINARY_WAVEFORM_MODE && names.length > 0;
   if (chartLegendToggle) chartLegendToggle.hidden = !hasLegend;
   if (!hasLegend) {
-    clearChartLegendHideTimer();
     setChartLegendVisible(false);
     return;
   }
@@ -609,7 +585,7 @@ function updateChartLegend() {
     }
     chartLegend.appendChild(row);
   }
-  showChartLegend(2000);
+  setChartLegendVisible(chartLegendVisible);
 }
 
 function updateSplitPanelControl(active, dividerY) {
@@ -669,17 +645,9 @@ if (chartLegend) {
     e.stopPropagation();
     setSplitChannel(action.dataset.channel || '');
   }, { signal: viewerAbortController.signal });
-  chartLegend.addEventListener('mouseenter', clearChartLegendHideTimer,
-    { signal: viewerAbortController.signal });
-  chartLegend.addEventListener('mouseleave', function() { scheduleChartLegendHide(); },
-    { signal: viewerAbortController.signal });
 }
 
 if (chartLegendToggle) {
-  chartLegendToggle.addEventListener('mouseenter', function() { showChartLegend(); },
-    { signal: viewerAbortController.signal });
-  chartLegendToggle.addEventListener('mouseleave', function() { scheduleChartLegendHide(); },
-    { signal: viewerAbortController.signal });
   chartLegendToggle.addEventListener('click', function() {
     if (chartLegendVisible) hideChartLegend();
     else showChartLegend();
@@ -912,6 +880,8 @@ function superwatchErrorMessage(message, name) {
 
 function syncDashboardStatus(d) {
   if (!d) return;
+  replayLiveStatus = d;
+  if (replaySession) return;
   if (Object.prototype.hasOwnProperty.call(d, 'error')) {
     acquisitionError = typeof d.error === 'string' ? d.error : '';
     renderBinaryHealth();
@@ -962,6 +932,7 @@ function syncDashboardStatus(d) {
 }
 
 function updateCollectionUI(state) {
+  if (replaySession) { updateReplayControls(); return; }
   var previousState = collectionState;
   collectionState = state;
   var btnStart = document.getElementById('btn-start');
@@ -1026,6 +997,7 @@ if (typeof window !== 'undefined') {
 }
 
 document.getElementById('btn-start').addEventListener('click', function() {
+  if (replaySession) { replaySession.control('play'); return; }
   if (typeof CONFIG !== 'undefined' && CONFIG.deviceConnected === false) return;
   if (IS_BINARY_WAVEFORM_MODE && renderPaused && acquisitionState === 'running') {
     renderPaused = false;
@@ -1081,11 +1053,13 @@ document.getElementById('btn-start').addEventListener('click', function() {
     });
 });
 document.getElementById('btn-pause').addEventListener('click', function() {
+  if (replaySession) { replaySession.control('toggle'); return; }
   if (collectionState === 'stopped') return;
   renderPaused = collectionState !== 'paused';
   updateCollectionUI(renderPaused ? 'paused' : 'running');
 });
 function stopCollection() {
+  if (replaySession) { replaySession.control('stop'); return Promise.resolve(); }
   return fetch(API_CTRL + 'stop', {method:'POST'})
     .then(function(r){
       return r.json().catch(function(){ return {}; }).then(function(d){
@@ -1116,6 +1090,7 @@ document.getElementById('btn-apply-buffer').addEventListener('click', function()
   setBufferCapacity(val);
 });
 document.getElementById('btn-apply-interval').addEventListener('click', function() {
+  if (replaySession) return;
   var val = parseFloat(intervalInput.value);
   var minimumInterval = IS_SUPERWATCH_MODE ? 0.000001 : 0;
   if (!Number.isFinite(val) || val < minimumInterval || val > 60) {
@@ -1497,6 +1472,7 @@ function floatToHexBytes(value, isDouble) {
 }
 
 function _writeWatchValue(name, valueStr, meta, td) {
+  if (replaySession) return;
   var parsed = parseSmartValue(valueStr, meta.type);
   var addr = parseInt(meta.address, 16);
   var width = meta.size;
@@ -1917,7 +1893,7 @@ function _bindWatchDelegates(tbody) {
         superwatchAddName(childPath);
       } else {
         removeWatchChannel(childPath);
-        if (typeof IS_SUPERWATCH_MODE !== 'undefined' && IS_SUPERWATCH_MODE) {
+        if (!replaySession && typeof IS_SUPERWATCH_MODE !== 'undefined' && IS_SUPERWATCH_MODE) {
           fetch(API_SW + 'remove', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:childPath})});
         }
       }
@@ -1939,6 +1915,7 @@ function _bindWatchDelegates(tbody) {
     // Struct expand/collapse button (works for both top-level and sub-structs)
     var expandBtn = e.target.closest('.watch-expand-btn');
     if (expandBtn) {
+      if (replaySession) return;
       e.stopPropagation();
       var name = expandBtn.dataset.name;
       if (_expandedRows[name]) {
@@ -1973,7 +1950,7 @@ function _bindWatchDelegates(tbody) {
     if (!n) return;
     e.stopPropagation();
     removeWatchChannel(n);
-    if (typeof IS_SUPERWATCH_MODE !== 'undefined' && IS_SUPERWATCH_MODE) {
+    if (!replaySession && typeof IS_SUPERWATCH_MODE !== 'undefined' && IS_SUPERWATCH_MODE) {
       fetch(API_SW + 'remove', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:n})});
     }
   });
@@ -1998,6 +1975,7 @@ function _bindWatchDelegates(tbody) {
   }
   // Watch value editing: double-click to edit
   tbody.addEventListener('dblclick', function(e) {
+    if (replaySession) return;
     var td = e.target.closest('td[data-col="value"]');
     if (!td) return;
     var tr = td.closest('tr[data-channel]');
@@ -2781,13 +2759,22 @@ function exportBinaryHistorySnapshot(snapshot) {
 
 function exportPNG() {
   drawChart();
-  var dataURL = canvas.toDataURL('image/png');
-  var a = document.createElement('a');
-  a.href = dataURL;
-  a.download = 'jscope_chart.png';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  try {
+    var dataURL = canvas.toDataURL('image/png');
+    var bytes = Uint8Array.from(atob(dataURL.split(',')[1]), function(c) { return c.charCodeAt(0); });
+    var blob = new Blob([bytes], { type: 'image/png' });
+    if (typeof window.__MKLINK_SAVE_BLOB__ === 'function') {
+      Promise.resolve(window.__MKLINK_SAVE_BLOB__('waveform-chart.png', blob)).catch(function(error) {
+        showControlError('Save failed: ' + error.message);
+      });
+    } else {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'waveform-chart.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    }
+  } catch (error) { showControlError('Save failed: ' + error.message); }
 }
 
 // ============================================================
@@ -2901,7 +2888,8 @@ function processPoint(point) {
   }
 }
 
-function setHiddenChannels(names) {
+function setHiddenChannels(names, replay) {
+  if (replaySession && !replay) return;
   hiddenChannelNames = {};
   if (Array.isArray(names)) {
     for (var i = 0; i < names.length; i++) hiddenChannelNames[String(names[i])] = true;
@@ -2930,6 +2918,7 @@ function removeArraySnapshotField() {
 }
 
 function setArraySnapshot(snapshot) {
+  if (replaySession) return;
   if (!IS_SUPERWATCH_MODE) return false;
   if (!snapshot || !snapshot.name || !Array.isArray(snapshot.values)) {
     removeArraySnapshotField();
@@ -3091,6 +3080,8 @@ function discardPausedBinarySnapshot() {
 
 function configureBinaryChannels(channels) {
   if (!IS_BINARY_WAVEFORM_MODE || !Array.isArray(channels)) return;
+  if (replaySession) { replayLiveChannels = channels; return; }
+  replayLiveChannels = channels;
   if (binaryChannelNames.length) saveViewerPreferences();
   var metadata = {};
   var nextNames = [];
@@ -3187,6 +3178,7 @@ function configureBinaryChannels(channels) {
 }
 
 function acceptBinaryBatch(batch, channels) {
+  if (replaySession) return false;
   if (!IS_BINARY_WAVEFORM_MODE || !batch || batch.layout !== 'sample-major-float32') return false;
   if (singleTriggerCaptureFrozen) return true;
   if (channels) configureBinaryChannels(channels);
@@ -3251,6 +3243,7 @@ function acceptBinaryBatch(batch, channels) {
 }
 
 function acceptBinarySummary(summary, channels) {
+  if (replaySession) return false;
   if (!IS_SUPERWATCH_MODE || !summary) return false;
   if (singleTriggerCaptureFrozen) return true;
   if (channels) configureBinaryChannels(channels);
@@ -3302,6 +3295,7 @@ function setBinaryVisibleRangeRequester(requester) {
 }
 
 function requestBinaryVisibleRangeAfterTimelineChange() {
+  if (replaySession) { replaySession.control('inspect'); return; }
   if (IS_SUPERWATCH_MODE && collectionState !== 'running' && binaryVisibleRangeRequester) {
     binaryVisibleRangeRequestCount++;
     canvas.dataset.binaryVisibleRangeRequests = String(binaryVisibleRangeRequestCount);
@@ -3355,7 +3349,7 @@ function parseBinaryEnvelope(envelope) {
       envelope.pointCount > 2 * envelope.pixelWidth * envelope.channelCount) return null;
   var times = new Float64Array(envelope.times);
   var timeIndices = new Uint32Array(envelope.timeIndices);
-  var values = new Float32Array(envelope.values);
+  var values = envelope.replay ? new Float64Array(envelope.values) : new Float32Array(envelope.values);
   var offsets = new Uint32Array(envelope.channelOffsets);
   if (timeIndices.length !== envelope.pointCount || values.length !== envelope.pointCount ||
       offsets.length !== envelope.channelCount + 1 || offsets[0] !== 0 ||
@@ -3412,6 +3406,7 @@ function nearestBinaryEnvelopeSample(name, viewTime) {
 }
 
 function renderBinaryEnvelope(envelope, renderWhilePaused) {
+  if (replaySession && !envelope.replay) return false;
   if (!IS_BINARY_WAVEFORM_MODE) return false;
   if (singleTriggerCaptureFrozen) return true;
   canvas.dataset.binaryEnvelopeRequestId = String(envelope && envelope.requestId !== undefined
@@ -3458,6 +3453,7 @@ function renderBinaryEnvelope(envelope, renderWhilePaused) {
 }
 
 function resetBinaryStream() {
+  if (replaySession) return;
   if (!IS_BINARY_WAVEFORM_MODE) return;
   superwatchWriteEvents = [];
   superwatchLastWriteEvent = 0;
@@ -3536,10 +3532,107 @@ function renderBinaryFrame() {
   updateWatchTable();
 }
 
+function updateReplayControls() {
+  if (!replaySession) return;
+  var playing = replaySession.playing;
+  document.getElementById('btn-start').disabled = playing;
+  document.getElementById('btn-pause').disabled = false;
+  document.getElementById('btn-pause').textContent = playing ? t('pause') : t('resume');
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('btn-start').classList.toggle('active', playing);
+  document.getElementById('btn-pause').classList.toggle('active', !playing);
+  var badge = document.getElementById('collection-status-badge');
+  badge.textContent = (CONFIG.lang === 'en' ? 'Replay · ' : '回放 · ') + t(playing ? 'running' : 'paused');
+  badge.className = playing ? 'status-running' : 'status-paused';
+}
+
+function beginReplay(metadata, control) {
+  if (!IS_SUPERWATCH_MODE) return false;
+  if (replaySession) endReplay();
+  var liveChannels = replayLiveChannels;
+  var liveHidden = Object.keys(hiddenChannelNames);
+  var liveSpan = superwatchTimelineSpan;
+  saveViewerPreferences();
+  resetBinaryStream();
+  setArraySnapshot(null);
+  configureBinaryChannels(metadata.channels.map(function(channel) { return {name: channel.name, type: 'float'}; }));
+  setHiddenChannels([]);
+  replayLiveChannels = liveChannels;
+  replaySession = {control: control, playing: false, duration: Math.max(.001, metadata.duration), liveHidden: liveHidden, liveSpan: liveSpan,
+    overview: Object.fromEntries((metadata.overview || []).map(function(channel) { return [channel.name, channel.points]; }))};
+  binaryTimeOrigin = 0;
+  binaryBufferStart = 0;
+  binaryBufferEnd = replaySession.duration;
+  binaryBufferedSamples = metadata.rows;
+  frozenFullTimeRange = {tMin: 0, tMax: replaySession.duration};
+  frozenSharedYRange = null;
+  collectionState = 'paused'; paused = true; renderPaused = true;
+  superwatchTimelineSpan = Math.min(10, replaySession.duration);
+  timelineView.offset = 0;
+  document.getElementById('btn-apply-interval').disabled = true;
+  document.getElementById('btn-apply-buffer').disabled = true;
+  canvas.dataset.source = 'replay';
+  updateReplayControls();
+  updateTimelineInteractionUI();
+  drawChart(); drawMinimap();
+  return true;
+}
+
+function setReplayPosition(position, playing, follow) {
+  if (!replaySession) return;
+  replaySession.playing = playing;
+  if (follow) {
+    var span = Math.min(replaySession.duration, superwatchTimelineSpan || replaySession.duration);
+    var available = replaySession.duration - span;
+    timelineView.offset = available > 0 ? Math.max(0, Math.min(1, (position - span) / available)) : 0;
+  }
+  canvas.dataset.replayPosition = String(position);
+  updateReplayControls();
+}
+
+function renderReplayView(view) {
+  if (!replaySession) return;
+  var times = [], values = [], indices = [], offsets = [0];
+  view.channels.forEach(function(channel) {
+    channel.points.forEach(function(point) {
+      indices.push(times.length); times.push(point[0] * 1000); values.push(point[1]);
+    });
+    offsets.push(values.length);
+    var field = FIELDS[channel.name];
+    if (field && field.ringBuf) {
+      field.ringBuf.clear();
+      if (Number.isFinite(channel.latest)) field.ringBuf.push(view.position, channel.latest);
+    }
+  });
+  renderBinaryEnvelope({replay: true, requestId: view.id, mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+    channelCount: view.channels.length, pointCount: values.length, pixelWidth: Math.max(1, view.width),
+    times: new Float64Array(times).buffer, timeIndices: new Uint32Array(indices).buffer,
+    values: new Float64Array(values).buffer, channelOffsets: new Uint32Array(offsets).buffer}, true);
+  updateUI(); updateWatchTable();
+}
+
+function endReplay() {
+  if (!replaySession) return;
+  var session = replaySession;
+  replaySession = null;
+  // Avoid saving offline channel preferences over the live layout.
+  binaryChannelNames = []; binaryChannelSignature = null;
+  configureBinaryChannels(replayLiveChannels);
+  resetBinaryStream();
+  setHiddenChannels(session.liveHidden);
+  superwatchTimelineSpan = session.liveSpan;
+  paused = false; renderPaused = false;
+  document.getElementById('btn-apply-interval').disabled = false;
+  document.getElementById('btn-apply-buffer').disabled = false;
+  canvas.dataset.source = 'live';
+  if (replayLiveStatus) syncDashboardStatus(replayLiveStatus);
+  else updateCollectionUI('stopped');
+  drawChart(); drawMinimap(); updateWatchTable();
+}
+
 function disposeViewer() {
   saveViewerPreferences();
   clearTimeout(viewerPreferenceTimer);
-  clearChartLegendHideTimer();
   stopWatchColumnResize();
   viewerResizeObserver.disconnect();
   viewerAbortController.abort();
@@ -3550,6 +3643,12 @@ if (typeof window !== 'undefined') {
   if (!window.__waveformViewers) window.__waveformViewers = {};
   var binaryViewer = window.__waveformViewers[CONFIG.mode] || {};
   binaryViewer.setWorkspace = setWorkspace;
+  binaryViewer.beginReplay = beginReplay;
+  binaryViewer.setReplayPosition = setReplayPosition;
+  binaryViewer.renderReplayView = renderReplayView;
+  binaryViewer.endReplay = endReplay;
+  binaryViewer.isReplaying = function() { return !!replaySession; };
+  binaryViewer.setReplayHiddenChannels = function(names) { if (replaySession) setHiddenChannels(names, true); };
   binaryViewer.configureBinaryChannels = configureBinaryChannels;
   binaryViewer.acceptBinaryBatch = acceptBinaryBatch;
   binaryViewer.acceptBinarySummary = acceptBinarySummary;
@@ -5025,6 +5124,17 @@ function drawMinimap() {
   minimapCtx.globalAlpha = 0.4;
   for (var ni = 0; ni < names.length; ni++) {
     var meta = FIELDS[names[ni]];
+    var replayOverview = replaySession && replaySession.overview[names[ni]];
+    if (meta.visible && replayOverview && replayOverview.length) {
+      var overviewMin = Infinity, overviewMax = -Infinity;
+      replayOverview.forEach(function(point) { overviewMin = Math.min(overviewMin, point[1]); overviewMax = Math.max(overviewMax, point[1]); });
+      minimapCtx.strokeStyle = meta.color; minimapCtx.lineWidth = 1; minimapCtx.beginPath();
+      replayOverview.forEach(function(point, index) {
+        var x = mtx(point[0]), y = H - (point[1] - overviewMin) / (overviewMax - overviewMin || 1) * (H - 4) - 2;
+        if (index === 0) minimapCtx.moveTo(x, y); else minimapCtx.lineTo(x, y);
+      });
+      minimapCtx.stroke(); continue;
+    }
     if (!meta.visible || (!meta.isArraySnapshot && meta.ringBuf.count < 2) ||
         (meta.isArraySnapshot && (!meta.arrayValues || meta.arrayValues.length < 2))) continue;
     var pointsOnly = signalStyle(names[ni]).renderMode === 'points';
@@ -5194,6 +5304,7 @@ function showInspectorTree(tree) {
 }
 
 function superwatchAddName(name) {
+  if (replaySession) return;
   name = String(name || '').trim();
   if (!name) return;
   fetch(API_SW + 'add', {
@@ -5627,6 +5738,7 @@ var helpOpen = false;
 addViewerGlobalListener(document, 'keydown', function(e) {
   if (helpOpen || isEditableKeyboardTarget(e.target)) return;
   if (e.key === 'p' || e.key === 'P') {
+    if (replaySession) { replaySession.control('toggle'); return; }
     if (collectionState === 'running') {
       renderPaused = true;
       updateCollectionUI('paused');
@@ -5639,7 +5751,7 @@ addViewerGlobalListener(document, 'keydown', function(e) {
     e.preventDefault();
     toggleRawLog();
   }
-  if (e.key === 'e' && (e.ctrlKey || e.metaKey) && !e.altKey) {
+  if (!IS_SUPERWATCH_MODE && e.key === 'e' && (e.ctrlKey || e.metaKey) && !e.altKey) {
     e.preventDefault();
     exportCSV();
   }
@@ -5650,7 +5762,7 @@ addViewerGlobalListener(document, 'keydown', function(e) {
 });
 
 // -- export button bindings --
-document.getElementById('btn-export-csv').addEventListener('click', function() { exportCSV(); });
+document.getElementById('btn-export-csv')?.addEventListener('click', function() { exportCSV(); });
 document.getElementById('btn-export-png').addEventListener('click', function() { exportPNG(); });
 document.getElementById('btn-save-project')?.addEventListener('click', function() { saveProject(); });
 document.getElementById('btn-load-project')?.addEventListener('click', function() {
@@ -5717,6 +5829,7 @@ function preferenceKey() {
   return CONFIG.viewerSettingsKey || 'mklink.desktop.settings.v1.waveform.' + CONFIG.mode;
 }
 function saveViewerPreferences() {
+  if (replaySession) return;
   if (!IS_SUPERWATCH_MODE || !viewerPreferencesReady) return;
   try {
     var state = serializeState();

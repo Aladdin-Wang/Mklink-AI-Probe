@@ -31,7 +31,7 @@ async function onlineFlashApiModule() {
 
 vi.mock('../composables/useMklinkApi', () => ({
   useMklinkApi: () => ({
-    deviceStatus: reactive({ connected: true }),
+    deviceStatus: ref({ connected: true }),
     startStatusPolling: vi.fn(),
     stopStatusPolling: vi.fn(),
     flashDevice: vi.fn(),
@@ -318,12 +318,13 @@ describe('useOnlineFlashApi', () => {
     await api.stopJob('job/1')
 
     expect(vi.mocked(fetch).mock.calls.map(([url]) => url)).toEqual([
+      '/api/runtime/select',
       '/api/online-flash/jobs',
       '/api/online-flash/jobs/active',
       '/api/online-flash/jobs/job%2F1',
       '/api/online-flash/jobs/job%2F1/stop',
     ])
-    expect(vi.mocked(fetch).mock.calls[0][1]).toEqual(expect.objectContaining({
+    expect(vi.mocked(fetch).mock.calls[1][1]).toEqual(expect.objectContaining({
       method: 'POST',
       body: JSON.stringify(request),
     }))
@@ -331,13 +332,31 @@ describe('useOnlineFlashApi', () => {
   })
 
   it('submits online jobs once with a retained ID after response loss', async () => {
-    vi.mocked(fetch).mockRejectedValue(new Error('response lost'))
+    vi.mocked(fetch).mockImplementation(async url => {
+      if (String(url).endsWith('/runtime/select')) return new Response('{}', { status: 200 })
+      throw new Error('response lost')
+    })
     const api = await onlineFlashApi()
     await expect(api.createJob({ actions: ['connect', 'disconnect'], probe_id: 'selected' }, 'retained-id'))
       .rejects.toThrow('request_id=retained-id')
-    expect(fetch).toHaveBeenCalledTimes(1)
-    const headers = new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const headers = new Headers(vi.mocked(fetch).mock.calls[1][1]?.headers)
     expect(headers.get('X-MKLink-Request-Id')).toBe('retained-id')
+  })
+
+  it('pins the selected probe generation and never submits a job after selection failure', async () => {
+    vi.mocked(fetch).mockImplementation(async url => new Response(JSON.stringify(
+      String(url).endsWith('/runtime/select') ? { probe_id: 'usb-physical', device_generation: 3 } : {},
+    ), { status: 200 }))
+    const api = await onlineFlashApi()
+    await api.createJob({ actions: ['connect', 'disconnect'], probe_id: 'DAP-SERIAL' })
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toEqual({ cmsis_dap_id: 'DAP-SERIAL' })
+    expect(new Headers(vi.mocked(fetch).mock.calls[1][1]?.headers).get('X-MKLink-Probe')).toBe('usb-physical')
+    expect(new Headers(vi.mocked(fetch).mock.calls[1][1]?.headers).get('X-MKLink-Device-Generation')).toBe('3')
+    vi.mocked(fetch).mockClear()
+    vi.mocked(fetch).mockResolvedValue(new Response('{"detail":"Probe occupied"}', { status: 409 }))
+    await expect(api.createJob({ actions: ['connect', 'disconnect'], probe_id: 'DAP-SERIAL' })).rejects.toMatchObject({ notStarted: true })
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it('preserves structured API conflict details', async () => {
@@ -572,6 +591,7 @@ function viewFetch(targets = [installedTarget]) {
   return vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
     const url = String(input)
     const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
+    if (url.endsWith('/runtime/select')) return json({ same_runtime: true })
     if (url.endsWith('/probes')) return json([probeFixture])
     if (url.includes('/targets?')) return json(targets)
     if (url.includes('/targets/') && url.endsWith('/algorithms')) {
@@ -1266,6 +1286,7 @@ describe('online flash task workspace behavior', () => {
     const wrapper = mount(await onlineFlashView())
     await readyToStart(wrapper)
     await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await flushPromises()
     if (mode === 'probe-change') wrapper.findComponent({name:'ProbeSettingsPanel'}).vm.$emit('update:selectedId', 'other-probe')
     else window.dispatchEvent(new StorageEvent('storage', {key:`mklink.onlineFlash.pending.mklink-1.${requestId}`}))
     await flushPromises()

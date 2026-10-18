@@ -25,18 +25,28 @@
     <span class="status-divider"></span>
     <!-- Device connection status -->
     <span :class="['badge', deviceStatus.connected ? 'badge-ok' : 'badge-err']">
-      {{ deviceStatus.connected ? tr('已连接', 'Connected') : tr('未连接', 'Disconnected') }}
+      {{ recoveryLabel || (deviceStatus.connected ? tr('已连接', 'Connected') : tr('未连接', 'Disconnected')) }}
     </span>
+    <span v-if="deviceStatus.connection_recovery?.errors?.length" class="badge badge-err" :title="deviceStatus.connection_recovery.errors.join('\n')">{{ tr('连接已恢复，采集待确认', 'Connected; review capture') }}</span>
     <span v-if="deviceStatus.idcode" class="badge badge-info">{{ deviceStatus.idcode }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useBackendHealth } from '../composables/useBackendHealth'
 import { tr } from '../composables/useLanguage'
 
 const { deviceStatus } = useMklinkApi()
+const recoveryLabel = computed(() => {
+  const state = deviceStatus.value.connection_recovery?.state
+  if (state === 'waiting') return tr('等待下载器恢复', 'Waiting for probe')
+  if (state === 'reconnecting') return tr('正在恢复连接', 'Reconnecting')
+  if (state === 'failed') return tr('恢复失败，请重新连接', 'Recovery failed; reconnect')
+  if (state === 'expired') return tr('已断开', 'Disconnected')
+  return ''
+})
 const { backendState, backendPort, isTauri, restart } = useBackendHealth()
 
 async function handleRestart() {

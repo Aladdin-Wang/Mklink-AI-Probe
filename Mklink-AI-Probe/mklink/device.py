@@ -349,7 +349,7 @@ class Device:
     # ------------------------------------------------------------------
     # Connection
     # ------------------------------------------------------------------
-    def _connect(self) -> None:
+    def _connect(self, *, load_symbols: bool = True) -> None:
         from mklink.bridge import MKLinkSerialBridge
         from mklink.discovery import find_mklink_cdc_port
         from mklink.project_config import load_config
@@ -413,7 +413,7 @@ class Device:
                 project_root=self._project_root,
             )
 
-        if self._axf:
+        if self._axf and load_symbols:
             self._load_dwarf_info()
 
         if detected_idcode == 0x1000563D and not (config.get("swd_clock") or config.get("debug_speed")):
@@ -537,7 +537,7 @@ class Device:
         with self._symbol_lock:
             return self._symbol_catalog
 
-    def reparse_axf_atomically(
+    def _prepare_axf_catalog(
         self,
         axf_path: str | None = None,
         elf_backend: str | None = None,
@@ -602,12 +602,20 @@ class Device:
         if catalog.fingerprint != fingerprint:
             raise DeviceError("AXF changed while symbols were being parsed")
 
+        return candidate, requested_backend, effective_backend, info, catalog
+
+    def preview_axf_catalog(self):
+        """Parse new symbols without changing the active target layout."""
+        return self._prepare_axf_catalog()[-1]
+
+    def reparse_axf_atomically(self, axf_path: str | None = None, elf_backend: str | None = None):
+        candidate, requested, effective, info, catalog = self._prepare_axf_catalog(axf_path, elf_backend)
         with self._symbol_lock:
             self._axf = candidate
             self._dwarf_info = info
             self._symbol_catalog = catalog
-            self._elf_backend_requested = requested_backend
-            self._elf_backend = effective_backend
+            self._elf_backend_requested = requested
+            self._elf_backend = effective
             self._axf_error = None
         return catalog
 
@@ -1679,6 +1687,21 @@ class Device:
             "name": descriptor.get("name", ""),
         }
 
+    def rtt_inspect(self, address: int) -> dict[str, Any]:
+        """Inspect initialized target channels without starting or consuming RTT."""
+        if not self.connected or not self.idcode:
+            raise DeviceError("Connect a target with a valid chip ID before inspecting RTT")
+        info = self._read_rtt_control_block(address)
+        return {
+            "control_block_addr": hex(address),
+            "max_up_buffers": info["max_up_buffers"],
+            "max_down_buffers": info["max_down_buffers"],
+            "channels": [item["channel"] for item in info["up_buffers"]
+                         if item["active"] and item["channel"] < _RTT_FIRMWARE_MAX_CHANNELS],
+            "up_buffers": [self._public_rtt_buffer(item) for item in info["up_buffers"]],
+            "down_buffers": [self._public_rtt_buffer(item) for item in info["down_buffers"]],
+        }
+
     def _read_rtt_down_buffers(self, control_block_addr: int) -> list[dict]:
         info = self._read_rtt_control_block(control_block_addr)
         return [self._public_rtt_buffer(item) for item in info["down_buffers"]]
@@ -1737,6 +1760,7 @@ class Device:
         *,
         channel: int = 0,
         channels: list[int] | None = None,
+        all_channels: bool = False,
         search_size: int = 0,
         mode: int | None = None,
     ) -> dict:
@@ -1788,6 +1812,14 @@ class Device:
         control_info = self._read_rtt_control_block(control_block_addr)
         if not multiplex and control_info['max_up_buffers'] > 3:
             raise DeviceError('RTT up descriptor count exceeds legacy firmware limit of 3')
+        if all_channels:
+            selected = [item['channel'] for item in control_info['up_buffers']
+                        if item['active'] and item['channel'] < (8 if multiplex else 3)]
+            if not selected:
+                raise DeviceError('RTT control block has no active supported up channels')
+            if not multiplex:
+                selected = [channel if channel in selected else selected[0]]
+            channel = selected[0]
         for selected_channel in selected:
             self._validate_rtt_channel(control_info, selected_channel)
         startup_timings['control_block_validation'] = round((time.monotonic()-stage_started)*1000, 2)
@@ -1844,6 +1876,7 @@ class Device:
             result["down_buffer_probe_count"] = len(control_info["down_buffers"])
             result["buffer_source"] = "target-control-block"
             result["down_buffer_source"] = "target-control-block"
+            result['channels'] = selected
             self._rtt_control_block_info = control_info
             self._rtt_write_guard_tail = b""
             startup_timings['probe_start'] = round((time.monotonic()-stage_started)*1000, 2)

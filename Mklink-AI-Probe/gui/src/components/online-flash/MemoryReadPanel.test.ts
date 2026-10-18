@@ -87,7 +87,7 @@ describe('MemoryReadPanel', () => {
   })
 
   it('prompts for a range, reads it in chunks, then saves the returned BIN', async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3, 4]), {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ probe_id: 'physical', device_generation: 1 }))).mockResolvedValue(new Response(new Uint8Array([1, 2, 3, 4]), {
       status: 200,
       headers: { 'Content-Type': 'application/octet-stream' },
     }))
@@ -129,6 +129,7 @@ describe('MemoryReadPanel', () => {
 
   it('uses the target sector size for each read request', async () => {
     const fetch = vi.fn().mockImplementation(async (_url: string, options: RequestInit) => {
+      if (_url.endsWith('/api/runtime/select')) return new Response(JSON.stringify({ probe_id: 'physical', device_generation: 1 }))
       const size = Number((JSON.parse(String(options.body)) as { size: number }).size)
       return new Response(new Uint8Array(size), {
         status: 200,
@@ -151,8 +152,11 @@ describe('MemoryReadPanel', () => {
     await wrapper.get('[data-testid="memory-read-confirm"]').trigger('click')
     await flushPromises()
 
-    expect(fetch).toHaveBeenCalledOnce()
-    const payload = JSON.parse(String(fetch.mock.calls[0]?.[1].body)) as { size: number; chunk_sizes: number[] }
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const headers = new Headers(fetch.mock.calls[1]?.[1].headers)
+    expect(headers.get('X-MKLink-Probe')).toBe('physical')
+    expect(headers.get('X-MKLink-Device-Generation')).toBe('1')
+    const payload = JSON.parse(String(fetch.mock.calls[1]?.[1].body)) as { size: number; chunk_sizes: number[] }
     expect(payload.size).toBe(0x1000)
     expect(payload.chunk_sizes).toEqual([0x800, 0x800])
     expect(wrapper.get('[data-testid="memory-read-log"]').text()).toContain('2048 Bytes')

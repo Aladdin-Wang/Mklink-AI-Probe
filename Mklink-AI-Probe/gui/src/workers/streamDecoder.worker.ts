@@ -11,6 +11,8 @@ import {
   SystemViewIntervalRing,
 } from '../lib/stream/systemViewRing'
 
+import { SerialLineFramer } from '../lib/stream/serialLineFramer'
+
 export type DecoderMode = 'default' | 'serial-log' | 'serial-terminal'
 
 export type WorkerInput =
@@ -145,6 +147,7 @@ export type WorkerOutput =
         direction: 'RX' | 'TX'
         rawHex: string
         ascii: string
+        continuesPrevious?: boolean
       }>
     }
   | { type: 'serial-terminal'; sequence: bigint; text: string; port: string; session: string }
@@ -276,8 +279,7 @@ export class StreamDecoder {
   private serialPort = ''
   private serialSource = ''
   private serialDecoder = new TextDecoder('utf-8')
-  private serialLineBytes: number[] = []
-  private serialLineTimestampNs = 0n
+  private serialLineFramer = new SerialLineFramer()
   private serialBufferedItems = 0
 
   constructor(post: PostOutput) {
@@ -341,7 +343,7 @@ export class StreamDecoder {
           this.serialPort = message.port
           this.serialSource = ''
           this.serialDecoder = new TextDecoder('utf-8')
-          this.serialLineBytes = []
+          this.serialLineFramer = new SerialLineFramer()
           this.serialBufferedItems = 0
         }
         break
@@ -518,7 +520,7 @@ export class StreamDecoder {
     if (session !== this.serialSource) {
       this.serialSource = session
       this.serialDecoder = new TextDecoder('utf-8')
-      this.serialLineBytes = []
+      this.serialLineFramer = new SerialLineFramer()
       this.serialBufferedItems = 0
     }
 
@@ -537,36 +539,13 @@ export class StreamDecoder {
       throw new RangeError('Serial frames require a serial decoder mode')
     }
 
-    const lines: Array<{
-      timestampNs: bigint
-      direction: 'RX' | 'TX'
-      rawHex: string
-      ascii: string
-    }> = []
-    if (direction === 'TX') {
-      lines.push(this.serialLine(decoded.timestampNs, direction, bytes))
-    } else {
-      for (const byte of bytes) {
-        if (this.serialLineBytes.length === 0) this.serialLineTimestampNs = decoded.timestampNs
-        this.serialLineBytes.push(byte)
-        if (byte === 0x0a || this.serialLineBytes.length >= 4096) {
-          lines.push(this.serialLine(
-            this.serialLineTimestampNs,
-            direction,
-            Uint8Array.from(this.serialLineBytes),
-          ))
-          this.serialLineBytes = []
-          this.serialLineTimestampNs = 0n
-        }
-      }
-    }
-    if (lines.length) {
-      this.serialBufferedItems = Math.min(
-        this.configuredCapacity,
-        this.serialBufferedItems + lines.length,
-      )
-      this.post({ type: 'serial-lines', sequence: decoded.sequence, lines, port, session })
-    }
+    // Publish incomplete lines now and extend them when later transport chunks arrive.
+    const lines = this.serialLineFramer.frame(bytes, direction).map(fragment => ({
+      ...this.serialLine(decoded.timestampNs, direction, fragment.bytes),
+      continuesPrevious: fragment.continuesPrevious,
+    }))
+    this.serialBufferedItems = Math.min(this.configuredCapacity, this.serialBufferedItems + 1)
+    this.post({ type: 'serial-lines', sequence: decoded.sequence, lines, port, session })
   }
 
   private serialLine(
@@ -580,7 +559,9 @@ export class StreamDecoder {
       timestampNs,
       direction,
       rawHex,
-      ascii: new TextDecoder('utf-8').decode(bytes),
+      ascii: direction === 'RX'
+        ? this.serialDecoder.decode(bytes, { stream: true })
+        : new TextDecoder('utf-8').decode(bytes),
     }
   }
 
@@ -1283,8 +1264,7 @@ export class StreamDecoder {
     this.superwatchMetadataVersion = 0
     this.superwatchMetadataSignature = null
     this.serialDecoder = new TextDecoder('utf-8')
-    this.serialLineBytes = []
-    this.serialLineTimestampNs = 0n
+    this.serialLineFramer = new SerialLineFramer()
     this.serialBufferedItems = 0
     this.clearTelemetry()
   }

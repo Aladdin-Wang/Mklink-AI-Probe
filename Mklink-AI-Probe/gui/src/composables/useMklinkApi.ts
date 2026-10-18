@@ -24,7 +24,6 @@ import type { RttEncoding } from '../lib/desktopSettings'
 import { API_BASE, IS_REMOTE } from '../lib/runtimeEndpoint'
 import { sharedRuntime } from './useBackendHealth'
 import { trackSymbolSource } from '../lib/trackedSymbolSource'
-import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
 import { resetDeviceSymbolCatalog } from './useSymbolCatalog'
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -122,9 +121,7 @@ export function useMklinkApi() {
         data.append('file', next)
         return api<UploadedFileSource>('/api/files/symbol', { method: 'POST', body: data })
       },
-      connected: () => deviceStatus.value.connected,
-      parse: path => parseAxf(path),
-      refreshRtt: path => refreshRttAddressForSymbol(window.localStorage, path, findRtt),
+      reload: (path, expectedPath) => api(`/api/symbols/reload-sources?${new URLSearchParams({ source_path: path, expected_axf: expectedPath })}`, { method: 'POST' }),
     })
     return uploaded
   }
@@ -166,7 +163,7 @@ export function useMklinkApi() {
   }
 
   async function downloadProbeFirmware(
-    model: 'V3' | 'V4',
+    model: 'V2' | 'V3' | 'V4',
     family: 'microlink' | 'hpmlink' = 'microlink',
   ): Promise<ProbeFirmwareDownload> {
     const query = new URLSearchParams({ model, family })

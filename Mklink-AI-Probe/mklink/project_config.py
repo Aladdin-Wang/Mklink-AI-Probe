@@ -270,7 +270,7 @@ def save_rtt_config(project_root: str, rtt_config: dict) -> None:
     _save_json(project_root, _RTT_CONFIG_FILE, rtt_config)
 
 
-def ensure_rtt_config_updated(project_root: str, *, source_path: str | None = None) -> dict | None:
+def ensure_rtt_config_updated(project_root: str, *, source_path: str | None = None, persist: bool = True) -> dict | None:
     """启动 RTT 前解析当前 AXF/ELF，缺失时回退 MAP，避免沿用旧地址。
 
     Returns:
@@ -296,15 +296,16 @@ def ensure_rtt_config_updated(project_root: str, *, source_path: str | None = No
     if not new_addr and not explicit_source and map_path and Path(map_path).is_file():
         new_addr = find_rtt_addr_from_map(map_path)
     if not new_addr:
-        if explicit_source and rtt.pop("rtt_addr", None) is not None:
+        if explicit_source and rtt.pop("rtt_addr", None) is not None and persist:
             save_rtt_config(project_root, rtt)
         return rtt
 
     old_addr = rtt.get("rtt_addr", "")
     if new_addr != old_addr:
-        print(f"[AUTO] RTT 地址已更新: {old_addr or '(空)'} → {new_addr}（来源: 当前 AXF/MAP）")
         rtt["rtt_addr"] = new_addr
-        save_rtt_config(project_root, rtt)
+        if persist:
+            print(f"[AUTO] RTT 地址已更新: {old_addr or '(空)'} → {new_addr}（来源: 当前 AXF/MAP）")
+            save_rtt_config(project_root, rtt)
 
     return rtt
 

@@ -4,72 +4,76 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-11T23:05:48+08:00`
-- 分支：`codex/0.3.4-release-handoff`
-- HEAD：`Official v0.3.4 source a8fd3fab0403; follow-up handoff/Web commit follows. Inspect Git for exact tip.`
-- 远端 HEAD：`microkeen/main after PR40; immutable release tag a8fd3fab0403.`
-- 工作树：Official publication completed; follow-up handoff and preserved generated Web assets through PR.
-- 当前任务：0.3.4正式发布、本地实际覆盖安装和Skill更新完成。PR40合并源a8fd3fab0403；17附件、5更新签名、3渠道索引均核对。最终已安装包CLI/MCP/Web/原生窗口/退出、F103原ELF双下载器切换/采集中24写入5766周期零错误通过。Gitee Skill已真实镜像并验证GitHub不可达回退；Windows因Gitee单附件100MB限制被拒，使用GitHub链接；其他平台仅GitHub。详见v034-release-handoff.md。Mac/Linux物理USB及原地升级后验边界保留。
-- 状态：`verified`
+- 更新时间：`2026-10-18T17:25:42.611407+08:00`
+- 分支：`codex/0.3.5-fixes`
+- HEAD：`V2 RBL代码5be3dcf7、生产Web/Skill归档6ddd59ab；安装与验收交接见v035-v2-rbl-update.md，实际HEAD以git log为准。`
+- 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
+- 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
+- 当前任务：维护者2026-10-18明确授权0.3.5验收及正式发布，并明确未解决问题仅放交接。从7d422a00开始最新全量回归/发布门禁，已确认最新main为祖先、发布账号Aladdin-Wang。通过后精确PR头合并、主线重建签名、发布双GitHub及Gitee兼容渠道；现尚未发布。
+- 状态：`in_progress`
 
 ## 里程碑
 
-- **0.3.4正式版** — `complete`。PR40，源a8fd3fab0403；实际覆盖安装/Skill更新、五份更新验签、三平台原生CI38144587775、三渠道正式发布完成。后续交接与正式Web另走PR，标签不移动。
+- **0.3.5 调试、重连与下载流程修复** — `in_progress`。925cadc8候选已实装并同步Skill；同探针5秒内恢复、超时保持断开、手动重连实机通过；紧凑重载框完成。原生正常关闭，资源释放。995与UART首字节仍待定位，PR43草稿。
+- **0.3.4正式版** — `complete`。不可变源a8fd3fab0403，PR40正式发布；PR41已保存正式Web/交接，合并提交185678c59623。17附件、5份验签、3渠道及实装/Skill通过。07846c1a记录后续清理完成，本次补入0.3.5；见v034-release-handoff.md及v034-workspace-cleanup.md。
 - **0.3.3正式版** — `complete`。源11616f80，PR38；Windows/ARM/Linux/Intel包、五份签名、三渠道核对和本地Skill更新完成。正式归档已回原工作空间；见v033-release-handoff.md。
 - **0.3.2正式版** — `complete`。源3d511e94，PR35/36；三平台原生构建38028928283。Windows实装、五份更新验签、三个渠道已核对，见v032-release-handoff.md。
 - **0.3.1正式版** — `complete`。PR33合并，源1d61159d；签名NSIS/Skill/SiteAgent与三端索引完成，最终提取包检查通过。见v031-release-handoff.md。
-- **0.3.0正式版** — `complete`。签名NSIS、Skill、远程服务包及三端更新索引发布完成；精确源提交ec1d2834。安装/退出、CLI/MCP通过，Web由用户确认。
-- **2026-10-09固件** — `complete`。用户指定MicroLink V4.6.3 SHA e960cb70，1625600B，三端下载及独立索引核对；与旧605验收UF2不同，不继承旧HIL。其他型号未变。
+- **0.3.0及2026-10-09固件归档** — `complete`。0.3.0发布及2026-10-09固件记录见历史交接和固件归档；不继承其硬件验收结论。
 
 ## 验证证据
 
-- **0.3.4 正式发布与本地升级**：最终源a8fd3fab0403；正式NSIS176582092字节，实装载荷哈希匹配；冻结CLI/MCP/38 Web文件/原生窗口及退出通过。F103双探针固定后台、采集中24写应答、5766周期零读错误通过；SystemView54字节仅证生命周期。三平台native CI38144587775、五份签名实际验签、17附件匿名下载及三渠道索引、本地Skill逐文件/CLI/MCP通过。见v034-release-handoff.md，早期准备与体积审计证据仍保留原报告。
-- **0.3.4 明确断开与切换自动收尾**：源34834d08/5f4b9728，协议52，生产Web已构建。830项相关Python通过，随后队列/SDK115、最后迟到请求71通过；87项GUI/TypeScript/构建通过。V3/F103原ELF、30MHz/1ms、RTT+Watch双AI订阅直接断开成功；共享AI下采集中切到第二只、旧会话拒绝，AI断开和SDK A→B→A均保持后台身份。最终代码再次完整真机复核通过且读错误0。两个真实页面自动同步断开/切换，额外页已关。SystemView短程54字节/0解码事件，AI断开成功，仅证明生命周期不宣称解码性能。异步烧录和迟到请求用确定性夹具覆盖，未中断实物烧录。见v034-explicit-connection-control.md。
-- **0.3.4 SuperWatch取消回读校验**：源267b175f及其生产Web。旧版真实复现自增变量写入readback mismatch并停止采集。385项Python、72项GUI、TypeScript和生产构建通过。V3.6.4/F103原ELF、30MHz/1ms两波形+RTT，24次写入应答全部成功，4450周期零读错误、RTT31行；独立测试读确认静态字变化再恢复，70605周期零读错误。真实浏览器动态变量写12后显示已写入且运行中，最新GUI保留。旧SW01/HPM仅源码及模拟协议验证，无新固件修改。见v034-superwatch-write.md。
-- **0.3.4 窗口固定后台与原地切换**：源50eb6c52/Web504e690d。Python全量初跑4771通过/2跳过，1旧参数断言失败及4缺FLM资源夹具错误；更新断言后相关1177通过，最后双页面保护29通过。指定既有本地资源后干净实包5通过，冻结后台用runtime_id发现后复用新实包重跑1通过。GUI全量938通过/2旧导航夹具失败，补充状态及换目标清空表单断言后2通过，最终940项覆盖；生产构建通过。两只实物、两个独立代理/Web：A→B→A后台身份不变，RTT+Watch及Trace运行中切换清空旧目标。独立窗口占用B时拒绝切入而A采集继续；双方释放/接手均不重启后台。最终代码再次A→B→A保持PID/端口。原位置ELF5365变量；3秒RTT30行/Watch283周期读错误0，Trace14093事件。B无目标板。保留一最终WebGUI供用户测试。见v034-window-owned-backend.md。
-- **0.3.4 采集启动与通信**：源 ddda89c5；Python 全量4752通过/2旧读取顺序断言失败/2跳过，更新断言后相关487通过，最后边界与断连177通过；最终合计4757通过用例/2跳过。GUI全量936通过，补改冲突提示后SystemView25通过，最终937用例；生产构建通过。6万符号ELF基准20–22秒→1.45–1.51秒；V3/F103 RTT8+Watch3+跨客户端内存约126秒，读错误0；Trace三次0.53–0.66秒。最终冷启RTT0.328秒、Watch35209周期0错误、Trace0.354秒/123150事件；Web13任务72MHz/331969事件/drop0，停止释放通过。见v034-rtt-startup.md。 后续原工程原地编译/烧录校验通过，直接加载原 Obj AXF：RTT 0.246秒，Watch 35225周期0错误，Trace 0.379秒/122139事件；后台释放。05faf1e3 的三项 PR CI 全通过。 切换源4c1227b9：最终594项Python、70项GUI及生产构建通过；失效偏好下真机连接/RAM/RTT成功，页面重选后4876外设项、两次新后台冷启恢复；双实体A→B→A→B不影响另一窗口RTT，126次内存检查0错误，符号generation不变，后台释放。见v034-probe-switch-peripherals.md。 上述跨后台跳转属于旧方案，已被50eb6c52窗口固定后台方案取代，见最新验证。
-- **0.3.3 正式发布**：精确main11616f80重建Windows/Skill/SiteAgent；ARM/Linux CI38069170299，Intel详细重跑38071279659成功。三个native清单及冻结CLI/MCP/退出通过，五份签名实际验签。正式Windows提取包Windows-only PATH、35Web资源、原生界面/区域高度/退出通过；不计本次UAC取消为重新安装。两GitHub各17公开附件与三渠道回读验证，本地Skill逐文件核对并验证CLI/SVD/MCP；详见v033-release-handoff.md。
-- **0.3.3 最终候选与补充回归**：源码77f56f20/Web0c01a71b；GUI934通过，Python合计4747通过/2跳过（首次磁盘满项F盘重跑）。实装载荷摘要一致、最小PATH启动及冻结CLI/MCP/F407VE目录通过；F103RC全流程约10.25秒、AXF5909变量解析和实际搜索/拖动通过。三平台原生CI38067335470全成功。e90f6df1修测试本地偏好串扰，精确复现12失败后115波形用例及GUI CI38068369545通过；后台管理测试固定中文，不改产品运行时。见v033-release-readiness.md及本地v033-final证据。
-- **0.3.3 在线烧录算法选择与布局**：源码92e33221/Webee0c2024；连接折叠摘要、资源按钮、联网下载、多FLM选择及镜像地址映射。GUI120、Python530、构建通过；浏览器双分区模拟及真实内置F103RE文件解析通过。初次本地FLM目录缺失导致21项安全测试失败，基线同样失败，指定现有资产目录后全通过；未修改白名单。无物理烧录，未更新NSIS。见v033-online-flash-algorithms.md。
+- **0.3.5 V2 RBL 自动升级**：V2独立索引双GitHub发布，旧UF2索引不变；用户回退后生产Web真实2.8→2.9升级。核心158/CLI相关127/V2专项29/GUI62及TS/Vite通过，组间重叠不相加。5be3dcf7 NSIS覆盖退出0，198Python/40Web/四载荷一致；Skill2605文件及CLI/SVD/MCP通过。安装Web、冻结/Skill实际MCP与CLI同版检查一致，F103 CPUID正确，已detach释放探针。原生正常关闭后进程/端点/端口全部释放；见v035-v2-rbl-update.md。
+- **0.3.5 五秒意外断链恢复**：925cadc8/生产Web cb1223d2：最终恢复/重连49项、共享运行时133项及GUI54项通过。NSIS实装退出0，197Python/40Web/四载荷一致，Skill2604文件及CLI/SVD/MCP通过。V3.6.5/F103快拔插约3.1秒恢复RTT/SuperWatch、原冻结MCP会话CPUID正确；超时约5秒进入expired，晚插回保持断开，旧MCP不重附着。显式Web连接后采集保持停止，Skill CLI读数正确；用户关闭后进程/端点/端口释放。见v035-transport-recovery.md；旧995根因仍待排查。
+- **0.3.5 手动符号重载与发布准备**：e577：GUI94文件978项及TS/Vite通过；Python全量4877通过、1交接条目预算失败、2可选跳过，预算修正后2项复验通过。NSIS覆盖退出0，196Python/40Web/4载荷一致；Skill2603文件及冻结/Skill CLI/SVD/MCP/HTTP通过。Keil原工程编译下载Verify OK；实际编译只提示，显式重载generation1→2零读错；CH0 ls15次完整、CH1 129行连续和256字节下行通过；UART两档各300帧序号CRC及256字节下行一致，首F0/FE另列未解。记录4957样本，原生原图播放/暂停/缩放、436209字节PNG通过。三平台native CI39002623711及独立SiteAgent包资格通过。正常退出全部资源释放，见v035-release-preparation.md。
+- **0.3.5 串口文本续行**：100相关测试、TS/Vite通过；d9ac3a26 NSIS实装、196Python/40Web/四载荷一致，冻结CLI/SVD/MCP/HTTP通过；Skill 2d029f18的2603文件及CLI/SVD/MCP通过。Chrome实机周期文本完整，六段发送恢复三行，跨批次CRLF/UTF-8正确。原生导出49字节与输入逐字节一致。原生窗口正常关闭，全部MKLink进程、endpoint及8765/8766端口释放。2d029f18三个CI成功。详见v035-serial-lines.md。
+- **0.3.5 串口即时显示与 MSH 安装实测**：串口Worker/页面89、RTT页面/终端69、相关后端372通过，TS/Vite通过。NSIS提取/实装196Python/40Web、四载荷、Windows-only CLI/SVD/MCP/HTTP通过，Skill2603文件匹配。安装F103 ls三尾端15次与Chrome整条/逐键完整，CH1 256字节校验/120周期连续；UART115200下1000帧、38400下300帧序号CRC一致，两轮反向256字节一致。重新配置UART后首帧前各有一个额外字节单列保留；Chrome无换行7字节即时显示，最终导出文件恰好4f4b000a0dfeff共7字节；原生关闭后全部进程/endpoint及8765/8766释放。Skill/冻结CLI/MCP目标回显与UART累计校验一致。026b0bf3三CI通过。详见v035-serial-immediate.md。
+- **0.3.5 连接、RTT重载及下载流程**：拔插自动连接332 Python/89 GUI及用户实际换探针通过；RTT通道/显式符号重载490 Python/102 GUI及原工程Keil下载后实机通过，详见v035-auto-connect.md、v035-rtt-symbol-reload.md。最新下载免预连接/型号同步301 Python、185 GUI、TS/Vite通过；Chrome未连接时识别USB卷及算法，在线直接读取Flash64字节并保留结果；型号默认/独立修改及真实Pack导入后目录自动更新通过。未执行烧录，历史unknown仍保留。见v035-download-target-sync.md。
+- **0.3.5 Pack外设同步与手动SVD**：d5a65482：非空SVD索引随Pack状态/索引/工程配置变化刷新；当时支持聚焦重查/显式刷新（本次改为自动刷新并移除按钮）；浏览器SVD校验持久化、桌面本地路径。138Python、33GUI、生产构建通过；真实Edge+HTTP在线导入后原查询找到型号、手动文件选择显示12项、错误XML保留当前配置、重载恢复均通过。离线夹具不访问硬件；该专项当时未实装；后续已随0.3.5完成桌面覆盖安装和全局Skill更新，详见docs/verification/v035-peripheral-import.md。
+- **0.3.5 位域解析和整变量曲线**：62faad0e：客户ELF815→872标量叶，gSystemState6成员256模式1536比较通过，System23成员。旧MSB offset与data_bit_offset分离、显式存储宽度、cache6、位域只读、generation刷新。452 Python、53 GUI、TS/Vite通过。V3/F103原工程Keil下载验证15路一个8字节块、30MHz，1ms12343/50us245540及272200浏览器行一致，256状态、signed -16..15，序号零缺口、各错误/丢弃0。旧生产Web手动重解析只显示2叶、新29叶，后台System23；新增普通根搜索回归。详见v035-dwarf-bitfields.md，后随0.3.5安装及Skill更新。
 
 ## 架构决策
 
-- 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号校验当前连接及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议51，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes当前独占身份，只有停止旧采集、关闭旧设备且取得目标OS锁后才允许原地改绑，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
-- 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
-- 用户授权正式发布0.3.2与V3.6.4/V4.6.8/HPMLink4.6.8；原MK-Firmware同步最新，旧用户固件仅归档备份，不恢复stash。
-- 用户接受30MHz并行目标读错留待下版，不写公开发布说明；Mac/Linux实机后验，Windows本轮已实际覆盖安装通过。
-- 原Mklink-AI-Probe是唯一维护入口。0.3.3正式包/证据已回原.build/artifacts/v033-official；F盘为构建缓存。交接PR合入后删除startup-cdc临时工作树并记录结果，保留共享依赖和必要客户证据。
-- mklink及既有长期跟进维持暂停；不得因旧交接自动接管硬件或重复发布。
-- 用户明确授权合并0.3.3修复分支、签名正式发布、更新本地Skill及清理临时工作树；PR38已合入并发布。探针连接/时钟不要求目标板；固件需要改动时另开会话。Gitee缺失镜像沿用此前GitHub兜底，渠道最后写入。
-- 用户特别要求：锁相关修复必须结合整体共享架构，不能仅消除当前卡点。保留唯一串口所有权、USB身份绑定、会话/操作锁及未知结果不重放；审查读写控制顺序、epoch隔离、取消完成前缓冲寿命、背压错误传播和端口释放，再以跨客户端与真实进程/硬件验证。 父进程仅在worker真正退出后发布串口关闭，避免其他线程提前释放应用锁。 0.3.4 继续保留这些边界；单次调用上下文缓存 RAM，未知响应不重放，错误可见不提前释放采集所有权。 用户明确纠正：一个GUI客户端持有固定后台，同窗口切换不新建/跳转后台，RTT/Watch/Trace等必须跟随当前设备并清空旧目标状态。另开客户端才新建独立后台；占用目标先在原窗口断开，禁止偷取。SDK/AI按物理身份发现当前持有者；共享会话和多个页面不阻止明确断开/切换；在途操作先收尾，再自动处理。旧目标会话注销，独立UART保留。外设ID使用Pack版本/型号/SVD相对路径，失效偏好仅禁用外设目录，不阻断设备；无法反推的旧ID由用户重选。
-- 测试工程直接在用户指定原目录修改和构建，直接使用其 build/keil/Obj ELF，不再复制工程到其他目录；用户允许任意测试修改，不要求备份还原。详细硬件路径仅留本地。 用户明确要求SuperWatch变量写入取消回读校验，只认写应答；不取消烧录或显式内存校验，不掩盖真实写失败，不自动重放。 用户取消共享客户端/采集对断开与切换的拒绝：明确请求必须自动收尾处理。同后台PID固定，旧目标请求不得跨设备，MCP disconnect物理断开、detach只退出自身。
+- 当前维护入口是现有codex/0.3.5-fixes工作树及PR43；旧0.3.4交接的回原目录/保留旧分支要求是历史状态。继续既有任务分支，经PR/检查整合；合并、签名、发布需明确授权，既有标签/资产/更新公钥/应用ID不覆盖。07846c1a的文档内容已吸收，不需要再次cherry-pick覆盖当前记忆。
+- 后台协议 52：一个 GUI 客户端持有一个固定后台，同窗口切换只改下载器，RTT/Watch/Trace 跟随当前设备并清空旧目标状态；另开客户端才建独立后台。已有 URL 的额外页面共享该后台。工程上下文固定，换工程须停止原后台后重开。
+- 物理探针唯一 OS 所有权、USB 身份核对和 epoch 隔离保留。GUI/AI 明确断开或切换自动停止采集、排空在途操作并释放端口；旧会话不得跨设备，未知结果不得自动重放，不偷取其他后台占用。MCP disconnect 物理断开，detach 仅退出自身；独立 UART 保留。
+- SuperWatch 变量写入只认写应答，不做自动回读；烧录/显式内存校验仍保留，真实写错误不得吞掉或重放。外设 ID 基于 Pack 版本/芯片/SVD 相对路径；失效选择不得阻断物理连接，无法迁移时重选。 在线型号提供脱机/外设默认值，各页可独立修改；Pack操作完成自动刷新。下载先预留唯一物理身份，不要求先连接目标；自身预留不重建下载表单，其他设备切换仍清理。
+- 应用主索引 MicroKeen/release，旧 GitHub/updates 和 Gitee/updates 兼容，固件使用独立索引。Gitee 仅要求 Windows 与 Skill；本次 Windows 超 100MB 被拒，索引指向 GitHub；Skill 已真实镜像，GitHub 不可达回退实测通过。其他平台仅 GitHub。
+- 测试直接使用用户原工程及 build/keil/Obj ELF，允许修改且无需备份还原，不复制工程；硬件路径只留本地。HPM 使用 ROM API，不使用 FLM/第二次通用 SWD reset；VCC 每次改动需确认具体电压，固件修改另开会话。
+- 构建使用scripts/build_workspace.ps1与F:/MKLink-Build，保留正式包、独有证据、依赖和缓存；联接或不可访问路径不强删。0.3.4清理已完成，不能沿用早期startup-cdc待删除任务。长期硬件跟进仍暂停，不因交接自动接管硬件或重复发布。
+- 工程上下文固定于后台生命周期；被动MI_04枚举不遍历占用设备，底层自动连接只接受唯一候选；本机别名不写固件。未知结果不重放，worker实际退出后才发布串口关闭，取消前保留缓冲寿命，背压错误不隐瞒。
+- 原MK-Firmware及固件工程保留既有最新归档与用户子模块改动，旧用户固件/stash仅备份用途不自动恢复；历史发布授权已完成，不延伸为0.3.5发布授权。 2026-10-18维护者另行明确授权0.3.5验收和发布；已知未解决项保留交接，新的回归或构建失败仍须处理。
+- 编译完成不代表目标已下载：所有稳定文件变化（包括地址不变/仅时间戳）仅发待重载事件，不后台解析或应用。SuperWatch每次变化弹窗一次，稍后保留顶部醒目按钮。用户明确重新加载后才执行共享符号迁移和采集恢复；用户主动停止不恢复。
 
 ## 真机环境
 
-- **state**：最终0.3.4已安装程序：V3/F103原工程ELF，30MHz/1ms，24写应答/5766周期零读错误、RTT47行；双探针同后台切换/旧AI失效/共享采集断开通过，最终SystemView54字节仅证生命周期。未改供电或探针固件。测试后台正常退出。
-- **installer**：正式0.3.4主线NSIS已实际覆盖安装，退出0，安装载荷哈希与正式包匹配；原生窗口/Web显示a8fd3fab0403，CLI/MCP/资源/正常退出及真机复核通过。
-- **backups**：原Git根.build/artifacts/v033-official保存17正式文件、archive-manifest及qualification（含候选实装/F103、正式冻结/签名/渠道/Skill证据）；旧0.3.2正式归档及用户备份保持。F盘保留共享缓存；联接测试目录和旧安装器占用文件不强删。
+- **state**：V2已从用户回退的2.8.0经新版Web升级2.9.0；安装版F103 CPUID通过，AI已detach并释放下载器，无采集。用户正常关闭后GUI/sidecar进程、endpoint及8765/8766均已释放。
+- **installer**：5be3dcf7 NSIS覆盖安装退出0，198Python/40Web及四载荷一致；全局Skill6ddd59ab已同步，2605文件一致，CLI/SVD/实际MCP与实机通过。候选未签名，证据位于MKLINK_BUILD_ROOT/artifacts/v035-local-5be3dcf7，保留Skill备份。
+- **backups**：0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。
 
 ## 下一动作
 
-1. 0.3.4已正式发布。合入本次交接与保存的正式Web资源后继续原工作空间维护；已运行AI进程需重启加载本地0.3.4 Skill。保留客户现场/跨平台实物验证边界。
+1. 完成当前源的Python/GUI全量、生产构建与CI，核对后合并PR43；从最终main重建并验收Windows/SiteAgent/三平台与Skill，再发布资产和最后更新索引。未解决问题按维护者要求保留交接，不扩大验收结论。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
-4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史联接/占用目录留人工处理。
+4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。
 5. 收集 Mac/Linux USB/MSC 和原地升级反馈、外置 Flash 多算法实物验证；完整 SES/芯片/拔插断电组合仍待补充。供电每次确认具体电压，长期验证仍暂停。
 
 ## 已知限制
 
-- 原始30MHz/1µs CDC失败、首次启动离线和客户F405 PROGRAM100%后读线程退出仍未复现；诊断与保护不等于根因闭环。客户Python3.12/受限AI/GD32仍待复测。F103校验约0.30秒无显著加速；外置Flash多FLM缺少实物验证。历史unknown任务不得改判或重放。0.3.4正式主线包现已实际覆盖安装并完成运行及真机复核。 本轮修复可复现的RTT主机缺陷；两客户版本/目标ELF/IDE占用尚不全，未证明所有后续MUX超时同根因，按新增opcode/request/epoch继续核实。
+- 0.3.5时钟修复已通过偏差注入及本地Windows3.11/3.14实机短测；客户3.11.9原电脑仍待升级确认。原始CDC首次离线/F405 PROGRAM100%后退出、受限AI/GD32及RTT客户后续MUX超时仍未闭环；不宣称同一根因或任意负载无损。历史unknown操作不得重放。 位域当前仅little-endian、只读；曲线Float32对大整数有舍入。真实ELF只离线回放，F103使用专门测试固件；未把客户固件烧到该板。 原0.3.2故障链见docs/verification/v032-postrelease-incidents.md；CDC传输错误、目标status5与本次DLL解压拒绝不混为同一根因，不靠清空用户配置或全杀后台掩盖原因。 本轮后台HEX下载2% Failed to write file,addr:0x2000，unknown未重放；用户Keil下载后仅重载验证成功，下载故障仍待另案排查。
 - V4.6.8 30MHz RTT8/Watch4/UART并行目标读错1kHz +1、最大+273；10MHz0。旧V4.6.6原始+1/+224，报告此前漏记已更正。采集不停止、不误断、UART完整；用户明确继续发布，限制交接下版处理，不写公开发布说明。
-- HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4/V4.6.8仿真中新启采集及负载读回通过，V4.6.8已完成Keil及相关矩阵。详见release handoff；长期目标暂停。
+- HPM/SES退出未发送DAP_Disconnect时可遗留占用，后续legacy握手等待；明确退出后正常OpenOCD init/resume/shutdown可恢复，用户可重插USB。禁止任意超时偷取调试所有权。完整SES矩阵和RTT下行未全部覆盖；V3.6.4/V4.6.8仿真中新启采集及负载读回通过，V4.6.8已完成Keil及相关矩阵。详见release handoff；长期目标暂停。 2026-10-17新增RTT status6截图仅证下载器忙返回；用户不清楚IDE占用/固件版本，不能认定与历史问题同因，待现场时序和显式重试结果。
 - 性能和功能证据按docs/verification/v030-release-handoff.md及各精确提交报告解释：采集不是无损通道，缓冲溢出/暂停/调试下载可能丢失观测；多变量不是原子快照，不能保证任意时序上界。
 - V3无屏幕、不支持HPM；V3.6.4原生Keil先运行再采集、暂停/单步/继续/退出和OpenOCD均通过。V4最终无诊断固件完整SES矩阵未完成。
 - 后台最后会话释放约5秒租约，加排空和退出开销；不保证硬实时5秒。每个GUI客户端一个后台，同窗口切换固定PID/端口；一个物理探针在任一时刻仅由一个后台独占。打开已有URL的额外页面共享当前后台并跟随明确切换；独立操作应启动新客户端。
-- 长期验证按用户要求暂停；跨物理主机Agent、Mac/Linux、真实Modbus从站及全部芯片组合未完整认证。模拟测试不得替代实体边界。
-- nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。
+- 跨物理主机Agent、真实Modbus从站及全部芯片组合未完整认证，模拟测试不能替代实体。0.3.5独立Windows Site Agent已重新构建并通过四项资格检查；macOS Intel/ARM和Linux原生CI包构建/冻结运行/载荷检查通过，但实体USB/MSC、原生GUI、签名升级未认证。Mac仅ad-hoc无Developer ID公证，Windows无Authenticode。Web真实文件句柄选择/跟踪未完成；新候选原生日志文件选择、回放和PNG已通过。
+- nRF54L15 GUI保护闭环、全部物理擦除/拔插/休眠/断电场景、电源外部精度校准未全部认证。VCC每次改动必须确认具体电压，HPM已锁定OTP不得重放。 已知无可靠扇区表的26个FLM禁用扇区操作；重叠算法需要匹配Bank模式。 HPM5301组18/19永久锁定的历史状态及用户字先写/组锁最后、全部固件独立校验后才写OTP等边界见docs/ai/hpm-offline-otp-handoff.md；接手重新确认芯片，其他型号不继承验收。
 
 ## 延续协议
 
-- 交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。
+- 新会话固定继续 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe 的 codex/0.3.5-fixes；读取该目录AGENTS.md和本交接，运行 python scripts/ai_memory.py validate，核对 git status、log、worktree及远端。不要从原0.3.4目录另起修复分支。
+- V2 RBL升级见v035-v2-rbl-update.md，已获专门授权并发布原验收包及独立V2索引。用户回退2.8后真实升级2.9通过，5be3dcf7安装与全局Skill6ddd59ab已验收；不重复升级或回退。
+- 用户已升级下载器V3.6.5，995故障只保留待排查。恢复只允许同身份CDC故障5秒内；超时不自动接回/新建AI会话，主动断开立即生效，不重放任何未知写入。新进度以v035-transport-recovery.md和实际进程为准，不再保留旧995现场窗口。
+- 客户启动故障仅确认PyInstaller解压ucrtbase.dll时Permission denied，重启后恢复；未定位权限/杀软/占用的具体来源，按用户意见暂不做推测性修复。若再现，结合新startup/runtime日志复查。
+- 2026-10-18已明确授权0.3.5验收、合并和正式发布，未解决问题放交接。当前处发布验收阶段，严禁重复已完成V2固件升级。必须保留必需CI/精确提交/签名/实装及索引最后发布门禁，详情见v035正式发布记录；敏感日志和本机产物不提交。
