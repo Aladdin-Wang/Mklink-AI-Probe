@@ -1,0 +1,19 @@
+{
+  "schema": "mklink-firmware-v1",
+  "published_at": "2026-10-18T09:07:17.807686+00:00",
+  "firmwares": [
+    {
+      "name": "MicroLink_V2.9.0.rbl",
+      "family": "microlink",
+      "model": "V2",
+      "format": "rbl",
+      "version": "V2.9.0",
+      "size": 364216,
+      "sha256": "eec5199ec0d9073485e883fa7020c851d24fb36e029f0fca14b19fa1be667d57",
+      "rbl_payload_bytes": 364120,
+      "urls": {
+        "github": "https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases/download/firmware-assets/MicroLink_V2.9.0.rbl"
+      }
+    }
+  ]
+}
