@@ -43,7 +43,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 - **flush**：单批总数据最多 **12 KiB**、最多 **8 个地址项**。超额时按批串行，
   每批等待提示符；不得与 dump、VOFA、RTT 或 SystemView 并发。
 - **RTT/SystemView**：地址只允许省略或传目标已知可写 RAM 内的 4 字节对齐地址，
-  不得拼接 Pika 表达式；旧固件/SystemView 通道为 **0~2**；配套 `MUX_TARGET=1` 的 V3/V4 RTT 可订阅 **0~7**，以目标实际活动通道为准。搜索窗口为 **0~65536 字节**且不得
+  不得拼接 Pika 表达式；旧固件/SystemView 通道为 **0~2**；报告 `MUX_TARGET=1` 的 V2.9.0 及配套 V3/V4 固件可订阅 RTT **0~7**，以目标实际活动通道为准。搜索窗口为 **0~65536 字节**且不得
   越出已知目标 RAM。让工具拒绝越界参数，不得改用
   原始命令绕过，也不得对失败的启动循环重试。MCP `rtt_write` 单次最多 **256
   字节**（文本 `rtt_write` 或二进制 `rtt_write_hex`），超限不得自动拆分；文件或日志走 YMODEM/串口专用传输，禁止拆分

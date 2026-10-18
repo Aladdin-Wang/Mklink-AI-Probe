@@ -1,7 +1,7 @@
 # 共享 CDC 后台与多下载器
 
 本页包含 0.3.1 修复行为；使用前核对客户端与后台版本、协议及工具能力。
-底层仍使用 CDC。单通道兼容旧固件；多通道 RTT 与 SuperWatch 并行需配套 `MUX_TARGET=1` 的 V3/V4 开发固件。按能力协商判断，不能只看旧的版本号字符串；V3 无屏幕，不支持 HPM 目标。
+底层仍使用 CDC。单通道兼容旧固件；多通道 RTT 与 SuperWatch 并行需报告 `MUX_TARGET=1`，包括 V2.9.0 和配套 V3/V4 固件。按能力协商判断，不能只看版本号；V3 无屏幕，不支持 HPM 目标。
 
 ## 连接与选择
 
@@ -496,7 +496,7 @@ python -m mklink systemview-report --probe "电机板" --duration 6 --out report
 不能把旧地址和待发送数据自动重放到新固件。STM32/HPM 的 OpenOCD 下载、
 暂停/单步/运行及显式恢复已完成短时真机验证。
 
-配套 V3/V4 固件报告 `MUX_TARGET=1` 后，GUI/CLI/MCP 自动使用同一个 CDC 帧通道。
+V2.9.0 或配套 V3/V4 固件报告 `MUX_TARGET=1` 后，GUI/CLI/MCP 自动使用同一个 CDC 帧通道。
 仍然只有后台打开串口和读取 USB，客户端读取后台缓存。外部串口助手的旧 RTT
 映射仍保留；它与后台不能同时打开命令口。
 
