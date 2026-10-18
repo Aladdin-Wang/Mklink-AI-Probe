@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-18T17:23:04.660746+08:00`
+- 更新时间：`2026-10-18T17:23:55.762002+08:00`
 - 分支：`codex/0.3.5-fixes`
 - HEAD：`V2 RBL代码5be3dcf7、生产Web/Skill归档6ddd59ab；安装与验收交接见v035-v2-rbl-update.md，实际HEAD以git log为准。`
 - 远端 HEAD：`microkeen/codex/0.3.5-fixes；PR43草稿：https://github.com/MicroKeen/Mklink-AI-Probe/pull/43。新会话以 fetch 后实际远端为准。`
 - 工作树：继续现有 E:/software/HPM5300/mklink-0.3.5-fixes/Mklink-AI-Probe（Git根为其父目录），分支 codex/0.3.5-fixes。原 E:/software/HPM5300/Mklink-AI-Probe 仍是 0.3.4 工作树，不在原目录继续修改或重建分支。
-- 当前任务：V2 RBL兼容和真实2.8.0→2.9.0升级已通过；双GitHub独立索引/原包发布，旧UF2索引不变。5be3dcf7 NSIS覆盖安装及全局Skill完成，安装Web/冻结与Skill CLI/MCP实机一致；等待原生窗口关闭后核对退出。0.3.5仍为草稿候选。
+- 当前任务：V2 RBL兼容和真实2.8.0→2.9.0升级已通过；双GitHub独立索引/原包发布，旧UF2索引不变。5be3dcf7 NSIS覆盖安装及全局Skill完成，安装Web/冻结与Skill CLI/MCP实机一致；原生正常关闭后进程/端点/端口全部释放。0.3.5仍为草稿候选。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -23,7 +23,7 @@
 
 ## 验证证据
 
-- **0.3.5 V2 RBL 自动升级**：V2独立索引双GitHub发布，旧UF2索引不变；用户回退后生产Web真实2.8→2.9升级。核心158/CLI相关127/V2专项29/GUI62及TS/Vite通过，组间重叠不相加。5be3dcf7 NSIS覆盖退出0，198Python/40Web/四载荷一致；Skill2605文件及CLI/SVD/MCP通过。安装Web、冻结/Skill实际MCP与CLI同版检查一致，F103 CPUID正确，已detach释放探针。正常关闭待核对；见v035-v2-rbl-update.md。
+- **0.3.5 V2 RBL 自动升级**：V2独立索引双GitHub发布，旧UF2索引不变；用户回退后生产Web真实2.8→2.9升级。核心158/CLI相关127/V2专项29/GUI62及TS/Vite通过，组间重叠不相加。5be3dcf7 NSIS覆盖退出0，198Python/40Web/四载荷一致；Skill2605文件及CLI/SVD/MCP通过。安装Web、冻结/Skill实际MCP与CLI同版检查一致，F103 CPUID正确，已detach释放探针。原生正常关闭后进程/端点/端口全部释放；见v035-v2-rbl-update.md。
 - **0.3.5 五秒意外断链恢复**：925cadc8/生产Web cb1223d2：最终恢复/重连49项、共享运行时133项及GUI54项通过。NSIS实装退出0，197Python/40Web/四载荷一致，Skill2604文件及CLI/SVD/MCP通过。V3.6.5/F103快拔插约3.1秒恢复RTT/SuperWatch、原冻结MCP会话CPUID正确；超时约5秒进入expired，晚插回保持断开，旧MCP不重附着。显式Web连接后采集保持停止，Skill CLI读数正确；用户关闭后进程/端点/端口释放。见v035-transport-recovery.md；旧995根因仍待排查。
 - **0.3.5 手动符号重载与发布准备**：e577：GUI94文件978项及TS/Vite通过；Python全量4877通过、1交接条目预算失败、2可选跳过，预算修正后2项复验通过。NSIS覆盖退出0，196Python/40Web/4载荷一致；Skill2603文件及冻结/Skill CLI/SVD/MCP/HTTP通过。Keil原工程编译下载Verify OK；实际编译只提示，显式重载generation1→2零读错；CH0 ls15次完整、CH1 129行连续和256字节下行通过；UART两档各300帧序号CRC及256字节下行一致，首F0/FE另列未解。记录4957样本，原生原图播放/暂停/缩放、436209字节PNG通过。三平台native CI39002623711及独立SiteAgent包资格通过。正常退出全部资源释放，见v035-release-preparation.md。
 - **0.3.5 串口文本续行**：100相关测试、TS/Vite通过；d9ac3a26 NSIS实装、196Python/40Web/四载荷一致，冻结CLI/SVD/MCP/HTTP通过；Skill 2d029f18的2603文件及CLI/SVD/MCP通过。Chrome实机周期文本完整，六段发送恢复三行，跨批次CRLF/UTF-8正确。原生导出49字节与输入逐字节一致。原生窗口正常关闭，全部MKLink进程、endpoint及8765/8766端口释放。2d029f18三个CI成功。详见v035-serial-lines.md。
@@ -47,13 +47,13 @@
 
 ## 真机环境
 
-- **state**：V2已从用户回退的2.8.0经新版Web升级2.9.0；安装版F103 CPUID通过，AI已detach并释放下载器，无采集。等待用户关闭原生窗口后核对后台退出。
+- **state**：V2已从用户回退的2.8.0经新版Web升级2.9.0；安装版F103 CPUID通过，AI已detach并释放下载器，无采集。用户正常关闭后GUI/sidecar进程、endpoint及8765/8766均已释放。
 - **installer**：5be3dcf7 NSIS覆盖安装退出0，198Python/40Web及四载荷一致；全局Skill6ddd59ab已同步，2605文件一致，CLI/SVD/实际MCP与实机通过。候选未签名，证据位于MKLINK_BUILD_ROOT/artifacts/v035-local-5be3dcf7，保留Skill备份。
 - **backups**：0.3.4正式包/安装/渠道/Skill/HIL在MKLINK_BUILD_ROOT/artifacts/v034-official，相邻v034-official-native保存完整原生CI ZIP；0.3.5本机包见上述构建根。原Git根.build/artifacts/v033-official、v032-official及用户备份保持；清理前快照/删除清单在构建根reports/v034-cleanup-*.json、v034-deleted-branches.json、v034-memory-before-cleanup.json。不能再把F盘仅视为可删缓存。
 
 ## 下一动作
 
-1. V2 RBL发布及安装验证已完成，等待原生窗口关闭并核对资源释放。上位机0.3.5仍未授权正式发布；995、UART首字节及其余发布缺口保留。
+1. V2 RBL发布及安装验证已完成，正常关闭和资源释放已核对，无待继续的升级动作。上位机0.3.5仍未授权正式发布；995、UART首字节及其余发布缺口保留。
 2. 收集两位 RTT 客户的上位机/下载器固件版本、目标 ELF/芯片及 IDE 占用，用启动阶段耗时和 MUX 请求身份复核。历史 unknown 操作不得重放；原始 CDC/F405/受限 AI/GD32 仍待现场闭环。
 3. 继续排查 30MHz 并行目标读错/Flash 偶发 status5，区分固件目标访问与主机队列；本次低负载 F103 结果不关闭该限制，需要固件改动另开会话。
 4. Gitee单附件限制已确认100MB：0.3.4 Skill已真实镜像并验证GitHub不可达回退，Windows176.6MB被拒并使用GitHub链接；后续发布必须维持Gitee Skill可下载，其他平台不上传Gitee。历史清理已完成，151个含联接run/旧安装器占用内容仍留人工处理，见v034-workspace-cleanup.md；本次不重新清理。
