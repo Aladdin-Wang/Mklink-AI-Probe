@@ -36,7 +36,7 @@
   },
   "skill": {
     "version": "0.3.5",
-    "url": "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/download/v0.3.5/Mklink-AI-Probe-v0.3.5-Skill.zip",
+    "url": "https://github.com/MicroKeen/Mklink-AI-Probe/releases/download/v0.3.5/Mklink-AI-Probe-v0.3.5-Skill.zip",
     "sha256": "e148265e43e4f3e0cb56e7cf35ce51cb84f5d94a5090a70664a038a13d6bf457",
     "size": 98711557,
     "source_commit": "2f474f60372efdf1218211d4235f05343eab840e"
