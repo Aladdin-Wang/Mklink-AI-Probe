@@ -9,7 +9,7 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
-    version: '0.3.5', date: '2026-10-15',
+    version: '0.3.5', date: '2026-10-18',
     summary: '优化调试、日志与下载体验',
     summaryEn: 'Improve debugging, logging and programming',
     changes: [
@@ -20,6 +20,7 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       '修复换下载器连接，同一下载器短暂掉线支持 5 秒内自动恢复 GUI/AI 共享连接与采集。',
       '下载免预连接，芯片型号同步，Pack 自动刷新并支持手动 SVD。',
       '补全位域变量和搜索结果，改善 Windows 采集显示性能。',
+      '支持 V2 下载器在线升级 RBL 固件，Web、CLI 和 MCP 使用同一流程。',
     ],
     changesEn: [
       'Prompt for manual variable reload after a build, simplify SuperWatch search, and toggle channel names by clicking.',
@@ -29,6 +30,7 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       'Fix connection after probe replacement; recover shared GUI/AI connections and capture within a five-second window after a brief disconnect of the same probe.',
       'Program without preconnecting, share chip defaults, refresh Packs automatically and load custom SVD files.',
       'Restore missing bit-fields and search results, and improve capture display performance on Windows.',
+      'Update V2 probe RBL firmware through the same Web, CLI and MCP workflow.',
     ],
   },
   {
